@@ -26,6 +26,10 @@
     .item code { font-size: 11px; }
     .muted { color: #888; font-size: 11px; }
     .empty { color: #888; padding: 6px 0; }
+    .section-title { font-size: 12px; font-weight: 600; color: #555; }
+    .toggle { display: flex; align-items: center; gap: 6px; font-size: 12px;
+              margin: 4px 0 2px; cursor: pointer; }
+    .toggle input { margin: 0; }
   </style>
 </head>
 <body>
@@ -47,6 +51,13 @@
   <div>Allowed sites</div>
   <div id="list" class="list"></div>
   <div id="empty" class="empty">No sites allowed yet.</div>
+
+  <div class="section-title" style="margin-top:10px">page_eval</div>
+  <label class="toggle">
+    <input type="checkbox" id="evalMask" />
+    <span>脱敏 eval 返回值(推荐)</span>
+  </label>
+  <div class="muted">关闭后,JS 执行的返回值原样发给 AI(token / Cookie 等可能泄露)。</div>
 
   <script src="popup.js"></script>
 </body>

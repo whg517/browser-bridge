@@ -20,9 +20,10 @@ approve.
   - [0002 三进程架构 + localhost TCP](./docs/adr/0002-three-process-architecture-localhost-tcp.md)
   - [0003 snapshot 走 content script 而非 chrome.debugger](./docs/adr/0003-content-script-snapshot-vs-chrome-debugger.md)
   - [0004 白名单 + optional host permissions](./docs/adr/0004-allowlist-with-optional-host-permissions.md)
-  - [0005 page_eval 默认禁用](./docs/adr/0005-page-eval-disabled-by-default.md)
+  - [0005 page_eval 默认禁用](./docs/adr/0005-page-eval-disabled-by-default.md)(已被 0008 取代)
   - [0006 高危动作用 Toast 确认](./docs/adr/0006-toast-confirmation-for-high-risk.md)
   - [0007 锁定 MCP 协议版本 2025-06-18](./docs/adr/0007-mcp-protocol-version-2025-06-18.md)
+  - [0008 page_eval 高危确认通道](./docs/adr/0008-page-eval-confirmation-channel.md)
 
 ```
 ZCode ──stdio MCP──▶ browser-bridge (MCP server, Rust)
@@ -65,10 +66,10 @@ server, which means the MV3 service worker recycling (Chrome kills SWs every
 | `page_screenshot` | Visible viewport as PNG |
 | `page_scroll` | Up / down / top / bottom / N pixels |
 | `page_wait_for` | Wait for selector / text / navigation |
+| `page_eval` | ⚠ HIGH RISK — execute arbitrary JS. Every call shows the full code in a confirmation prompt; return value masked by default. |
 
-Not in v0.1 (planned): `page_eval` (would need high-risk confirmation),
-`page_snapshot_precise` (debugger-based, shows the infobar), cookie/storage
-reads.
+Not yet implemented (planned): `page_snapshot_precise` (debugger-based, shows
+the infobar), cookie/storage reads.
 
 ## Install
 
@@ -110,7 +111,7 @@ Then:
 |----------|-------------------|
 | Site allowlist | Stored in `chrome.storage.local`. A new origin triggers a popup prompt; approving it also calls `chrome.permissions.request` for that host (required for the content script to inject). |
 | High-risk actions | Submit-button clicks and link navigations inject a confirmation toast in the page; 30 s auto-deny, 60 s grace window after approval for the same kind of action on the same origin. |
-| `page_eval` | Not exposed in v0.1. |
+| `page_eval` | High-risk channel: enlarged confirmation toast per call, same-origin 60s grace window, return value masked (JWT/hex/numbers/secrets) by default. See [ADR-0008](./docs/adr/0008-page-eval-confirmation-channel.md). |
 | Sensitive data | `page_text` masks `<input type=password>` and long digit runs. `page_fill` on a password field masks the value in the args echo. |
 | Host impersonation | The host manifest's `allowed_origins` pins the extension ID. The bridge socket authenticates each inbound connection with a per-run secret written to a 0600 lock file. |
 | Protocol safety | Native-messaging frames cap at 1 MB outbound (Chrome's hard limit). All stdout writes are single-threaded and flushed per frame. A stderr panic hook prevents panic messages from corrupting the binary stream. |

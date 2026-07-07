@@ -96,9 +96,23 @@ function escapeAttr(s) {
   return escapeHtml(s);
 }
 
+// ---- page_eval mask toggle ----------------------------------------------
+async function refreshEvalMask() {
+  const { evalMask } = await chrome.storage.local.get("evalMask");
+  // undefined → default true (mask on)
+  $("evalMask").checked = evalMask !== false;
+}
+$("evalMask").addEventListener("change", (e) => {
+  chrome.storage.local.set({ evalMask: e.target.checked });
+  // Invalidate the content-script cache so it picks up the new setting.
+  // The content script re-reads storage on first eval after a page load;
+  // an in-flight same-page change won't be observed until the next eval.
+});
+
 refreshStatus();
 refreshList();
 refreshPending();
+refreshEvalMask();
 
 // If the user opens the popup with nothing pending, but they want to manually
 // add a site, they can do so by visiting it and letting the agent trigger the

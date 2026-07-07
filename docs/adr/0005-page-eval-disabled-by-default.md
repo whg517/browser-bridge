@@ -1,7 +1,11 @@
 # ADR-0005:page_eval 默认禁用
 
-- **状态**:Accepted
+- **状态**:Superseded by [ADR-0008](./0008-page-eval-confirmation-channel.md)
 - **日期**:2026-07-07
+
+> **已 superseded**:本 ADR 决定"v0.1 不实现 page_eval"。v0.1 交付后进入阶段二,
+> [ADR-0008](./0008-page-eval-confirmation-channel.md) 实现了 page_eval 的高危确认通道。
+> 本文档保留作为历史记录,记录当时的取舍与攻击面分析(仍有效)。
 
 ## 背景
 

@@ -30,7 +30,7 @@
 - **G5 单二进制分发**:整个后端编译成一个 Rust 二进制,部署 = 拷贝一个文件
 
 ### 2.2 非目标(v0.1 明确不做)
-- ❌ **不实现 `page_eval`**(执行任意 JS)。这是权力最大也最危险的能力,留到后续阶段且需高危确认通道。详见 [ADR-0005](./adr/0005-page-eval-disabled-by-default.md)
+- ❌ **不实现 `page_eval`**(v0.1 范围)。v0.1 不实现任意 JS 执行;阶段二已补,带高危确认通道 + 返回值脱敏。详见 [ADR-0008](./adr/0008-page-eval-confirmation-channel.md)(取代早期的 [ADR-0005](./adr/0005-page-eval-disabled-by-default.md))
 - ❌ **不读 Cookie/Storage**。攻击面太大,留到后续阶段。详见范围边界
 - ❌ **不用 chrome.debugger 做精确 snapshot**。会强制弹 infobar 横幅,违背 G2。当前用 content script 近似。详见 [ADR-0003](./adr/0003-content-script-snapshot-vs-chrome-debugger.md)
 - ❌ **不做录制/回放、批量任务编排**。这是阶段三的玩法层
@@ -81,6 +81,7 @@
 - `page_fill(ref|selector, value)` — 填表;用 native setter 触发框架(React/Vue)的 change 检测;密码字段脱敏记录
 - `page_scroll(direction|pixels)` — 滚动
 - `page_wait_for(selector|text|nav, timeoutMs)` — 等待条件
+- `page_eval(code)` — **高危**:执行任意 JS。每次调用弹放大版 Toast 显示完整代码;同源 60s 免确认;返回值默认脱敏(JWT/长hex/长数字/敏感关键字),可在 popup 关闭。用 `new Function` 在全局作用域执行,支持 await/return。详见 [ADR-0008](./adr/0008-page-eval-confirmation-channel.md)
 
 ### FR-4 安全控制
 - **FR-4.1 域名白名单**:新 origin 首次操作时,扩展弹 popup 请求授权;授权同时通过 `chrome.permissions.request` 申请该域名的 host 权限。白名单存 `chrome.storage.local`,可在 popup 撤销。详见 [ADR-0004](./adr/0004-allowlist-with-optional-host-permissions.md)
@@ -102,7 +103,7 @@
 ## 6. 范围边界
 
 ### 6.1 v0.1 包含
-- 11 个工具(见 FR-1~FR-3)
+- 11 个工具(见 FR-1~FR-3);**阶段二追加 `page_eval`**(共 12 个)
 - 白名单 + Toast 双层安全
 - content script 风格 snapshot
 - macOS + Chrome
@@ -110,7 +111,7 @@
 ### 6.2 v0.1 不包含,后续阶段
 - **阶段二**:
   - `page_snapshot_precise` — debugger 回退精确 snapshot(会闪现 infobar,需告知用户)
-  - `page_eval` — 默认禁,走高危确认通道
+  - ✅ `page_eval` — 高危确认通道(放大版 Toast + 同源 60s 免确认 + 可配脱敏)。**已完成**,详见 [ADR-0008](./adr/0008-page-eval-confirmation-channel.md)
 - **阶段三**:
   - `cookie_get` / `storage_get`(限白名单域名)
   - Skill 层(把高频玩法:抓列表页、表单填写、跨标签操作沉淀成 skill)
@@ -126,7 +127,7 @@
 | 阶段 | 范围 | 状态 |
 |------|------|------|
 | **阶段一:v0.1 最小可用** | FR-1~FR-4 + NFR-1~6 | ✅ 代码完成,协议层 e2e 测试 PASS,待用户加载扩展验收 |
-| **阶段二:精确化** | debugger 回退 snapshot、page_eval 高危通道 | 未开始 |
+| **阶段二:精确化** | debugger 回退 snapshot、page_eval 高危通道 | 🔄 page_eval 已完成;debugger 回退未开始 |
 | **阶段三:扩展能力** | cookie/storage、skill 层、编排 | 未开始 |
 
 ## 8. 验收标准(v0.1)

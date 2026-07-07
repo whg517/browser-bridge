@@ -47,6 +47,8 @@
         return scroll(args);
       case "page_wait_for":
         return await waitFor(args);
+      case "page_eval":
+        return await runEval(args);
       default:
         throw new Error(`content: unknown op ${op}`);
     }
@@ -379,6 +381,166 @@
     });
   }
 
+  // ---- page_eval (high-risk) ---------------------------------------------
+
+  async function runEval(args) {
+    const code = args.code;
+    if (typeof code !== "string" || !code.trim()) {
+      throw new Error("page_eval needs non-empty `code`");
+    }
+    // Confirm with the user via an enlarged Toast showing the full code.
+    // Reuses lastConfirmed so same-origin eval within 60s of a prior approval
+    // does not re-prompt. NOTE: this grace window is riskier for eval than
+    // for click (see ADR-0008) — two evals can be totally unrelated code.
+    await confirmWithEvalToast(code);
+    // Execute. Wrap as an async IIFE in the global scope so the code can use
+    // await/return and see page globals. `new Function` (not eval) gives us
+    // global scope regardless of the strict-mode closure this file runs in.
+    let result;
+    try {
+      const fn = new Function(
+        '"use strict";\n' +
+        'return (async () => {\n' + code + '\n})();'
+      );
+      result = await fn();
+    } catch (e) {
+      // Surface JS errors to the model as structured data, not a throw, so
+      // the model can react (e.g. fix the code and retry).
+      return {
+        __evalError: true,
+        name: e?.name || "Error",
+        message: String(e?.message || e),
+        stack: truncate(String(e?.stack || ""), 2000),
+      };
+    }
+    const serialized = serializeResult(result);
+    const mask = await getMaskSetting();
+    return mask ? maskSensitive(serialized) : serialized;
+  }
+
+  // Safe serialization: handles cycles, DOM nodes, errors, exotic types, and
+  // truncates very large payloads. Returns JSON-serializable data.
+  function serializeResult(value, seen = new WeakSet(), depth = 0) {
+    if (depth > 50) return "[depth limit]";
+    if (value === null || value === undefined) return value;
+    const t = typeof value;
+    if (t === "string") return truncate(value, 10000);
+    if (t === "number" || t === "boolean") return value;
+    if (t === "bigint") return `[BigInt:${value.toString()}]`;
+    if (t === "symbol") return `[Symbol:${value.toString()}]`;
+    if (t === "function") return `[function:${value.name || "anonymous"}]`;
+    if (t === "object") {
+      // Error → structured
+      if (value instanceof Error) {
+        return { __error: true, name: value.name, message: value.message };
+      }
+      // DOM node → short tag descriptor
+      if (value instanceof Element) {
+        const id = value.id ? `#${value.id}` : "";
+        return `<${value.tagName.toLowerCase()}${id}>`;
+      }
+      if (value instanceof Node) {
+        return `<${value.nodeName}>`;
+      }
+      // Cycle guard
+      if (seen.has(value)) return "[Circular]";
+      seen.add(value);
+      try {
+        if (Array.isArray(value)) {
+          if (value.length > 1000) return `[Array length=${value.length}, truncated]`;
+          return value.slice(0, 1000).map((v) => serializeResult(v, seen, depth + 1));
+        }
+        // Plain object: enumerate own keys. Map/Set/Date get special tags.
+        if (value instanceof Map) {
+          const obj = {};
+          let i = 0;
+          for (const [k, v] of value) { obj[String(k)] = serializeResult(v, seen, depth + 1); if (++i > 1000) break; }
+          return { __Map: obj };
+        }
+        if (value instanceof Set) {
+          return { __Set: Array.from(value).slice(0, 1000).map((v) => serializeResult(v, seen, depth + 1)) };
+        }
+        if (value instanceof Date) return { __Date: value.toISOString() };
+        if (value instanceof RegExp) return { __RegExp: value.toString() };
+        const out = {};
+        let count = 0;
+        for (const key of Object.keys(value)) {
+          if (count++ > 1000) { out.__truncated = true; break; }
+          out[key] = serializeResult(value[key], seen, depth + 1);
+        }
+        return out;
+      } finally {
+        seen.delete(value);
+      }
+    }
+    return String(value);
+  }
+
+  // Mask sensitive-looking values. Recursive. See ADR-0008 for the pattern
+  // catalogue. Designed to stop tokens/cookies/secrets from reaching the AI
+  // context (and logs) — at the cost of occasionally masking benign data.
+  function maskSensitive(value) {
+    if (value === null || value === undefined) return value;
+    const t = typeof value;
+    if (t === "string") return maskString(value);
+    if (t === "number") return maskNumber(value);
+    if (t === "boolean") return value;
+    if (Array.isArray(value)) return value.map(maskSensitive);
+    if (t === "object") {
+      const out = {};
+      for (const k of Object.keys(value)) {
+        out[maskKeyName(k)] = maskSensitive(value[k]);
+      }
+      return out;
+    }
+    return value;
+  }
+
+  const SENSITIVE_KEY = /(token|cookie|password|passwd|secret|api[_-]?key|auth|cred|session)/i;
+
+  function maskKeyName(key) {
+    return SENSITIVE_KEY.test(key) ? "••••" + key.slice(-2) : key;
+  }
+
+  function maskString(s) {
+    if (s.length < 8) return s;
+    let out = s;
+    // JWT (eyJ... . ... . ...)
+    out = out.replace(/ey[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g, "••••[jwt]");
+    // Long hex (>=32): secrets, hashes, API keys
+    out = out.replace(/\b[a-fA-F0-9]{32,}\b/g, "••••[hex]");
+    // Long digit runs (>=12): card numbers, account ids
+    out = out.replace(/\b\d{12,}\b/g, "••••[num]");
+    // Bearer / key-like patterns
+    out = out.replace(/(?:bearer|token|password|secret|api[_-]?key)\s*[:=]\s*\S+/gi, "••••[redacted]");
+    // If the whole string looks like a credential, mask fully
+    if (SENSITIVE_KEY.test(s) && s.length >= 8 && !/\s/.test(s)) {
+      return "••••[sensitive]";
+    }
+    return out;
+  }
+
+  function maskNumber(n) {
+    // Long integers (>=12 digits): card-like, big ids
+    if (Number.isInteger(n) && Math.abs(n) >= 1e11) return "••••[num]";
+    return n;
+  }
+
+  // Read the mask toggle from storage. Default true (mask on).
+  let _maskCache = true;
+  let _maskLoaded = false;
+  function getMaskSetting() {
+    if (_maskLoaded) return Promise.resolve(_maskCache);
+    return new Promise((resolve) => {
+      chrome.storage.local.get("evalMask", (r) => {
+        // undefined → default true (mask on)
+        _maskCache = r.evalMask !== false;
+        _maskLoaded = true;
+        resolve(_maskCache);
+      });
+    });
+  }
+
   // ---- Toast confirmation UI --------------------------------------------
 
   // Short-circuit window: a 60s window during which the same kind of
@@ -392,6 +554,21 @@
     }
     const approved = await showToast(question);
     if (!approved) throw new Error(`user denied: ${actionDesc}`);
+    lastConfirmed = { key, until: Date.now() + 60_000 };
+  }
+
+  // Eval confirmation: enlarged Toast with the full code shown. Shares the
+  // same lastConfirmed grace window as click/etc. The key is `origin:eval`.
+  // Risk note (ADR-0008): within the 60s window, ANY new eval code on the
+  // same origin runs silently — accept this because eval is not meant for
+  // high-frequency use.
+  async function confirmWithEvalToast(code) {
+    const key = `${location.origin}:eval`;
+    if (lastConfirmed.key === key && Date.now() < lastConfirmed.until) {
+      return; // within grace window
+    }
+    const approved = await showEvalToast(code, location.href, document.title);
+    if (!approved) throw new Error("user denied page_eval");
     lastConfirmed = { key, until: Date.now() + 60_000 };
   }
 
@@ -436,6 +613,47 @@
       card.querySelector(".zcb-toast-deny").onclick = () => finish(false);
       // Auto-deny after 30s so the tool call doesn't hang forever.
       setTimeout(() => finish(false), 30000);
+    });
+  }
+
+  // Enlarged, warning-styled Toast for page_eval. Shows the full code in a
+  // scrollable <pre>, plus the target URL and tab title so the user knows
+  // exactly what runs where.
+  function showEvalToast(code, url, tabTitle) {
+    return new Promise((resolve) => {
+      const host = ensureToastHost();
+      const card = document.createElement("div");
+      card.className = "zcb-toast-card zcb-eval-card";
+      card.innerHTML = `
+        <div class="zcb-eval-title">⚠ Browser Bridge: 执行确认</div>
+        <div class="zcb-eval-meta"></div>
+        <pre class="zcb-eval-code"></pre>
+        <div class="zcb-eval-warn">上面的代码将在该页面以你的身份运行,可能读取 token / Cookie / 发起请求。</div>
+        <div class="zcb-toast-actions">
+          <button class="zcb-toast-deny">拒绝</button>
+          <button class="zcb-toast-allow">允许执行</button>
+        </div>`;
+      // Use textContent for any value to prevent injection from code strings.
+      card.querySelector(".zcb-eval-meta").textContent =
+        `${truncate(url || "", 60)} · 「${truncate(tabTitle || "无标题", 40)}」`;
+      card.querySelector(".zcb-eval-code").textContent = code;
+      host.appendChild(card);
+
+      let done = false;
+      const finish = (val) => {
+        if (done) return;
+        done = true;
+        card.classList.add("zcb-toast-out");
+        setTimeout(() => card.remove(), 150);
+        resolve(val);
+      };
+      card.querySelector(".zcb-toast-allow").onclick = () => finish(true);
+      card.querySelector(".zcb-toast-deny").onclick = () => finish(false);
+      // Esc key also denies, for keyboard users.
+      const onKey = (e) => { if (e.key === "Escape") { finish(false); } };
+      card.addEventListener("keydown", onKey);
+      // Auto-deny after 45s (longer than click's 30s — user needs time to read code).
+      setTimeout(() => { finish(false); }, 45000);
     });
   }
 

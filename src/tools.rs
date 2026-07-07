@@ -114,6 +114,20 @@ pub fn all() -> Vec<Tool> {
                 ],
             ),
         },
+        Tool {
+            name: "page_eval",
+            description:
+                "HIGH RISK — execute arbitrary JavaScript on the active tab. EVERY call shows the \
+                 user the full code in a confirmation prompt and waits for approval; within 60s of \
+                 an approval, same-origin evals run without re-prompting. The return value is \
+                 masked (JWT / long hex / long numbers / token-like strings) by default. This is \
+                 the most powerful tool: prefer page_click / page_fill / page_snapshot whenever \
+                 possible, and only use page_eval when those cannot achieve the goal (custom \
+                 events, reading framework state, SPA routing, canvas/WebGL, etc.). Code runs in \
+                 the page's global scope, wrapped as `async`, so you can `await` and `return` a \
+                 value. Async results are awaited. Errors are returned as {name, message}.",
+            input_schema: schema(&["code"], &[("code", "string", "JavaScript code to execute")]),
+        },
     ]
 }
 
@@ -193,6 +207,10 @@ pub fn dispatch(session: &Session, name: &str, args: &Value) -> (Value, bool) {
                 json!(args.get("timeoutMs").and_then(|v| v.as_i64()).unwrap_or(30000)),
             );
             call(session, "page_wait_for", None, Value::Object(payload))
+        }
+        "page_eval" => {
+            let code = sarg(args, "code");
+            call(session, "page_eval", None, json!({ "code": code }))
         }
         unknown => Err(format!("unknown tool: {unknown}")),
     };

@@ -28,9 +28,10 @@ ADR(Architecture Decision Record)记录的是**有多个合理选项、最终选
 | [0002](./adr/0002-three-process-architecture-localhost-tcp.md) | 三进程架构 + localhost TCP 桥接 | Accepted |
 | [0003](./adr/0003-content-script-snapshot-vs-chrome-debugger.md) | snapshot 走 content script 而非 chrome.debugger | Accepted |
 | [0004](./adr/0004-allowlist-with-optional-host-permissions.md) | 白名单 + optional host permissions 按需授权 | Accepted |
-| [0005](./adr/0005-page-eval-disabled-by-default.md) | page_eval 默认禁用 | Accepted |
+| [0005](./adr/0005-page-eval-disabled-by-default.md) | page_eval 默认禁用 | Superseded by #0008 |
 | [0006](./adr/0006-toast-confirmation-for-high-risk.md) | 高危动作用页面 Toast + 短时免确认 | Accepted |
 | [0007](./adr/0007-mcp-protocol-version-2025-06-18.md) | 锁定 MCP 协议版本 2025-06-18 | Accepted |
+| [0008](./adr/0008-page-eval-confirmation-channel.md) | page_eval 高危确认通道 | Accepted |
 
 ## ADR 写作约定
 
