@@ -24,6 +24,7 @@ approve.
   - [0006 高危动作用 Toast 确认](./docs/adr/0006-toast-confirmation-for-high-risk.md)
   - [0007 锁定 MCP 协议版本 2025-06-18](./docs/adr/0007-mcp-protocol-version-2025-06-18.md)
   - [0008 page_eval 高危确认通道](./docs/adr/0008-page-eval-confirmation-channel.md)
+  - [0009 page_snapshot_precise 用 chrome.debugger](./docs/adr/0009-page-snapshot-precise-debugger.md)
 
 ```
 ZCode ──stdio MCP──▶ browser-bridge (MCP server, Rust)
@@ -67,6 +68,7 @@ server, which means the MV3 service worker recycling (Chrome kills SWs every
 | `page_scroll` | Up / down / top / bottom / N pixels |
 | `page_wait_for` | Wait for selector / text / navigation |
 | `page_eval` | ⚠ HIGH RISK — execute arbitrary JS. Every call shows the full code in a confirmation prompt; return value masked by default. |
+| `page_snapshot_precise` | Authoritative a11y tree via chrome.debugger (shadow DOM, complex ARIA). Briefly shows a 'debugging' banner; user is warned first. Refs use `p` prefix. |
 
 Not yet implemented (planned): `page_snapshot_precise` (debugger-based, shows
 the infobar), cookie/storage reads.

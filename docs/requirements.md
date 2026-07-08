@@ -73,6 +73,7 @@
 
 ### FR-2 页面读取
 - `page_snapshot` — 返回交互元素的 a11y 风格树,每个节点有稳定 `ref`、role、accessible name、兜底 selector
+- `page_snapshot_precise` — **精确版**:用 chrome.debugger + CDP 取 Chrome 权威 a11y 树,覆盖 shadow DOM/复杂 ARIA;attach 前弹提示 Toast,期间 Chrome 顶部闪现调试横幅(~1秒);refs 用 `p` 前缀,page_click/fill 无需改动。详见 [ADR-0009](./adr/0009-page-snapshot-precise-debugger.md)
 - `page_text` — 返回正文文本(密码字段、疑似卡号脱敏)
 - `page_screenshot` — 返回可见视口 PNG(base64)
 
@@ -103,7 +104,7 @@
 ## 6. 范围边界
 
 ### 6.1 v0.1 包含
-- 11 个工具(见 FR-1~FR-3);**阶段二追加 `page_eval`**(共 12 个)
+- 11 个工具(见 FR-1~FR-3);**阶段二追加 `page_eval` + `page_snapshot_precise`**(共 13 个)
 - 白名单 + Toast 双层安全
 - content script 风格 snapshot
 - macOS + Chrome
@@ -112,6 +113,7 @@
 - **阶段二**:
   - `page_snapshot_precise` — debugger 回退精确 snapshot(会闪现 infobar,需告知用户)
   - ✅ `page_eval` — 高危确认通道(放大版 Toast + 同源 60s 免确认 + 可配脱敏)。**已完成**,详见 [ADR-0008](./adr/0008-page-eval-confirmation-channel.md)
+  - ✅ `page_snapshot_precise` — debugger 精确 snapshot(提示 Toast + infobar 闪现 + p 前缀 ref)。**已完成**,详见 [ADR-0009](./adr/0009-page-snapshot-precise-debugger.md)
 - **阶段三**:
   - `cookie_get` / `storage_get`(限白名单域名)
   - Skill 层(把高频玩法:抓列表页、表单填写、跨标签操作沉淀成 skill)
@@ -127,7 +129,7 @@
 | 阶段 | 范围 | 状态 |
 |------|------|------|
 | **阶段一:v0.1 最小可用** | FR-1~FR-4 + NFR-1~6 | ✅ 代码完成,协议层 e2e 测试 PASS,待用户加载扩展验收 |
-| **阶段二:精确化** | debugger 回退 snapshot、page_eval 高危通道 | 🔄 page_eval 已完成;debugger 回退未开始 |
+| **阶段二:精确化** | debugger 回退 snapshot、page_eval 高危通道 | ✅ 完成(page_eval + page_snapshot_precise) |
 | **阶段三:扩展能力** | cookie/storage、skill 层、编排 | 未开始 |
 
 ## 8. 验收标准(v0.1)

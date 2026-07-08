@@ -49,6 +49,10 @@
         return await waitFor(args);
       case "page_eval":
         return await runEval(args);
+      case "_info_toast":
+        // Informational toast (e.g. "about to attach debugger, infobar will
+        // flash"). Returns true unless the user cancels.
+        return await showInfoToast(args.message || "");
       default:
         throw new Error(`content: unknown op ${op}`);
     }
@@ -654,6 +658,38 @@
       card.addEventListener("keydown", onKey);
       // Auto-deny after 45s (longer than click's 30s — user needs time to read code).
       setTimeout(() => { finish(false); }, 45000);
+    });
+  }
+
+  // Informational toast (blue) for non-high-risk notices, e.g. "debugger is
+  // about to attach, infobar will flash briefly." Unlike the eval/click
+  // toasts this defaults to PROCEED (resolve true) after a timeout — the
+  // user must actively press Cancel to abort.
+  function showInfoToast(message) {
+    return new Promise((resolve) => {
+      const host = ensureToastHost();
+      const card = document.createElement("div");
+      card.className = "zcb-toast-card zcb-info-card";
+      card.innerHTML = `
+        <div class="zcb-info-title">Browser Bridge</div>
+        <div class="zcb-info-text"></div>
+        <div class="zcb-info-actions">
+          <button class="zcb-info-cancel">取消</button>
+        </div>`;
+      card.querySelector(".zcb-info-text").textContent = message;
+      host.appendChild(card);
+
+      let done = false;
+      const finish = (proceed) => {
+        if (done) return;
+        done = true;
+        card.classList.add("zcb-toast-out");
+        setTimeout(() => card.remove(), 150);
+        resolve(proceed);
+      };
+      card.querySelector(".zcb-info-cancel").onclick = () => finish(false);
+      // Auto-proceed after 8s (informational, not a confirmation gate).
+      setTimeout(() => finish(true), 8000);
     });
   }
 

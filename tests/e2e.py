@@ -171,10 +171,15 @@ def test_mcp_handshake_and_tools():
         names = [t["name"] for t in tools["result"]["tools"]]
         check("tab_list" in names, "tools/list includes tab_list")
         check("page_eval" in names, "tools/list includes page_eval")
+        check("page_snapshot_precise" in names, "tools/list includes page_snapshot_precise")
         # page_eval description must carry a HIGH RISK warning
         ev = next(t for t in tools["result"]["tools"] if t["name"] == "page_eval")
         check("HIGH RISK" in ev["description"], "page_eval description warns HIGH RISK")
         check(ev["inputSchema"]["required"] == ["code"], "page_eval requires code arg")
+        # precise snapshot description must warn about the debugger banner
+        ps = next(t for t in tools["result"]["tools"] if t["name"] == "page_snapshot_precise")
+        check("debugger" in ps["description"].lower(),
+              "page_snapshot_precise description mentions debugger")
     finally:
         try:
             mcp.stdin.close()
@@ -275,6 +280,63 @@ def test_page_eval_round_trip():
         mcp.wait(timeout=3)
 
 
+def test_page_snapshot_precise_round_trip():
+    print("\n[test] page_snapshot_precise round-trip (op reaches extension)")
+    try:
+        os.remove(LOCK)
+    except FileNotFoundError:
+        pass
+    mcp = subprocess.Popen([BIN], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                           stderr=subprocess.PIPE, text=True)
+    try:
+        lf = wait_lock()
+        check(lf is not None, "lock file written")
+        captured = {}
+
+        def responder(req):
+            captured["req"] = req
+            # Mirror what a real SW would return after the CDP round-trip:
+            # refs with the 'p' prefix, precise: true.
+            return {"id": req["id"], "ok": True, "data": {
+                "refCount": 2,
+                "nodes": [
+                    {"ref": "p1", "role": "textbox", "name": "Search",
+                     "selector": "input#q", "value": ""},
+                    {"ref": "p2", "role": "button", "name": "Submit",
+                     "selector": "button#go", "value": None},
+                ],
+                "url": "https://example.com",
+                "title": "Example",
+                "precise": True,
+            }}
+
+        s, serve = mock_extension(lf, responder)
+        c = McpClient(mcp)
+        c.initialize()
+        c.initialized()
+        time.sleep(0.1)
+        served = []
+        t = threading.Thread(target=lambda: served.append(serve()))
+        t.start()
+
+        r = c.call("page_snapshot_precise", {}, _id=9)
+        t.join(timeout=3)
+        check(bool(served), "page_snapshot_precise BridgeReq reached extension")
+        check(captured.get("req", {}).get("op") == "page_snapshot_precise",
+              "forwarded op is page_snapshot_precise")
+        content = json.loads(r["result"]["content"][0]["text"])
+        check(content.get("precise") is True, "result carries precise:true flag")
+        check(content["nodes"][0]["ref"] == "p1", "precise refs use 'p' prefix")
+        check(len(content["nodes"]) == 2, "both nodes returned")
+        s.close()
+    finally:
+        try:
+            mcp.stdin.close()
+        except Exception:
+            pass
+        mcp.wait(timeout=3)
+
+
 def test_native_host_mode():
     print("\n[test] --native-host mode with real NM framing")
     try:
@@ -354,6 +416,7 @@ def main():
     test_mcp_handshake_and_tools()
     test_tab_list_round_trip()
     test_page_eval_round_trip()
+    test_page_snapshot_precise_round_trip()
     test_native_host_mode()
     test_unknown_method_returns_32601()
     print(f"\n{'='*40}\n{_passed} passed, {_failed} failed")

@@ -128,6 +128,22 @@ pub fn all() -> Vec<Tool> {
                  value. Async results are awaited. Errors are returned as {name, message}.",
             input_schema: schema(&["code"], &[("code", "string", "JavaScript code to execute")]),
         },
+        Tool {
+            name: "page_snapshot_precise",
+            description:
+                "Like page_snapshot, but uses Chrome's debugger (CDP Accessibility.getFullAXTree) \
+                 to capture the AUTHORITATIVE accessibility tree — accurate for shadow DOM and \
+                 complex ARIA where the content-script approximation misses. The user is warned \
+                 first (a brief on-page notice); Chrome then shows a 'Started debugging this \
+                 browser' banner on all tabs for ~1 second while the snapshot is taken, then it \
+                 disappears. Cannot run on chrome:// / web store pages, or tabs with DevTools \
+                 open. Refs use a 'p' prefix (p1, p2...) and work with page_click / page_fill \
+                 unchanged. Use this when page_snapshot misses elements or roles look wrong.",
+            input_schema: schema(
+                &[],
+                &[("frameId", "string", "Optional: limit to a specific frame's tree")],
+            ),
+        },
     ]
 }
 
@@ -211,6 +227,13 @@ pub fn dispatch(session: &Session, name: &str, args: &Value) -> (Value, bool) {
         "page_eval" => {
             let code = sarg(args, "code");
             call(session, "page_eval", None, json!({ "code": code }))
+        }
+        "page_snapshot_precise" => {
+            let mut payload = serde_json::Map::new();
+            if let Some(f) = args.get("frameId").and_then(|v| v.as_str()) {
+                payload.insert("frameId".into(), json!(f));
+            }
+            call(session, "page_snapshot_precise", None, Value::Object(payload))
         }
         unknown => Err(format!("unknown tool: {unknown}")),
     };

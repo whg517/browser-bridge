@@ -32,6 +32,7 @@ ADR(Architecture Decision Record)记录的是**有多个合理选项、最终选
 | [0006](./adr/0006-toast-confirmation-for-high-risk.md) | 高危动作用页面 Toast + 短时免确认 | Accepted |
 | [0007](./adr/0007-mcp-protocol-version-2025-06-18.md) | 锁定 MCP 协议版本 2025-06-18 | Accepted |
 | [0008](./adr/0008-page-eval-confirmation-channel.md) | page_eval 高危确认通道 | Accepted |
+| [0009](./adr/0009-page-snapshot-precise-debugger.md) | page_snapshot_precise 用 chrome.debugger 取权威 a11y 树 | Accepted |
 
 ## ADR 写作约定
 
