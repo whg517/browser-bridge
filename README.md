@@ -25,6 +25,7 @@ approve.
   - [0007 锁定 MCP 协议版本 2025-06-18](./docs/adr/0007-mcp-protocol-version-2025-06-18.md)
   - [0008 page_eval 高危确认通道](./docs/adr/0008-page-eval-confirmation-channel.md)
   - [0009 page_snapshot_precise 用 chrome.debugger](./docs/adr/0009-page-snapshot-precise-debugger.md)
+  - [0010 Cookie/Storage 只读访问](./docs/adr/0010-cookie-storage-readonly.md)
 
 ```
 ZCode ──stdio MCP──▶ browser-bridge (MCP server, Rust)
@@ -69,9 +70,12 @@ server, which means the MV3 service worker recycling (Chrome kills SWs every
 | `page_wait_for` | Wait for selector / text / navigation |
 | `page_eval` | ⚠ HIGH RISK — execute arbitrary JS. Every call shows the full code in a confirmation prompt; return value masked by default. |
 | `page_snapshot_precise` | Authoritative a11y tree via chrome.debugger (shadow DOM, complex ARIA). Briefly shows a 'debugging' banner; user is warned first. Refs use `p` prefix. |
+| `cookie_get` | Read cookies for the active tab (incl. httpOnly). Scoped to allowlisted hosts. Read-only; values masked. |
+| `storage_get` | Read the page's localStorage / sessionStorage (where frameworks keep tokens). Same-origin only. Always masked. |
 
-Not yet implemented (planned): `page_snapshot_precise` (debugger-based, shows
-the infobar), cookie/storage reads.
+Not yet implemented (planned): cookie/storage *writes* (read-only by design —
+see [ADR-0010](./docs/adr/0010-cookie-storage-readonly.md)), IndexedDB reads,
+and a skill layer for common workflows.
 
 ## Install
 

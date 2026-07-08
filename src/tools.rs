@@ -144,6 +144,40 @@ pub fn all() -> Vec<Tool> {
                 &[("frameId", "string", "Optional: limit to a specific frame's tree")],
             ),
         },
+        Tool {
+            name: "cookie_get",
+            description:
+                "Read cookies for the active tab (or a url/domain you specify). Includes httpOnly \
+                 cookies (the main reason to use this over document.cookie). Scoped to hosts in \
+                 the user's allowlist — unauthorized hosts silently return nothing. Read-only; \
+                 there is no cookie_set (writing httpOnly cookies is a session-fixation risk). \
+                 Values are masked (JWT / long hex / long numbers) before being returned. If you \
+                 omit url/domain/name, cookies for the active tab's URL are returned.",
+            input_schema: schema(
+                &[],
+                &[
+                    ("url", "string", "Return cookies that would be sent to this URL"),
+                    ("domain", "string", "Match this domain and its subdomains"),
+                    ("name", "string", "Exact cookie name to match"),
+                ],
+            ),
+        },
+        Tool {
+            name: "storage_get",
+            description:
+                "Read the page's localStorage or sessionStorage (where frameworks like Auth0 / \
+                 NextAuth / Firebase store tokens). Must run on the active tab; same-origin \
+                 only (cross-origin iframes are not readable). Pass `key` to fetch one entry, \
+                 or omit it to dump all entries (capped at 500). Values are ALWAYS masked \
+                 (JWT / long hex / long numbers) — this masking is not toggleable. Read-only.",
+            input_schema: schema(
+                &[],
+                &[
+                    ("type", "string", "\"local\" (default) or \"session\""),
+                    ("key", "string", "Specific key to read; omit for all entries"),
+                ],
+            ),
+        },
     ]
 }
 
@@ -234,6 +268,29 @@ pub fn dispatch(session: &Session, name: &str, args: &Value) -> (Value, bool) {
                 payload.insert("frameId".into(), json!(f));
             }
             call(session, "page_snapshot_precise", None, Value::Object(payload))
+        }
+        "cookie_get" => {
+            let mut payload = serde_json::Map::new();
+            if let Some(u) = args.get("url").and_then(|v| v.as_str()) {
+                payload.insert("url".into(), json!(u));
+            }
+            if let Some(d) = args.get("domain").and_then(|v| v.as_str()) {
+                payload.insert("domain".into(), json!(d));
+            }
+            if let Some(n) = args.get("name").and_then(|v| v.as_str()) {
+                payload.insert("name".into(), json!(n));
+            }
+            call(session, "cookie_get", None, Value::Object(payload))
+        }
+        "storage_get" => {
+            let mut payload = serde_json::Map::new();
+            if let Some(t) = args.get("type").and_then(|v| v.as_str()) {
+                payload.insert("type".into(), json!(t));
+            }
+            if let Some(k) = args.get("key").and_then(|v| v.as_str()) {
+                payload.insert("key".into(), json!(k));
+            }
+            call(session, "storage_get", None, Value::Object(payload))
         }
         unknown => Err(format!("unknown tool: {unknown}")),
     };

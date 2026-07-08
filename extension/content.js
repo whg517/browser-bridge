@@ -49,6 +49,8 @@
         return await waitFor(args);
       case "page_eval":
         return await runEval(args);
+      case "storage_get":
+        return storageGet(args);
       case "_info_toast":
         // Informational toast (e.g. "about to attach debugger, infobar will
         // flash"). Returns true unless the user cancels.
@@ -543,6 +545,45 @@
         resolve(_maskCache);
       });
     });
+  }
+
+  // ---- storage_get (page localStorage / sessionStorage) -------------------
+  //
+  // Read-only access to the PAGE's Web Storage (not chrome.storage). Must run
+  // in the content script (page context, same-origin). Frameworks like
+  // Auth0/NextAuth/Firebase store tokens here. Values are ALWAYS masked
+  // (independent of the eval mask toggle) because storage reads are silent
+  // and a leaked token here is just as bad as in eval output. See ADR-0010.
+  function storageGet(args) {
+    const type = args.type === "session" ? "session" : "local";
+    const key = args.key;
+    let store;
+    try {
+      store = type === "session" ? window.sessionStorage : window.localStorage;
+    } catch (e) {
+      throw new Error(`storage unavailable: ${e.message}`);
+    }
+    if (key !== undefined && key !== null && key !== "") {
+      const raw = store.getItem(key);
+      if (raw === null) return { key, found: false };
+      return { key, found: true, value: maskString(raw) };
+    }
+    // No key → dump all entries (masked). Cap to avoid huge payloads.
+    const entries = {};
+    let count = 0;
+    const MAX = 500;
+    for (let i = 0; i < store.length && count < MAX; i++) {
+      const k = store.key(i);
+      if (k === null) continue;
+      try {
+        entries[k] = maskString(store.getItem(k) || "");
+      } catch (e) {
+        entries[k] = "[unreadable]";
+      }
+      count++;
+    }
+    const truncated = store.length > MAX;
+    return { type, entries, count, truncated, totalKeys: store.length };
   }
 
   // ---- Toast confirmation UI --------------------------------------------

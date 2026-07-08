@@ -90,6 +90,11 @@
 - **FR-4.3 host 鉴权**:native messaging manifest 的 `allowed_origins` 写死扩展 ID;桥接 socket 用 per-run secret + 0600 锁文件鉴权
 - **FR-4.4 脱敏**:`page_text` 遮罩 `<input type=password>` 和长数字串;`page_fill` 密码字段值在参数回显中脱敏
 
+### FR-5 Cookie/Storage 只读(阶段三)
+- **FR-5.1 `cookie_get`**:读 Cookie(含 httpOnly),受 host_permissions 自然约束(复用白名单);输出 value 脱敏,结构字段(name/domain/httpOnly)保留
+- **FR-5.2 `storage_get`**:读页面 localStorage/sessionStorage(content script,同源);输出始终脱敏(不受 evalMask 开关控制,因 token 泄露风险与 eval 等价)
+- **FR-5.3 不做写入**:无 cookie_set / cookie_remove / storage_set——cookie_set 能伪造 httpOnly Cookie(会话固定攻击),连 XSS 都做不到。详见 [ADR-0010](./adr/0010-cookie-storage-readonly.md)
+
 ## 5. 非功能需求
 
 | 维度 | 要求 |
@@ -104,7 +109,7 @@
 ## 6. 范围边界
 
 ### 6.1 v0.1 包含
-- 11 个工具(见 FR-1~FR-3);**阶段二追加 `page_eval` + `page_snapshot_precise`**(共 13 个)
+- 11 个工具(见 FR-1~FR-3);**阶段二追加 `page_eval` + `page_snapshot_precise`**(共 13 个);**阶段三追加 `cookie_get` + `storage_get`**(共 15 个)
 - 白名单 + Toast 双层安全
 - content script 风格 snapshot
 - macOS + Chrome
@@ -115,7 +120,7 @@
   - ✅ `page_eval` — 高危确认通道(放大版 Toast + 同源 60s 免确认 + 可配脱敏)。**已完成**,详见 [ADR-0008](./adr/0008-page-eval-confirmation-channel.md)
   - ✅ `page_snapshot_precise` — debugger 精确 snapshot(提示 Toast + infobar 闪现 + p 前缀 ref)。**已完成**,详见 [ADR-0009](./adr/0009-page-snapshot-precise-debugger.md)
 - **阶段三**:
-  - `cookie_get` / `storage_get`(限白名单域名)
+  - ✅ `cookie_get` / `storage_get`(只读,限白名单域名,输出脱敏)。**已完成**,详见 [ADR-0010](./adr/0010-cookie-storage-readonly.md)
   - Skill 层(把高频玩法:抓列表页、表单填写、跨标签操作沉淀成 skill)
   - 录制/回放、批量任务编排
 
@@ -130,7 +135,7 @@
 |------|------|------|
 | **阶段一:v0.1 最小可用** | FR-1~FR-4 + NFR-1~6 | ✅ 代码完成,协议层 e2e 测试 PASS,待用户加载扩展验收 |
 | **阶段二:精确化** | debugger 回退 snapshot、page_eval 高危通道 | ✅ 完成(page_eval + page_snapshot_precise) |
-| **阶段三:扩展能力** | cookie/storage、skill 层、编排 | 未开始 |
+| **阶段三:扩展能力** | cookie/storage、skill 层、编排 | 🔄 cookie/storage 已完成;skill 层/编排未开始 |
 
 ## 8. 验收标准(v0.1)
 

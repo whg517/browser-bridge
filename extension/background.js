@@ -102,6 +102,9 @@ async function dispatch(req) {
     case "page_snapshot_precise":
       // Handled in SW via chrome.debugger; does NOT go through content.js.
       return await snapshotPrecise(req.tabId, args);
+    case "cookie_get":
+      // chrome.cookies API is only available in SW context.
+      return await cookieGet(req.tabId, args);
   }
 
   // Page-level ops need a content script in the target tab.
@@ -319,6 +322,71 @@ function truncateUrl(u) {
 function truncateAx(s) {
   if (typeof s !== "string") return s;
   return s.length > 120 ? s.slice(0, 120) + "…" : s;
+}
+
+// ---- cookie_get (chrome.cookies API, SW-only) ----------------------------
+//
+// Read-only access to cookies for allowlisted hosts. chrome.cookies is
+// naturally scoped by host_permissions, so the blast radius is the same as
+// the existing tools. httpOnly cookies are readable here — that's the whole
+// point (session tokens live there). Values are masked before leaving the
+// extension context (see ADR-0010). No set/remove: write would allow forging
+// httpOnly cookies (session fixation), which even page XSS cannot do.
+
+async function cookieGet(maybeTabId, args) {
+  // If the caller didn't pass url/domain, default to the active tab's URL so
+  // "cookie_get {}" means "cookies for the page I'm looking at".
+  let { url, domain, name } = args || {};
+  if (!url && !domain) {
+    const tab = await resolveTargetTab(maybeTabId);
+    await ensureAllowed(tab.url);
+    url = tab.url;
+  } else if (url) {
+    await ensureAllowed(url);
+  }
+  // domain filter: we cannot check host_permissions against a bare domain
+  // cheaply, so we rely on chrome.cookies.getAll to return only what the
+  // extension is permitted to see (it silently omits unauthorized hosts).
+
+  const filter = {};
+  if (url) filter.url = url;
+  if (domain) filter.domain = domain;
+  if (name) filter.name = name;
+
+  const cookies = await chrome.cookies.getAll(filter);
+  if (!cookies || cookies.length === 0) {
+    return {
+      cookies: [],
+      count: 0,
+      hint: "No cookies matched. If you expected some, verify the host is in the allowlist (popup → Allowed sites).",
+    };
+  }
+  // Mask the value only; keep name/domain/httpOnly etc. for diagnostics.
+  const out = cookies.map((c) => ({
+    name: c.name,
+    value: maskCookieValue(c.value),
+    domain: c.domain,
+    path: c.path,
+    httpOnly: c.httpOnly,
+    secure: c.secure,
+    sameSite: c.sameSite,
+    session: c.session,
+    expirationDate: c.expirationDate,
+  }));
+  return { cookies: out, count: out.length };
+}
+
+// Mask a cookie value. Same pattern catalogue as content.js maskString
+// (ADR-0008): JWT, long hex, long numbers, credential-like strings.
+function maskCookieValue(v) {
+  if (typeof v !== "string") return v;
+  if (v.length < 8) return v;
+  let out = v;
+  out = out.replace(/ey[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g, "••••[jwt]");
+  out = out.replace(/\b[a-fA-F0-9]{32,}\b/g, "••••[hex]");
+  out = out.replace(/\b\d{12,}\b/g, "••••[num]");
+  out = out.replace(/(?:bearer|token|password|secret|api[_-]?key)\s*[:=]\s*\S+/gi, "••••[redacted]");
+  return out;
 }
 
 // ---- target tab resolution ------------------------------------------------

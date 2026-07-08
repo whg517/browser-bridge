@@ -180,6 +180,12 @@ def test_mcp_handshake_and_tools():
         ps = next(t for t in tools["result"]["tools"] if t["name"] == "page_snapshot_precise")
         check("debugger" in ps["description"].lower(),
               "page_snapshot_precise description mentions debugger")
+        check("cookie_get" in names, "tools/list includes cookie_get")
+        check("storage_get" in names, "tools/list includes storage_get")
+        # cookie_get description must mention httpOnly + read-only
+        ck = next(t for t in tools["result"]["tools"] if t["name"] == "cookie_get")
+        check("httpOnly" in ck["description"], "cookie_get description mentions httpOnly")
+        check("masked" in ck["description"].lower(), "cookie_get description mentions masking")
     finally:
         try:
             mcp.stdin.close()
@@ -337,6 +343,111 @@ def test_page_snapshot_precise_round_trip():
         mcp.wait(timeout=3)
 
 
+def test_cookie_get_round_trip():
+    print("\n[test] cookie_get round-trip (op + args reach extension)")
+    try:
+        os.remove(LOCK)
+    except FileNotFoundError:
+        pass
+    mcp = subprocess.Popen([BIN], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                           stderr=subprocess.PIPE, text=True)
+    try:
+        lf = wait_lock()
+        check(lf is not None, "lock file written")
+        captured = {}
+
+        def responder(req):
+            captured["req"] = req
+            # Mirror what background.js cookieGet returns: cookies with masked
+            # values but preserved structure fields.
+            return {"id": req["id"], "ok": True, "data": {
+                "cookies": [
+                    {"name": "session", "value": "••••[jwt]", "domain": ".example.com",
+                     "path": "/", "httpOnly": True, "secure": True,
+                     "sameSite": "lax", "session": False},
+                ],
+                "count": 1,
+            }}
+
+        s, serve = mock_extension(lf, responder)
+        c = McpClient(mcp)
+        c.initialize()
+        c.initialized()
+        time.sleep(0.1)
+        served = []
+        t = threading.Thread(target=lambda: served.append(serve()))
+        t.start()
+
+        r = c.call("cookie_get", {"url": "https://example.com"}, _id=10)
+        t.join(timeout=3)
+        check(bool(served), "cookie_get BridgeReq reached extension")
+        check(captured.get("req", {}).get("op") == "cookie_get",
+              "forwarded op is cookie_get")
+        check(captured["req"]["args"].get("url") == "https://example.com",
+              "forwarded args.url matches")
+        content = json.loads(r["result"]["content"][0]["text"])
+        check(content["cookies"][0]["httpOnly"] is True,
+              "cookie structure (httpOnly) preserved")
+        check("••••" in content["cookies"][0]["value"],
+              "cookie value is masked")
+        s.close()
+    finally:
+        try:
+            mcp.stdin.close()
+        except Exception:
+            pass
+        mcp.wait(timeout=3)
+
+
+def test_storage_get_round_trip():
+    print("\n[test] storage_get round-trip (op reaches extension)")
+    try:
+        os.remove(LOCK)
+    except FileNotFoundError:
+        pass
+    mcp = subprocess.Popen([BIN], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                           stderr=subprocess.PIPE, text=True)
+    try:
+        lf = wait_lock()
+        check(lf is not None, "lock file written")
+        captured = {}
+
+        def responder(req):
+            captured["req"] = req
+            return {"id": req["id"], "ok": True, "data": {
+                "key": "auth_token",
+                "found": True,
+                "value": "••••[jwt]",
+            }}
+
+        s, serve = mock_extension(lf, responder)
+        c = McpClient(mcp)
+        c.initialize()
+        c.initialized()
+        time.sleep(0.1)
+        served = []
+        t = threading.Thread(target=lambda: served.append(serve()))
+        t.start()
+
+        r = c.call("storage_get", {"type": "local", "key": "auth_token"}, _id=11)
+        t.join(timeout=3)
+        check(bool(served), "storage_get BridgeReq reached extension")
+        check(captured.get("req", {}).get("op") == "storage_get",
+              "forwarded op is storage_get")
+        check(captured["req"]["args"].get("key") == "auth_token",
+              "forwarded args.key matches")
+        content = json.loads(r["result"]["content"][0]["text"])
+        check(content.get("found") is True, "storage result has found:true")
+        check("••••" in content.get("value", ""), "storage value is masked")
+        s.close()
+    finally:
+        try:
+            mcp.stdin.close()
+        except Exception:
+            pass
+        mcp.wait(timeout=3)
+
+
 def test_native_host_mode():
     print("\n[test] --native-host mode with real NM framing")
     try:
@@ -417,6 +528,8 @@ def main():
     test_tab_list_round_trip()
     test_page_eval_round_trip()
     test_page_snapshot_precise_round_trip()
+    test_cookie_get_round_trip()
+    test_storage_get_round_trip()
     test_native_host_mode()
     test_unknown_method_returns_32601()
     print(f"\n{'='*40}\n{_passed} passed, {_failed} failed")
