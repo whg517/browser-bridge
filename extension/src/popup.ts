@@ -88,8 +88,15 @@ function send(msg: any): Promise<any> {
 }
 
 function escapeHtml(s: string) {
-  return s.replace(/[&<>"']/g, (c) =>
-    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" } as Record<string, string>)[c]
+  return s.replace(
+    /[&<>"']/g,
+    (c) =>
+      (
+        ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }) as Record<
+          string,
+          string
+        >
+      )[c]
   );
 }
 function escapeAttr(s: string) {

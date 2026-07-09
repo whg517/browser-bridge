@@ -41,9 +41,6 @@ const TOOLS = [
   { op: "storage_get", desc: "读取 localStorage/sessionStorage(脱敏)" },
 ];
 
-// @ts-ignore -- noUnusedLocals: kept for parity with background.ts; unused here
-const STORAGE_KEY = "allowlist";
-
 function $(id: string): any {
   return document.getElementById(id);
 }
@@ -192,7 +189,7 @@ function wireAddSite() {
   const input = $("new-site");
   const btn = $("add-site");
   async function add() {
-    let v = input.value.trim();
+    const v = input.value.trim();
     if (!v) return;
     if (!/^https?:\/\/[^/]+\//.test(v) && !/^https?:\/\/[^/]+$/.test(v)) {
       flashToast("格式应为 https://域名/*");
@@ -230,8 +227,15 @@ function send(msg: any): Promise<any> {
   });
 }
 function escapeHtml(s: any) {
-  return String(s).replace(/[&<>"']/g, (c) =>
-    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" } as Record<string, string>)[c]
+  return String(s).replace(
+    /[&<>"']/g,
+    (c) =>
+      (
+        ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }) as Record<
+          string,
+          string
+        >
+      )[c]
   );
 }
 function escapeAttr(s: any) {
@@ -244,7 +248,12 @@ function escapeAttr(s: any) {
   const s = await loadSettings();
 
   // Boolean toggles.
-  for (const key of ["pageEvalEnabled", "evalMask", "confirmHighRiskClick", "warnPreciseSnapshot"]) {
+  for (const key of [
+    "pageEvalEnabled",
+    "evalMask",
+    "confirmHighRiskClick",
+    "warnPreciseSnapshot",
+  ]) {
     const input = $(key);
     input.checked = s[key] !== false;
     const warn = $(`${key}-warn`);

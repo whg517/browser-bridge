@@ -78,11 +78,9 @@ declare global {
     refMap = new Map();
 
     const out = [];
-    const walker = document.createTreeWalker(
-      document.body,
-      NodeFilter.SHOW_ELEMENT,
-      { acceptNode: (el) => (isInteractive(el) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP) }
-    );
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT, {
+      acceptNode: (el) => (isInteractive(el) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP),
+    });
 
     let el: Node | null = walker.currentNode;
     // TreeWalker's first nextNode() walks from currentNode; start from root.
@@ -131,13 +129,33 @@ declare global {
   }
 
   const INTERACTIVE_TAGS = new Set([
-    "a", "button", "input", "textarea", "select", "summary", "details",
-    "label", "option", "optgroup",
+    "a",
+    "button",
+    "input",
+    "textarea",
+    "select",
+    "summary",
+    "details",
+    "label",
+    "option",
+    "optgroup",
   ]);
   const INTERACTIVE_ROLES = new Set([
-    "button", "link", "checkbox", "radio", "textbox", "searchbox", "menuitem",
-    "menuitemcheckbox", "menuitemradio", "tab", "combobox", "listbox",
-    "option", "switch", "treeitem",
+    "button",
+    "link",
+    "checkbox",
+    "radio",
+    "textbox",
+    "searchbox",
+    "menuitem",
+    "menuitemcheckbox",
+    "menuitemradio",
+    "tab",
+    "combobox",
+    "listbox",
+    "option",
+    "switch",
+    "treeitem",
   ]);
 
   function roleOf(el: any) {
@@ -327,8 +345,8 @@ declare global {
           el.tagName === "TEXTAREA"
             ? HTMLTextAreaElement.prototype
             : el.tagName === "SELECT"
-            ? HTMLSelectElement.prototype
-            : HTMLInputElement.prototype;
+              ? HTMLSelectElement.prototype
+              : HTMLInputElement.prototype;
         const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
         if (setter) {
           setter.call(el, value);
@@ -349,7 +367,9 @@ declare global {
   function text() {
     // Mask password fields.
     const cloneSrc = document.body.cloneNode(true) as HTMLElement;
-    cloneSrc.querySelectorAll<HTMLInputElement>("input[type=password]").forEach((i) => (i.value = "••••••"));
+    cloneSrc
+      .querySelectorAll<HTMLInputElement>("input[type=password]")
+      .forEach((i) => (i.value = "••••••"));
     // Mask long digit runs that look like card numbers.
     const txt = (cloneSrc.innerText || "").replace(/\b\d{12,19}\b/g, "••••••");
     return { text: truncate(txt, 20000), url: location.href };
@@ -378,10 +398,18 @@ declare global {
     } else if (args.direction) {
       const dh = window.innerHeight * 0.9;
       switch (args.direction) {
-        case "down": window.scrollBy(0, dh); break;
-        case "up": window.scrollBy(0, -dh); break;
-        case "top": window.scrollTo(0, 0); break;
-        case "bottom": window.scrollTo(0, document.body.scrollHeight); break;
+        case "down":
+          window.scrollBy(0, dh);
+          break;
+        case "up":
+          window.scrollBy(0, -dh);
+          break;
+        case "top":
+          window.scrollTo(0, 0);
+          break;
+        case "bottom":
+          window.scrollTo(0, document.body.scrollHeight);
+          break;
       }
     } else {
       throw new Error("scroll needs `direction` or `pixels`");
@@ -467,10 +495,7 @@ declare global {
     // global scope regardless of the strict-mode closure this file runs in.
     let result: any;
     try {
-      const fn = new Function(
-        '"use strict";\n' +
-        'return (async () => {\n' + code + '\n})();'
-      );
+      const fn = new Function('"use strict";\n' + "return (async () => {\n" + code + "\n})();");
       result = await fn();
     } catch (e: any) {
       // Surface JS errors to the model as structured data, not a throw, so
@@ -523,18 +548,28 @@ declare global {
         if (value instanceof Map) {
           const obj: any = {};
           let i = 0;
-          for (const [k, v] of value) { obj[String(k)] = serializeResult(v, seen, depth + 1); if (++i > 1000) break; }
+          for (const [k, v] of value) {
+            obj[String(k)] = serializeResult(v, seen, depth + 1);
+            if (++i > 1000) break;
+          }
           return { __Map: obj };
         }
         if (value instanceof Set) {
-          return { __Set: Array.from(value).slice(0, 1000).map((v) => serializeResult(v, seen, depth + 1)) };
+          return {
+            __Set: Array.from(value)
+              .slice(0, 1000)
+              .map((v) => serializeResult(v, seen, depth + 1)),
+          };
         }
         if (value instanceof Date) return { __Date: value.toISOString() };
         if (value instanceof RegExp) return { __RegExp: value.toString() };
         const out: any = {};
         let count = 0;
         for (const key of Object.keys(value)) {
-          if (count++ > 1000) { out.__truncated = true; break; }
+          if (count++ > 1000) {
+            out.__truncated = true;
+            break;
+          }
           out[key] = serializeResult(value[key], seen, depth + 1);
         }
         return out;
@@ -581,7 +616,10 @@ declare global {
     // Long digit runs (>=12): card numbers, account ids
     out = out.replace(/\b\d{12,}\b/g, "••••[num]");
     // Bearer / key-like patterns
-    out = out.replace(/(?:bearer|token|password|secret|api[_-]?key)\s*[:=]\s*\S+/gi, "••••[redacted]");
+    out = out.replace(
+      /(?:bearer|token|password|secret|api[_-]?key)\s*[:=]\s*\S+/gi,
+      "••••[redacted]"
+    );
     // If the whole string looks like a credential, mask fully
     if (SENSITIVE_KEY.test(s) && s.length >= 8 && !/\s/.test(s)) {
       return "••••[sensitive]";
@@ -669,7 +707,7 @@ declare global {
       if (k === null) continue;
       try {
         entries[k] = maskString(store.getItem(k) || "");
-      } catch (e) {
+      } catch {
         entries[k] = "[unreadable]";
       }
       count++;
@@ -790,11 +828,19 @@ declare global {
       card.querySelector<HTMLElement>(".zcb-toast-allow")!.onclick = () => finish(true);
       card.querySelector<HTMLElement>(".zcb-toast-deny")!.onclick = () => finish(false);
       // Esc key also denies, for keyboard users.
-      const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { finish(false); } };
+      const onKey = (e: KeyboardEvent) => {
+        if (e.key === "Escape") {
+          finish(false);
+        }
+      };
       card.addEventListener("keydown", onKey);
       // Auto-deny (longer than click's — user needs time to read code).
       // Timeout is configurable via settings (default 45s).
-      getSetting("evalToastTimeoutMs").then((ms) => setTimeout(() => { finish(false); }, ms));
+      getSetting("evalToastTimeoutMs").then((ms) =>
+        setTimeout(() => {
+          finish(false);
+        }, ms)
+      );
     });
   }
 

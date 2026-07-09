@@ -44,8 +44,8 @@ function getSetting(key: keyof Settings): Promise<any> {
 
 // ---- native port lifecycle ------------------------------------------------
 
-let port: chrome.runtime.Port | null = null;       // current chrome.runtime.Port to the native host
-let portOk = false;    // did the most recent connect succeed?
+let port: chrome.runtime.Port | null = null; // current chrome.runtime.Port to the native host
+let portOk = false; // did the most recent connect succeed?
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
 function connectNative() {
@@ -67,7 +67,7 @@ function connectNative() {
   }
 }
 
-function onNativeDisconnect(p: chrome.runtime.Port) {
+function onNativeDisconnect(_p: chrome.runtime.Port) {
   portOk = false;
   port = null;
   const err = chrome.runtime.lastError;
@@ -188,7 +188,9 @@ async function tabClose(tabId: number) {
 async function confirmTabClose(tab: chrome.tabs.Tab) {
   if (!tab || !tab.id) throw new Error("tab not found");
   if (!tab.url || !/^https?:\/\//i.test(tab.url)) {
-    throw new Error("tab_close can only close http(s) tabs because the close confirmation must be shown in the page");
+    throw new Error(
+      "tab_close can only close http(s) tabs because the close confirmation must be shown in the page"
+    );
   }
   await ensureAllowed(tab.url);
   await injectIfNeeded(tab.id);
@@ -213,9 +215,12 @@ async function confirmTabClose(tab: chrome.tabs.Tab) {
 
 // URLs the debugger cannot attach to. Filter before calling attach.
 const NON_DEBUGGABLE = [
-  /^chrome:\/\//i, /^chrome-extension:\/\//i,
+  /^chrome:\/\//i,
+  /^chrome-extension:\/\//i,
   /^https:\/\/chrome\.google\.com\/webstore/i,
-  /^view-source:/i, /^about:/i, /^edge:\/\//i,
+  /^view-source:/i,
+  /^about:/i,
+  /^edge:\/\//i,
 ];
 
 function isDebuggable(url: string | undefined) {
@@ -252,9 +257,24 @@ function dbgSend(tabId: number, method: string, params: any = {}): Promise<any> 
 // AXNode roles worth exposing (mirror of content.js INTERACTIVE set, plus
 // a few structural ones that are useful context).
 const PRECISE_INTERACTIVE_ROLES = new Set([
-  "button", "link", "checkbox", "radio", "textbox", "searchbox", "menuitem",
-  "menuitemcheckbox", "menuitemradio", "tab", "combobox", "listbox",
-  "option", "switch", "treeitem", "menuItem", "spinButton", "slider",
+  "button",
+  "link",
+  "checkbox",
+  "radio",
+  "textbox",
+  "searchbox",
+  "menuitem",
+  "menuitemcheckbox",
+  "menuitemradio",
+  "tab",
+  "combobox",
+  "listbox",
+  "option",
+  "switch",
+  "treeitem",
+  "menuItem",
+  "spinButton",
+  "slider",
 ]);
 
 function axValue(v: any): any {
@@ -263,7 +283,7 @@ function axValue(v: any): any {
   return v;
 }
 
-async function snapshotPrecise(maybeTabId: number | undefined, args: any) {
+async function snapshotPrecise(maybeTabId: number | undefined, _args: any) {
   const tab = await resolveTargetTab(maybeTabId);
   await ensureAllowed(tab.url);
 
@@ -279,10 +299,14 @@ async function snapshotPrecise(maybeTabId: number | undefined, args: any) {
   await injectIfNeeded(tab.id!);
   let proceed: any = true; // default: proceed (skip warning)
   if (warnPrecise) {
-    proceed = await chrome.tabs.sendMessage(tab.id!, {
-      op: "_info_toast",
-      args: { message: "即将精确扫描页面 — Chrome 顶部会显示『调试中』横幅,扫描后自动消失(约 1 秒)。" },
-    }).catch(() => true /* content script missing → proceed anyway */);
+    proceed = await chrome.tabs
+      .sendMessage(tab.id!, {
+        op: "_info_toast",
+        args: {
+          message: "即将精确扫描页面 — Chrome 顶部会显示『调试中』横幅,扫描后自动消失(约 1 秒)。",
+        },
+      })
+      .catch(() => true /* content script missing → proceed anyway */);
   }
   if (proceed === false || (proceed && proceed.__cancelled)) {
     return { cancelled: true };
@@ -298,7 +322,9 @@ async function snapshotPrecise(maybeTabId: number | undefined, args: any) {
   } catch (e: any) {
     const msg = String(e.message || e);
     if (/another debugger/i.test(msg)) {
-      throw new Error("该标签页已打开 DevTools,page_snapshot_precise 无法附加。请关闭 DevTools 后重试。");
+      throw new Error(
+        "该标签页已打开 DevTools,page_snapshot_precise 无法附加。请关闭 DevTools 后重试。"
+      );
     }
     throw e;
   }
@@ -358,7 +384,7 @@ async function snapshotPrecise(maybeTabId: number | undefined, args: any) {
         ref,
         role: axValue(n.role),
         name: truncateAx(axValue(n.name)),
-        selector: descriptor.tag ? (descriptor.tag + descriptor.id) : undefined,
+        selector: descriptor.tag ? descriptor.tag + descriptor.id : undefined,
         value: descriptor.value,
       });
     }
@@ -444,7 +470,10 @@ function maskCookieValue(v: any): any {
   out = out.replace(/ey[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g, "••••[jwt]");
   out = out.replace(/\b[a-fA-F0-9]{32,}\b/g, "••••[hex]");
   out = out.replace(/\b\d{12,}\b/g, "••••[num]");
-  out = out.replace(/(?:bearer|token|password|secret|api[_-]?key)\s*[:=]\s*\S+/gi, "••••[redacted]");
+  out = out.replace(
+    /(?:bearer|token|password|secret|api[_-]?key)\s*[:=]\s*\S+/gi,
+    "••••[redacted]"
+  );
   return out;
 }
 
@@ -464,12 +493,10 @@ async function injectIfNeeded(tabId: number) {
   // permission for this origin. Ping first so repeated tool calls stay cheap.
   try {
     await chrome.tabs.sendMessage(tabId, { op: "ping" });
-  } catch (e) {
+  } catch {
     // Not injected yet — inject now (requires scripting permission + host).
-    // `tab` is fetched for its side effect (rejects if the tab is gone); the
-    // result is intentionally unused. Comment is stripped from the bundle.
-    // @ts-ignore -- noUnusedLocals: value fetched only for its side effect
-    const tab = await chrome.tabs.get(tabId);
+    // Fetch the tab purely for its side effect: rejects if the tab is gone.
+    await chrome.tabs.get(tabId);
     await chrome.scripting.executeScript({
       target: { tabId },
       files: ["content.js"],
@@ -488,11 +515,6 @@ async function injectIfNeeded(tabId: number) {
 // ---- allowlist enforcement ------------------------------------------------
 
 const STORAGE_KEY = "allowlist";
-// @ts-ignore -- noUnusedLocals: reserved list, intentionally unreferenced in v0.1
-const SENSITIVE_HOSTS = [
-  // High-risk domains where we always require confirmation, never auto-allow.
-  // Kept minimal for v0.1; extend as needed.
-];
 
 async function getAllowlist(): Promise<string[]> {
   const { [STORAGE_KEY]: list } = await chrome.storage.local.get(STORAGE_KEY);
@@ -537,7 +559,9 @@ async function ensureDomainAllowed(domain: any) {
   const list = await getAllowlist();
   const allowed = list.some((glob) => hostFromOriginGlob(glob) === host);
   if (!allowed) {
-    throw new Error(`cookie domain not allowed by user: ${domain}. Use a URL for the active allowlisted origin, or approve that exact host first.`);
+    throw new Error(
+      `cookie domain not allowed by user: ${domain}. Use a URL for the active allowlisted origin, or approve that exact host first.`
+    );
   }
 }
 
