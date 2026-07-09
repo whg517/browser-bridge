@@ -1,16 +1,15 @@
 //! Native-host mode: the `--native-host` subprocess spawned by Chrome.
 //!
 //! It is intentionally dumb. Two threads:
-//!   - stdin  -> TCP  : read native-messaging frames, forward each JSON value
-//!                      as an NDJSON line over the bridge socket.
-//!   - TCP    -> stdout: read NDJSON lines from the bridge socket, frame each
-//!                      as a native-messaging message on stdout.
+//! - stdin -> TCP: read native-messaging frames, forward each JSON value as an
+//!   NDJSON line over the bridge socket.
+//! - TCP -> stdout: read NDJSON lines from the bridge socket, frame each as a
+//!   native-messaging message on stdout.
 //!
 //! All real logic lives in the MCP server on the other side of the socket.
 //! EOF on stdin (Chrome disconnected) is our shutdown signal.
 
 use std::io::{self, BufRead, BufReader, BufWriter};
-use std::sync::mpsc;
 use std::thread;
 
 use crate::ipc;
@@ -38,23 +37,31 @@ pub fn run() -> i32 {
         }
     };
 
-    // We need a shutdown signal between the two threads so that when one side
-    // closes the other doesn't block forever. A channel whose receiver is
-    // dropped on shutdown acts as a "kick".
-    let (stop_tx, stop_rx) = mpsc::channel::<()>();
+    // Shutdown policy: the native host has no useful work to do if EITHER
+    // direction of the bridge breaks. When Chrome closes the port (stdin EOF)
+    // we must exit; when the MCP server drops our TCP connection (e.g. a new
+    // server instance supplanted the old one) we ALSO must exit promptly, so
+    // that Chrome observes the port closing and the extension reconnects
+    // against the freshly-written lock file.
+    //
+    // Earlier code tried to coordinate the two threads with a channel and
+    // joined both handles. That deadlocks when the TCP side dies: the stdin
+    // thread is blocked inside nm_read_frame waiting for a frame that Chrome
+    // (still alive) will never send, so the join never returns. The process
+    // lingers as a zombie holding an open stdin/stdout pair, which means the
+    // extension's onDisconnect never fires and it never reconnects — the
+    // MCP server's tool calls then report "extension not connected".
+    //
+    // Fix: let whichever thread finishes first terminate the whole process.
+    // process::exit runs no destructors, but our writers flush after every
+    // frame, so no buffered data is lost on the normal close paths.
+    let tcp_out = stream;
 
     // Thread A: stdin -> TCP
-    let tcp_out = stream;
-    let stop_tx_a = stop_tx.clone();
-    let in_handle = thread::spawn(move || {
+    thread::spawn(move || {
         let mut stdin = io::stdin();
         let mut tcp = BufWriter::new(tcp_out);
         loop {
-            // stop_rx.recv_timeout would block reading stdin anyway; just
-            // check between frames.
-            if stop_rx.try_recv().is_ok() {
-                break;
-            }
             let frame: Option<Value> = match nm_read_frame(&mut stdin) {
                 Ok(v) => v,
                 Err(e) => {
@@ -75,12 +82,15 @@ pub fn run() -> i32 {
                 break;
             }
         }
-        let _ = stop_tx_a.send(());
+        // Either side breaking means this process is done. Exit immediately so
+        // Chrome tears down the port and the extension reconnects.
+        eprintln!("[native-host] stdin->TCP thread ending; exiting process");
+        std::process::exit(0);
     });
 
-    // Thread B: TCP -> stdout
+    // Thread B: TCP -> stdout. This thread is the main one; if IT exits we
+    // simply fall through to the return below (which also ends the process).
     let stdout = io::stdout();
-    let stop_tx_b = stop_tx.clone();
     let out_handle = thread::spawn(move || {
         let tcp_in = BufReader::new(stream_clone);
         let mut lines = tcp_in.lines();
@@ -120,14 +130,13 @@ pub fn run() -> i32 {
                 break;
             }
         }
-        let _ = stop_tx_b.send(());
+        eprintln!("[native-host] TCP->stdout thread ending");
     });
 
-    // Wait for either side to finish; the other thread will see the stop
-    // signal and exit on its next iteration.
-    let _ = in_handle.join();
+    // Block until the TCP->stdout thread ends. The stdin->TCP thread will
+    // have already called process::exit(0) on its own close path; if it
+    // hasn't, we exit here once the TCP side closes.
     let _ = out_handle.join();
-    let _ = stop_tx.send(());
     eprintln!("[native-host] exit");
-    0
+    std::process::exit(0);
 }
