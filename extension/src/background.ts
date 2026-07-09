@@ -14,11 +14,13 @@
 // State kept in chrome.storage.local (survives SW restarts):
 //   - allowlist: string[] of origin globs like "https://example.com/*"
 
+import type { Settings, BridgeReq } from "./types";
+
 const NATIVE_HOST = "com.zcode.browser_bridge";
 
 // Default values for the configurable settings managed by the options page.
 // KEEP IN SYNC with options.js DEFAULTS and content.js DEFAULTS.
-const DEFAULTS = {
+const DEFAULTS: Settings = {
   pageEvalEnabled: true,
   evalMask: true,
   confirmHighRiskClick: true,
@@ -31,7 +33,7 @@ const DEFAULTS = {
 };
 
 // Read a setting with its default. Resolves a single key.
-function getSetting(key) {
+function getSetting(key: keyof Settings): Promise<any> {
   return new Promise((resolve) => {
     chrome.storage.local.get(key, (r) => {
       const v = r[key];
@@ -42,9 +44,9 @@ function getSetting(key) {
 
 // ---- native port lifecycle ------------------------------------------------
 
-let port = null;       // current chrome.runtime.Port to the native host
+let port: chrome.runtime.Port | null = null;       // current chrome.runtime.Port to the native host
 let portOk = false;    // did the most recent connect succeed?
-let reconnectTimer = null;
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
 function connectNative() {
   // Tear down any previous handle first.
@@ -65,7 +67,7 @@ function connectNative() {
   }
 }
 
-function onNativeDisconnect(p) {
+function onNativeDisconnect(p: chrome.runtime.Port) {
   portOk = false;
   port = null;
   const err = chrome.runtime.lastError;
@@ -86,7 +88,7 @@ function scheduleReconnect() {
 
 // ---- inbound requests from the host (→ forwarded to content scripts) -----
 
-function onNativeMessage(msg) {
+function onNativeMessage(msg: any) {
   // Each message is a BridgeReq: { id, op, tabId?, args }.
   if (!msg || typeof msg.id === "undefined" || !msg.op) {
     console.warn("[bb] malformed BridgeReq", msg);
@@ -98,7 +100,7 @@ function onNativeMessage(msg) {
   );
 }
 
-function sendResponse(id, ok, data, error) {
+function sendResponse(id: any, ok: boolean, data?: any, error?: string) {
   if (!port) return; // host gone; nothing to do
   try {
     port.postMessage({ id, ok, data, error: ok ? undefined : error });
@@ -110,7 +112,7 @@ function sendResponse(id, ok, data, error) {
 
 // ---- dispatch: route an op to the tab that should act ---------------------
 
-async function dispatch(req) {
+async function dispatch(req: BridgeReq): Promise<any> {
   const { op, args } = req;
 
   // Tool enable/disable gate: if the op is in the user's disabledTools list,
@@ -144,9 +146,9 @@ async function dispatch(req) {
   // Page-level ops need a content script in the target tab.
   const tab = await resolveTargetTab(req.tabId);
   await ensureAllowed(tab.url);
-  await injectIfNeeded(tab.id);
+  await injectIfNeeded(tab.id!);
   // content.js listens for these and replies.
-  const resp = await chrome.tabs.sendMessage(tab.id, { op, args, tabId: tab.id });
+  const resp: any = await chrome.tabs.sendMessage(tab.id!, { op, args, tabId: tab.id });
   if (resp && resp.__error) throw new Error(resp.__error);
   return resp;
 }
@@ -164,33 +166,33 @@ async function tabList() {
   }));
 }
 
-async function tabFocus(tabId) {
+async function tabFocus(tabId: number) {
   const t = await chrome.tabs.update(tabId, { active: true });
   await chrome.windows.update(t.windowId, { focused: true });
   return { focused: tabId };
 }
 
-async function tabOpen(url) {
+async function tabOpen(url: string) {
   await ensureAllowed(url);
   const t = await chrome.tabs.create({ url });
   return { opened: t.id, url };
 }
 
-async function tabClose(tabId) {
+async function tabClose(tabId: number) {
   const tab = await chrome.tabs.get(tabId);
   await confirmTabClose(tab);
   await chrome.tabs.remove(tabId);
   return { closed: tabId };
 }
 
-async function confirmTabClose(tab) {
+async function confirmTabClose(tab: chrome.tabs.Tab) {
   if (!tab || !tab.id) throw new Error("tab not found");
   if (!tab.url || !/^https?:\/\//i.test(tab.url)) {
     throw new Error("tab_close can only close http(s) tabs because the close confirmation must be shown in the page");
   }
   await ensureAllowed(tab.url);
   await injectIfNeeded(tab.id);
-  const resp = await chrome.tabs.sendMessage(tab.id, {
+  const resp: any = await chrome.tabs.sendMessage(tab.id, {
     op: "_confirm_toast",
     args: { message: `Close tab "${tab.title || tab.url}"?` },
   });
@@ -216,14 +218,14 @@ const NON_DEBUGGABLE = [
   /^view-source:/i, /^about:/i, /^edge:\/\//i,
 ];
 
-function isDebuggable(url) {
+function isDebuggable(url: string | undefined) {
   if (!url) return false;
   return !NON_DEBUGGABLE.some((re) => re.test(url));
 }
 
 // Promisified chrome.debugger primitives.
-function dbgAttach(tabId) {
-  return new Promise((resolve, reject) => {
+function dbgAttach(tabId: number) {
+  return new Promise<void>((resolve, reject) => {
     chrome.debugger.attach({ tabId }, "1.3", () => {
       const err = chrome.runtime.lastError;
       if (err) reject(new Error(err.message));
@@ -231,13 +233,13 @@ function dbgAttach(tabId) {
     });
   });
 }
-function dbgDetach(tabId) {
-  return new Promise((resolve) => {
+function dbgDetach(tabId: number) {
+  return new Promise<void>((resolve) => {
     // detach must never throw — used in finally. Swallow errors.
     chrome.debugger.detach({ tabId }, () => resolve());
   });
 }
-function dbgSend(tabId, method, params = {}) {
+function dbgSend(tabId: number, method: string, params: any = {}): Promise<any> {
   return new Promise((resolve, reject) => {
     chrome.debugger.sendCommand({ tabId }, method, params, (result) => {
       const err = chrome.runtime.lastError;
@@ -255,13 +257,13 @@ const PRECISE_INTERACTIVE_ROLES = new Set([
   "option", "switch", "treeitem", "menuItem", "spinButton", "slider",
 ]);
 
-function axValue(v) {
+function axValue(v: any): any {
   // AXValue shapes: {type:"string", value:"..."} or plain value.
   if (v && typeof v === "object" && "value" in v) return v.value;
   return v;
 }
 
-async function snapshotPrecise(maybeTabId, args) {
+async function snapshotPrecise(maybeTabId: number | undefined, args: any) {
   const tab = await resolveTargetTab(maybeTabId);
   await ensureAllowed(tab.url);
 
@@ -274,10 +276,10 @@ async function snapshotPrecise(maybeTabId, args) {
   // Warn the user via an informational toast in the page. Proceed unless
   // they actively cancel within the timeout. Skippable via settings.
   const warnPrecise = await getSetting("warnPreciseSnapshot");
-  await injectIfNeeded(tab.id);
-  let proceed = true; // default: proceed (skip warning)
+  await injectIfNeeded(tab.id!);
+  let proceed: any = true; // default: proceed (skip warning)
   if (warnPrecise) {
-    proceed = await chrome.tabs.sendMessage(tab.id, {
+    proceed = await chrome.tabs.sendMessage(tab.id!, {
       op: "_info_toast",
       args: { message: "即将精确扫描页面 — Chrome 顶部会显示『调试中』横幅,扫描后自动消失(约 1 秒)。" },
     }).catch(() => true /* content script missing → proceed anyway */);
@@ -292,8 +294,8 @@ async function snapshotPrecise(maybeTabId, args) {
 
   // Attach. On "another debugger attached" we surface a helpful error.
   try {
-    await dbgAttach(tab.id);
-  } catch (e) {
+    await dbgAttach(tab.id!);
+  } catch (e: any) {
     const msg = String(e.message || e);
     if (/another debugger/i.test(msg)) {
       throw new Error("该标签页已打开 DevTools,page_snapshot_precise 无法附加。请关闭 DevTools 后重试。");
@@ -303,11 +305,11 @@ async function snapshotPrecise(maybeTabId, args) {
 
   // From here on we MUST detach on every exit path.
   try {
-    const tree = await dbgSend(tab.id, "Accessibility.getFullAXTree", {});
+    const tree = await dbgSend(tab.id!, "Accessibility.getFullAXTree", {});
     const nodes = (tree && tree.nodes) || [];
 
     // Filter: only interactive, non-ignored nodes with a DOM handle.
-    const candidates = nodes.filter((n) => {
+    const candidates = nodes.filter((n: any) => {
       if (n.ignored) return false;
       if (!n.backendDOMNodeId) return false; // virtual nodes (markers, root)
       const role = axValue(n.role);
@@ -325,15 +327,15 @@ async function snapshotPrecise(maybeTabId, args) {
     for (const n of candidates) {
       idx += 1;
       const ref = `p${idx}`;
-      let descriptor;
+      let descriptor: any;
       try {
-        const resolved = await dbgSend(tab.id, "DOM.resolveNode", {
+        const resolved = await dbgSend(tab.id!, "DOM.resolveNode", {
           backendNodeId: n.backendDOMNodeId,
         });
         const objectId = resolved && resolved.object && resolved.object.objectId;
         if (!objectId) continue;
         // Tag the element AND read back a selector/id hint in one call.
-        const callRes = await dbgSend(tab.id, "Runtime.callFunctionOn", {
+        const callRes = await dbgSend(tab.id!, "Runtime.callFunctionOn", {
           objectId,
           functionDeclaration:
             "function(ref) {" +
@@ -347,7 +349,7 @@ async function snapshotPrecise(maybeTabId, args) {
           returnByValue: true,
         });
         descriptor = (callRes && callRes.result && callRes.result.value) || {};
-      } catch (e) {
+      } catch (e: any) {
         // Node may have been removed between getFullAXTree and resolve.
         console.warn("[bb] precise: skip node", ref, e.message);
         continue;
@@ -369,14 +371,14 @@ async function snapshotPrecise(maybeTabId, args) {
       precise: true,
     };
   } finally {
-    await dbgDetach(tab.id);
+    await dbgDetach(tab.id!);
   }
 }
 
-function truncateUrl(u) {
+function truncateUrl(u: string | undefined) {
   return (u || "").slice(0, 80);
 }
-function truncateAx(s) {
+function truncateAx(s: any): any {
   if (typeof s !== "string") return s;
   return s.length > 120 ? s.slice(0, 120) + "…" : s;
 }
@@ -390,7 +392,7 @@ function truncateAx(s) {
 // extension context (see ADR-0010). No set/remove: write would allow forging
 // httpOnly cookies (session fixation), which even page XSS cannot do.
 
-async function cookieGet(maybeTabId, args) {
+async function cookieGet(maybeTabId: number | undefined, args: any) {
   // If the caller didn't pass url/domain, default to the active tab's URL so
   // "cookie_get {}" means "cookies for the page I'm looking at".
   let { url, domain, name } = args || {};
@@ -405,7 +407,7 @@ async function cookieGet(maybeTabId, args) {
     await ensureDomainAllowed(domain);
   }
 
-  const filter = {};
+  const filter: any = {};
   if (url) filter.url = url;
   if (domain) filter.domain = domain;
   if (name) filter.name = name;
@@ -435,7 +437,7 @@ async function cookieGet(maybeTabId, args) {
 
 // Mask a cookie value. Same pattern catalogue as content.js maskString
 // (ADR-0008): JWT, long hex, long numbers, credential-like strings.
-function maskCookieValue(v) {
+function maskCookieValue(v: any): any {
   if (typeof v !== "string") return v;
   if (v.length < 8) return v;
   let out = v;
@@ -448,7 +450,7 @@ function maskCookieValue(v) {
 
 // ---- target tab resolution ------------------------------------------------
 
-async function resolveTargetTab(maybeTabId) {
+async function resolveTargetTab(maybeTabId: number | undefined): Promise<chrome.tabs.Tab> {
   if (maybeTabId) {
     return await chrome.tabs.get(maybeTabId);
   }
@@ -457,13 +459,16 @@ async function resolveTargetTab(maybeTabId) {
   return active;
 }
 
-async function injectIfNeeded(tabId) {
+async function injectIfNeeded(tabId: number) {
   // Content scripts are injected dynamically after the user grants the host
   // permission for this origin. Ping first so repeated tool calls stay cheap.
   try {
     await chrome.tabs.sendMessage(tabId, { op: "ping" });
   } catch (e) {
     // Not injected yet — inject now (requires scripting permission + host).
+    // `tab` is fetched for its side effect (rejects if the tab is gone); the
+    // result is intentionally unused. Comment is stripped from the bundle.
+    // @ts-ignore -- noUnusedLocals: value fetched only for its side effect
     const tab = await chrome.tabs.get(tabId);
     await chrome.scripting.executeScript({
       target: { tabId },
@@ -483,30 +488,31 @@ async function injectIfNeeded(tabId) {
 // ---- allowlist enforcement ------------------------------------------------
 
 const STORAGE_KEY = "allowlist";
+// @ts-ignore -- noUnusedLocals: reserved list, intentionally unreferenced in v0.1
 const SENSITIVE_HOSTS = [
   // High-risk domains where we always require confirmation, never auto-allow.
   // Kept minimal for v0.1; extend as needed.
 ];
 
-async function getAllowlist() {
+async function getAllowlist(): Promise<string[]> {
   const { [STORAGE_KEY]: list } = await chrome.storage.local.get(STORAGE_KEY);
   return Array.isArray(list) ? list : [];
 }
 
-async function setAllowlist(list) {
+async function setAllowlist(list: string[]) {
   await chrome.storage.local.set({ [STORAGE_KEY]: list });
 }
 
-function originGlobOf(url) {
+function originGlobOf(url: string | undefined) {
   try {
-    const u = new URL(url);
+    const u = new URL(url!);
     return `${u.protocol}//${u.host}/*`;
   } catch (_) {
     return null;
   }
 }
 
-function hostFromOriginGlob(glob) {
+function hostFromOriginGlob(glob: string) {
   try {
     return new URL(glob.replace(/\*$/, "")).host.toLowerCase();
   } catch (_) {
@@ -514,7 +520,7 @@ function hostFromOriginGlob(glob) {
   }
 }
 
-function normalizeCookieDomain(domain) {
+function normalizeCookieDomain(domain: any): string | null {
   if (typeof domain !== "string") return null;
   let d = domain.trim().toLowerCase();
   if (!d || d.includes("://") || d.includes("/") || d.includes("*")) return null;
@@ -522,7 +528,7 @@ function normalizeCookieDomain(domain) {
   return d || null;
 }
 
-async function ensureDomainAllowed(domain) {
+async function ensureDomainAllowed(domain: any) {
   const host = normalizeCookieDomain(domain);
   if (!host) throw new Error(`invalid cookie domain: ${domain}`);
   // Global bypass: if the user opted into "allow all sites", skip the
@@ -535,12 +541,12 @@ async function ensureDomainAllowed(domain) {
   }
 }
 
-function matchesAny(glob, list) {
+function matchesAny(glob: string, list: string[]) {
   return list.some((pattern) => simpleMatch(pattern, glob));
 }
 
 // Minimal glob match: supports trailing * only. Good enough for "host/*".
-function simpleMatch(pattern, target) {
+function simpleMatch(pattern: string, target: string) {
   if (pattern === target) return true;
   if (pattern.endsWith("/*")) {
     const base = pattern.slice(0, -2); // drop "/*"
@@ -552,7 +558,7 @@ function simpleMatch(pattern, target) {
   return false;
 }
 
-async function ensureAllowed(url) {
+async function ensureAllowed(url: string | undefined) {
   const glob = originGlobOf(url);
   if (!glob) throw new Error(`cannot parse url: ${url}`);
   // Global bypass: if the user opted into "allow all sites", skip the
@@ -573,7 +579,7 @@ async function ensureAllowed(url) {
 
 // Ask the user to approve a new origin. We surface a notification badge; the
 // popup handles the actual yes/no. Resolves true/false.
-function promptUserForAllow(glob) {
+function promptUserForAllow(glob: string): Promise<boolean> {
   return new Promise((resolve) => {
     const reqId = `allow_${Date.now()}`;
     pendingAllowRequests.set(reqId, { glob, resolve });
@@ -592,7 +598,7 @@ function promptUserForAllow(glob) {
   });
 }
 
-const pendingAllowRequests = new Map();
+const pendingAllowRequests = new Map<string, { glob: string; resolve: (v: boolean) => void }>();
 
 function maybeClearBadge() {
   if (pendingAllowRequests.size === 0) {
@@ -674,7 +680,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
   if (msg?.type === "capture_visible_tab") {
     // Content scripts can't call chrome.tabs.captureVisibleTab; proxy here.
-    chrome.tabs.captureVisibleTab(undefined, { format: "png" }, (dataUrl) => {
+    chrome.tabs.captureVisibleTab(undefined as any, { format: "png" }, (dataUrl) => {
       if (chrome.runtime.lastError) {
         sendResponse({ error: chrome.runtime.lastError.message });
       } else {
@@ -685,7 +691,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
 });
 
-function globToPermissionPattern(glob) {
+function globToPermissionPattern(glob: string): string | null {
   if (typeof glob !== "string" || !glob) return null;
   return glob.endsWith("/*") ? glob : glob + "*";
 }
@@ -698,3 +704,5 @@ chrome.runtime.onInstalled.addListener(connectNative);
 // idempotent-ish: if a port already exists it creates a new one and the old
 // is replaced.
 connectNative();
+
+export {};

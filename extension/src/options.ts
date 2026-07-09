@@ -4,9 +4,11 @@
 // sync with the DEFAULTS objects in background.js and content.js — any key added
 // here must be added there too.
 
+import type { Settings } from "./types";
+
 // Default values for the configurable settings. Keep in sync with
 // background.js DEFAULTS and content.js DEFAULTS.
-const DEFAULTS = {
+const DEFAULTS: Settings = {
   pageEvalEnabled: true,
   evalMask: true,
   confirmHighRiskClick: true,
@@ -39,29 +41,30 @@ const TOOLS = [
   { op: "storage_get", desc: "读取 localStorage/sessionStorage(脱敏)" },
 ];
 
+// @ts-ignore -- noUnusedLocals: kept for parity with background.ts; unused here
 const STORAGE_KEY = "allowlist";
 
-function $(id) {
+function $(id: string): any {
   return document.getElementById(id);
 }
 
 // ---- load / save settings -------------------------------------------------
 
-async function loadSettings() {
+async function loadSettings(): Promise<any> {
   const keys = Object.keys(DEFAULTS);
   const stored = await chrome.storage.local.get(keys);
   return { ...DEFAULTS, ...stored };
 }
 
-async function saveSetting(key, value) {
+async function saveSetting(key: string, value: any) {
   await chrome.storage.local.set({ [key]: value });
   flashToast("已保存");
 }
 
 // ---- toast feedback -------------------------------------------------------
 
-let toastTimer = null;
-function flashToast(msg) {
+let toastTimer: ReturnType<typeof setTimeout> | null = null;
+function flashToast(msg: string) {
   const el = $("toast");
   el.textContent = msg;
   el.classList.add("show");
@@ -71,11 +74,11 @@ function flashToast(msg) {
 
 // ---- render: boolean cards ------------------------------------------------
 
-function renderBool(key) {
+function renderBool(key: string) {
   const input = $(key);
   const warn = $(`${key}-warn`);
   const card = $(`card-${key}`);
-  input.addEventListener("change", (e) => {
+  input.addEventListener("change", (e: any) => {
     const checked = e.target.checked;
     if (warn) warn.style.display = checked ? "none" : "block";
     if (card) card.classList.toggle("danger", !!warn && !checked);
@@ -91,7 +94,7 @@ function wireAllowAllSites() {
   const input = $("allowAllSites");
   const warn = $("allowAllSites-warn");
   const card = $("card-allowAllSites");
-  input.addEventListener("change", async (e) => {
+  input.addEventListener("change", async (e: any) => {
     const checked = e.target.checked;
     if (checked) {
       // Request the all-urls host permission. This must happen inside the
@@ -119,9 +122,9 @@ function wireAllowAllSites() {
 
 // ---- render: number fields ------------------------------------------------
 
-function renderNumber(key) {
+function renderNumber(key: string) {
   const input = $(key);
-  input.addEventListener("change", (e) => {
+  input.addEventListener("change", (e: any) => {
     const v = parseInt(e.target.value, 10);
     if (Number.isNaN(v)) return;
     saveSetting(key, v);
@@ -130,7 +133,7 @@ function renderNumber(key) {
 
 // ---- render: tools grid ---------------------------------------------------
 
-function renderToolsGrid(disabledTools) {
+function renderToolsGrid(disabledTools: any) {
   const grid = $("tools-grid");
   const disabled = new Set(Array.isArray(disabledTools) ? disabledTools : []);
   grid.innerHTML = TOOLS.map((t) => {
@@ -143,11 +146,11 @@ function renderToolsGrid(disabledTools) {
       `</label>`
     );
   }).join("");
-  grid.querySelectorAll("input[type=checkbox]").forEach((cb) => {
+  grid.querySelectorAll("input[type=checkbox]").forEach((cb: any) => {
     cb.addEventListener("change", async () => {
       const all = grid.querySelectorAll("input[type=checkbox]");
-      const next = [];
-      all.forEach((c) => {
+      const next: any[] = [];
+      all.forEach((c: any) => {
         if (!c.checked) next.push(c.getAttribute("data-op"));
       });
       await saveSetting("disabledTools", next);
@@ -167,12 +170,12 @@ async function refreshAllowlist() {
   }
   box.innerHTML = list
     .map(
-      (g) =>
+      (g: any) =>
         `<div class="item"><code>${escapeHtml(g)}</code>` +
         `<button class="danger" data-glob="${escapeAttr(g)}">移除</button></div>`
     )
     .join("");
-  box.querySelectorAll("button").forEach((b) => {
+  box.querySelectorAll("button").forEach((b: any) => {
     b.onclick = async () => {
       const glob = b.getAttribute("data-glob");
       await send({ type: "remove_allow", glob });
@@ -214,24 +217,24 @@ function wireAddSite() {
     }
   }
   btn.onclick = add;
-  input.addEventListener("keydown", (e) => {
+  input.addEventListener("keydown", (e: any) => {
     if (e.key === "Enter") add();
   });
 }
 
 // ---- helpers --------------------------------------------------------------
 
-function send(msg) {
+function send(msg: any): Promise<any> {
   return new Promise((resolve) => {
     chrome.runtime.sendMessage(msg, (resp) => resolve(resp));
   });
 }
-function escapeHtml(s) {
+function escapeHtml(s: any) {
   return String(s).replace(/[&<>"']/g, (c) =>
-    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" } as Record<string, string>)[c]
   );
 }
-function escapeAttr(s) {
+function escapeAttr(s: any) {
   return escapeHtml(s);
 }
 
@@ -284,3 +287,5 @@ function escapeAttr(s) {
   await refreshAllowlist();
   wireAddSite();
 })();
+
+export {};

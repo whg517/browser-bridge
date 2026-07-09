@@ -10,6 +10,14 @@
 // a11y tree — see the project README for why we don't use chrome.debugger
 // (the infobar) in v0.1.
 
+import type { Settings, ContentMsg } from "./types";
+
+declare global {
+  interface Window {
+    __browserBridgeLoaded?: boolean;
+  }
+}
+
 (() => {
   if (window.__browserBridgeLoaded) return; // guard against double-inject
   window.__browserBridgeLoaded = true;
@@ -19,7 +27,7 @@
   // ref -> element, rebuilt on every snapshot. Stale refs (from a previous
   // snapshot whose element has since gone) resolve to null and the caller
   // gets a clear "ref not found, re-snapshot" error.
-  let refMap = new Map();
+  let refMap = new Map<string, any>();
 
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     handle(msg)
@@ -28,7 +36,7 @@
     return true; // keep the channel open for the async response
   });
 
-  async function handle(msg) {
+  async function handle(msg: ContentMsg) {
     const { op, args } = msg;
     switch (op) {
       case "ping":
@@ -76,7 +84,7 @@
       { acceptNode: (el) => (isInteractive(el) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP) }
     );
 
-    let el = walker.currentNode;
+    let el: Node | null = walker.currentNode;
     // TreeWalker's first nextNode() walks from currentNode; start from root.
     while ((el = walker.nextNode())) {
       if (!isVisible(el)) continue;
@@ -92,7 +100,7 @@
     return { refCount: out.length, nodes: out, url: location.href, title: document.title };
   }
 
-  function assignRef(el) {
+  function assignRef(el: any) {
     // Reuse an existing ref if the element already has one from a prior
     // snapshot (keeps refs stable across calls when the page hasn't
     // changed). When reusing, we MUST advance refCounter past the reused
@@ -112,7 +120,7 @@
     return ref;
   }
 
-  function isInteractive(el) {
+  function isInteractive(el: any) {
     const tag = el.tagName.toLowerCase();
     if (INTERACTIVE_TAGS.has(tag)) return true;
     const role = el.getAttribute("role");
@@ -132,7 +140,7 @@
     "option", "switch", "treeitem",
   ]);
 
-  function roleOf(el) {
+  function roleOf(el: any) {
     const explicit = el.getAttribute("role");
     if (explicit) return explicit;
     const tag = el.tagName.toLowerCase();
@@ -151,15 +159,15 @@
     return tag;
   }
 
-  function nameOf(el) {
+  function nameOf(el: any) {
     // Simplified accessible-name computation (accname-1.2 subset).
     const labelledBy = el.getAttribute("aria-labelledby");
     if (labelledBy) {
       const parts = labelledBy
         .split(/\s+/)
-        .map((id) => document.getElementById(id))
+        .map((id: any) => document.getElementById(id))
         .filter(Boolean)
-        .map((n) => n.innerText || n.textContent || "")
+        .map((n: any) => n.innerText || n.textContent || "")
         .join(" ")
         .trim();
       if (parts) return truncate(parts, 120);
@@ -167,7 +175,7 @@
     const aria = el.getAttribute("aria-label");
     if (aria && aria.trim()) return truncate(aria.trim(), 120);
     // <label for> or wrapping <label>
-    const labelFor = document.querySelector(`label[for="${el.id}"]`);
+    const labelFor = document.querySelector<HTMLElement>(`label[for="${el.id}"]`);
     if (labelFor) {
       const t = (labelFor.innerText || "").trim();
       if (t) return truncate(t, 120);
@@ -188,7 +196,7 @@
     return "";
   }
 
-  function previewValue(el) {
+  function previewValue(el: any): any {
     if (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT") {
       const v = el.value || "";
       if (el.type === "password") return v ? "••••••" : "";
@@ -197,11 +205,11 @@
     return undefined;
   }
 
-  function truncate(s, n) {
+  function truncate(s: string, n: number) {
     return s.length > n ? s.slice(0, n) + "…" : s;
   }
 
-  function isVisible(el) {
+  function isVisible(el: any) {
     if (!el || !el.getClientRects) return false;
     const rects = el.getClientRects();
     if (rects.length === 0) return false;
@@ -221,8 +229,8 @@
 
   // A cheap, *best-effort* CSS selector. Not guaranteed unique — the AI
   // should prefer `ref`. Used only as a fallback diagnostic.
-  function cssSelectorOf(el) {
-    const parts = [];
+  function cssSelectorOf(el: any) {
+    const parts: string[] = [];
     let cur = el;
     while (cur && cur.nodeType === 1 && cur !== document.body) {
       let part = cur.tagName.toLowerCase();
@@ -233,7 +241,7 @@
       }
       const parent = cur.parentElement;
       if (parent) {
-        const siblings = Array.from(parent.children).filter((c) => c.tagName === cur.tagName);
+        const siblings = Array.from(parent.children).filter((c: any) => c.tagName === cur.tagName);
         if (siblings.length > 1) {
           const idx = siblings.indexOf(cur) + 1;
           part += `:nth-of-type(${idx})`;
@@ -247,7 +255,7 @@
 
   // ---- resolve ref or selector ------------------------------------------
 
-  function resolveTarget(args) {
+  function resolveTarget(args: any): any {
     if (args.ref) {
       // Prefer the live map from the most recent snapshot.
       let el = refMap.get(args.ref);
@@ -270,7 +278,7 @@
 
   // ---- click -------------------------------------------------------------
 
-  async function click(args) {
+  async function click(args: any) {
     const el = resolveTarget(args);
     const highRisk = isHighRiskClick(el);
     if (highRisk) {
@@ -287,7 +295,7 @@
     return { clicked: args.ref || args.selector, role: roleOf(el) };
   }
 
-  function isHighRiskClick(el) {
+  function isHighRiskClick(el: any) {
     // Submit buttons, and links that navigate, are gated.
     const role = roleOf(el);
     if (role === "button") {
@@ -301,7 +309,7 @@
 
   // ---- fill --------------------------------------------------------------
 
-  async function fill(args) {
+  async function fill(args: any) {
     const el = resolveTarget(args);
     const value = args.value ?? "";
     // Use the native setter path so frameworks (React, Vue) pick it up.
@@ -311,8 +319,8 @@
 
   // Setting el.value directly doesn't trigger React/Vue change detection.
   // Use the well-known trick of getting the native setter from the proto.
-  function setNativeValue(el, value) {
-    return new Promise((resolve, reject) => {
+  function setNativeValue(el: any, value: any) {
+    return new Promise<void>((resolve, reject) => {
       try {
         el.focus?.();
         const proto =
@@ -340,8 +348,8 @@
 
   function text() {
     // Mask password fields.
-    const cloneSrc = document.body.cloneNode(true);
-    cloneSrc.querySelectorAll("input[type=password]").forEach((i) => (i.value = "••••••"));
+    const cloneSrc = document.body.cloneNode(true) as HTMLElement;
+    cloneSrc.querySelectorAll<HTMLInputElement>("input[type=password]").forEach((i) => (i.value = "••••••"));
     // Mask long digit runs that look like card numbers.
     const txt = (cloneSrc.innerText || "").replace(/\b\d{12,19}\b/g, "••••••");
     return { text: truncate(txt, 20000), url: location.href };
@@ -364,7 +372,7 @@
 
   // ---- scroll ------------------------------------------------------------
 
-  function scroll(args) {
+  function scroll(args: any) {
     if (typeof args.pixels === "number") {
       window.scrollBy(0, args.pixels);
     } else if (args.direction) {
@@ -383,7 +391,7 @@
 
   // ---- wait_for ----------------------------------------------------------
 
-  function waitFor(args) {
+  function waitFor(args: any) {
     const timeoutMs = args.timeoutMs ?? 30000;
     const start = Date.now();
     return new Promise((resolve, reject) => {
@@ -398,7 +406,7 @@
           });
         }
       };
-      const finish = (fn, value) => {
+      const finish = (fn: any, value: any) => {
         if (done) return;
         done = true;
         window.removeEventListener("load", onLoad, true);
@@ -438,7 +446,7 @@
 
   // ---- page_eval (high-risk) ---------------------------------------------
 
-  async function runEval(args) {
+  async function runEval(args: any) {
     const code = args.code;
     if (typeof code !== "string" || !code.trim()) {
       throw new Error("page_eval needs non-empty `code`");
@@ -457,14 +465,14 @@
     // Execute. Wrap as an async IIFE in the global scope so the code can use
     // await/return and see page globals. `new Function` (not eval) gives us
     // global scope regardless of the strict-mode closure this file runs in.
-    let result;
+    let result: any;
     try {
       const fn = new Function(
         '"use strict";\n' +
         'return (async () => {\n' + code + '\n})();'
       );
       result = await fn();
-    } catch (e) {
+    } catch (e: any) {
       // Surface JS errors to the model as structured data, not a throw, so
       // the model can react (e.g. fix the code and retry).
       return {
@@ -481,7 +489,7 @@
 
   // Safe serialization: handles cycles, DOM nodes, errors, exotic types, and
   // truncates very large payloads. Returns JSON-serializable data.
-  function serializeResult(value, seen = new WeakSet(), depth = 0) {
+  function serializeResult(value: any, seen = new WeakSet(), depth = 0): any {
     if (depth > 50) return "[depth limit]";
     if (value === null || value === undefined) return value;
     const t = typeof value;
@@ -513,7 +521,7 @@
         }
         // Plain object: enumerate own keys. Map/Set/Date get special tags.
         if (value instanceof Map) {
-          const obj = {};
+          const obj: any = {};
           let i = 0;
           for (const [k, v] of value) { obj[String(k)] = serializeResult(v, seen, depth + 1); if (++i > 1000) break; }
           return { __Map: obj };
@@ -523,7 +531,7 @@
         }
         if (value instanceof Date) return { __Date: value.toISOString() };
         if (value instanceof RegExp) return { __RegExp: value.toString() };
-        const out = {};
+        const out: any = {};
         let count = 0;
         for (const key of Object.keys(value)) {
           if (count++ > 1000) { out.__truncated = true; break; }
@@ -540,7 +548,7 @@
   // Mask sensitive-looking values. Recursive. See ADR-0008 for the pattern
   // catalogue. Designed to stop tokens/cookies/secrets from reaching the AI
   // context (and logs) — at the cost of occasionally masking benign data.
-  function maskSensitive(value) {
+  function maskSensitive(value: any): any {
     if (value === null || value === undefined) return value;
     const t = typeof value;
     if (t === "string") return maskString(value);
@@ -548,7 +556,7 @@
     if (t === "boolean") return value;
     if (Array.isArray(value)) return value.map(maskSensitive);
     if (t === "object") {
-      const out = {};
+      const out: any = {};
       for (const k of Object.keys(value)) {
         out[maskKeyName(k)] = maskSensitive(value[k]);
       }
@@ -559,11 +567,11 @@
 
   const SENSITIVE_KEY = /(token|cookie|password|passwd|secret|api[_-]?key|auth|cred|session)/i;
 
-  function maskKeyName(key) {
+  function maskKeyName(key: string) {
     return SENSITIVE_KEY.test(key) ? "••••" + key.slice(-2) : key;
   }
 
-  function maskString(s) {
+  function maskString(s: string) {
     if (s.length < 8) return s;
     let out = s;
     // JWT (eyJ... . ... . ...)
@@ -581,7 +589,7 @@
     return out;
   }
 
-  function maskNumber(n) {
+  function maskNumber(n: number): any {
     // Long integers (>=12 digits): card-like, big ids
     if (Number.isInteger(n) && Math.abs(n) >= 1e11) return "••••[num]";
     return n;
@@ -605,7 +613,14 @@
   // Default values for the configurable settings managed by the options page.
   // KEEP IN SYNC with options.js DEFAULTS and background.js DEFAULTS. The
   // content script only consumes the subset relevant to in-page behavior.
-  const DEFAULTS = {
+  const DEFAULTS: Pick<
+    Settings,
+    | "pageEvalEnabled"
+    | "confirmHighRiskClick"
+    | "confirmGraceMs"
+    | "clickToastTimeoutMs"
+    | "evalToastTimeoutMs"
+  > = {
     pageEvalEnabled: true,
     confirmHighRiskClick: true,
     confirmGraceMs: 60000,
@@ -615,7 +630,7 @@
 
   // Read a single setting with its default. Not cached (these are read once
   // per action, and storage reads are cheap + async).
-  function getSetting(key) {
+  function getSetting(key: keyof typeof DEFAULTS): Promise<any> {
     return new Promise((resolve) => {
       chrome.storage.local.get(key, (r) => {
         const v = r[key];
@@ -631,13 +646,13 @@
   // Auth0/NextAuth/Firebase store tokens here. Values are ALWAYS masked
   // (independent of the eval mask toggle) because storage reads are silent
   // and a leaked token here is just as bad as in eval output. See ADR-0010.
-  function storageGet(args) {
+  function storageGet(args: any) {
     const type = args.type === "session" ? "session" : "local";
     const key = args.key;
-    let store;
+    let store: Storage;
     try {
       store = type === "session" ? window.sessionStorage : window.localStorage;
-    } catch (e) {
+    } catch (e: any) {
       throw new Error(`storage unavailable: ${e.message}`);
     }
     if (key !== undefined && key !== null && key !== "") {
@@ -646,7 +661,7 @@
       return { key, found: true, value: maskString(raw) };
     }
     // No key → dump all entries (masked). Cap to avoid huge payloads.
-    const entries = {};
+    const entries: any = {};
     let count = 0;
     const MAX = 500;
     for (let i = 0; i < store.length && count < MAX; i++) {
@@ -667,9 +682,9 @@
 
   // Short-circuit window: a 60s window during which the same kind of
   // high-risk action on the same origin doesn't re-prompt.
-  let lastConfirmed = { key: null, until: 0 };
+  let lastConfirmed: { key: string | null; until: number } = { key: null, until: 0 };
 
-  async function confirmWithToast(question, actionDesc) {
+  async function confirmWithToast(question: string, actionDesc: string) {
     const key = `${location.origin}:${actionDesc}`;
     const graceMs = await getSetting("confirmGraceMs");
     if (graceMs > 0 && lastConfirmed.key === key && Date.now() < lastConfirmed.until) {
@@ -685,7 +700,7 @@
   // Risk note (ADR-0008): within the 60s window, ANY new eval code on the
   // same origin runs silently — accept this because eval is not meant for
   // high-frequency use.
-  async function confirmWithEvalToast(code) {
+  async function confirmWithEvalToast(code: string) {
     const key = `${location.origin}:eval`;
     const graceMs = await getSetting("confirmGraceMs");
     if (graceMs > 0 && lastConfirmed.key === key && Date.now() < lastConfirmed.until) {
@@ -696,11 +711,11 @@
     lastConfirmed = { key, until: Date.now() + graceMs };
   }
 
-  function describeForToast(el) {
+  function describeForToast(el: any) {
     return truncate(nameOf(el) || roleOf(el) || el.tagName.toLowerCase(), 40);
   }
 
-  function describeAction(el, kind) {
+  function describeAction(el: any, kind: string) {
     const role = roleOf(el);
     if (kind === "click") {
       if (role === "link" || el.tagName === "A") return "navigate";
@@ -710,7 +725,7 @@
     return kind;
   }
 
-  function showToast(question) {
+  function showToast(question: string) {
     return new Promise((resolve) => {
       const host = ensureToastHost();
       const card = document.createElement("div");
@@ -722,19 +737,19 @@
           <button class="zcb-toast-deny">Deny</button>
           <button class="zcb-toast-allow">Allow</button>
         </div>`;
-      card.querySelector(".zcb-toast-q").textContent = question;
+      card.querySelector(".zcb-toast-q")!.textContent = question;
       host.appendChild(card);
 
       let done = false;
-      const finish = (val) => {
+      const finish = (val: any) => {
         if (done) return;
         done = true;
         card.classList.add("zcb-toast-out");
         setTimeout(() => card.remove(), 150);
         resolve(val);
       };
-      card.querySelector(".zcb-toast-allow").onclick = () => finish(true);
-      card.querySelector(".zcb-toast-deny").onclick = () => finish(false);
+      card.querySelector<HTMLElement>(".zcb-toast-allow")!.onclick = () => finish(true);
+      card.querySelector<HTMLElement>(".zcb-toast-deny")!.onclick = () => finish(false);
       // Auto-deny so the tool call doesn't hang forever. Timeout is
       // configurable via settings (default 30s).
       getSetting("clickToastTimeoutMs").then((ms) => setTimeout(() => finish(false), ms));
@@ -744,7 +759,7 @@
   // Enlarged, warning-styled Toast for page_eval. Shows the full code in a
   // scrollable <pre>, plus the target URL and tab title so the user knows
   // exactly what runs where.
-  function showEvalToast(code, url, tabTitle) {
+  function showEvalToast(code: string, url: string, tabTitle: string) {
     return new Promise((resolve) => {
       const host = ensureToastHost();
       const card = document.createElement("div");
@@ -759,23 +774,23 @@
           <button class="zcb-toast-allow">允许执行</button>
         </div>`;
       // Use textContent for any value to prevent injection from code strings.
-      card.querySelector(".zcb-eval-meta").textContent =
+      card.querySelector(".zcb-eval-meta")!.textContent =
         `${truncate(url || "", 60)} · 「${truncate(tabTitle || "无标题", 40)}」`;
-      card.querySelector(".zcb-eval-code").textContent = code;
+      card.querySelector(".zcb-eval-code")!.textContent = code;
       host.appendChild(card);
 
       let done = false;
-      const finish = (val) => {
+      const finish = (val: any) => {
         if (done) return;
         done = true;
         card.classList.add("zcb-toast-out");
         setTimeout(() => card.remove(), 150);
         resolve(val);
       };
-      card.querySelector(".zcb-toast-allow").onclick = () => finish(true);
-      card.querySelector(".zcb-toast-deny").onclick = () => finish(false);
+      card.querySelector<HTMLElement>(".zcb-toast-allow")!.onclick = () => finish(true);
+      card.querySelector<HTMLElement>(".zcb-toast-deny")!.onclick = () => finish(false);
       // Esc key also denies, for keyboard users.
-      const onKey = (e) => { if (e.key === "Escape") { finish(false); } };
+      const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { finish(false); } };
       card.addEventListener("keydown", onKey);
       // Auto-deny (longer than click's — user needs time to read code).
       // Timeout is configurable via settings (default 45s).
@@ -787,7 +802,7 @@
   // about to attach, infobar will flash briefly." Unlike the eval/click
   // toasts this defaults to PROCEED (resolve true) after a timeout — the
   // user must actively press Cancel to abort.
-  function showInfoToast(message) {
+  function showInfoToast(message: string) {
     return new Promise((resolve) => {
       const host = ensureToastHost();
       const card = document.createElement("div");
@@ -798,18 +813,18 @@
         <div class="zcb-info-actions">
           <button class="zcb-info-cancel">取消</button>
         </div>`;
-      card.querySelector(".zcb-info-text").textContent = message;
+      card.querySelector(".zcb-info-text")!.textContent = message;
       host.appendChild(card);
 
       let done = false;
-      const finish = (proceed) => {
+      const finish = (proceed: any) => {
         if (done) return;
         done = true;
         card.classList.add("zcb-toast-out");
         setTimeout(() => card.remove(), 150);
         resolve(proceed);
       };
-      card.querySelector(".zcb-info-cancel").onclick = () => finish(false);
+      card.querySelector<HTMLElement>(".zcb-info-cancel")!.onclick = () => finish(false);
       // Auto-proceed after 8s (informational, not a confirmation gate).
       setTimeout(() => finish(true), 8000);
     });
@@ -829,3 +844,5 @@
     return host;
   }
 })();
+
+export {};

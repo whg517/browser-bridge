@@ -6,7 +6,7 @@
 //      this must happen in the popup (a user-gesture context), since service
 //      workers cannot request permissions.
 
-function $(id) {
+function $(id: string): any {
   return document.getElementById(id);
 }
 
@@ -25,13 +25,13 @@ async function refreshList() {
   $("empty").style.display = list.length ? "none" : "block";
   $("list").innerHTML = list
     .map(
-      (g) =>
+      (g: any) =>
         `<div class="item"><code>${escapeHtml(g)}</code>` +
         `<button class="danger" data-glob="${escapeAttr(g)}">Revoke</button></div>`
     )
     .join("");
   // Wire revoke buttons.
-  document.querySelectorAll(".item button").forEach((b) => {
+  document.querySelectorAll<HTMLElement>(".item button").forEach((b) => {
     b.onclick = async () => {
       const glob = b.getAttribute("data-glob");
       await send({ type: "remove_allow", glob });
@@ -52,7 +52,7 @@ async function refreshPending() {
   }
 }
 
-async function resolvePending(id, glob, allow) {
+async function resolvePending(id: any, glob: any, allow: any) {
   if (allow) {
     // Request host permission at the same time as recording the allow. The
     // origin glob looks like "https://example.com/*"; convert to a match
@@ -66,7 +66,7 @@ async function resolvePending(id, glob, allow) {
         $("pending").style.display = "none";
         return;
       }
-    } catch (e) {
+    } catch (e: any) {
       console.warn("[bb] permissions.request failed", e);
     }
   }
@@ -75,24 +75,24 @@ async function resolvePending(id, glob, allow) {
   refreshList();
 }
 
-function globToPattern(glob) {
+function globToPattern(glob: string) {
   // "https://example.com/*" is already a valid match pattern; pass through.
   // If it somehow lacks the trailing *, add it.
   return glob.endsWith("/*") ? glob : glob + "*";
 }
 
-function send(msg) {
+function send(msg: any): Promise<any> {
   return new Promise((resolve) => {
     chrome.runtime.sendMessage(msg, (resp) => resolve(resp));
   });
 }
 
-function escapeHtml(s) {
+function escapeHtml(s: string) {
   return s.replace(/[&<>"']/g, (c) =>
-    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" } as Record<string, string>)[c]
   );
 }
-function escapeAttr(s) {
+function escapeAttr(s: string) {
   return escapeHtml(s);
 }
 
@@ -105,3 +105,5 @@ $("open-settings").addEventListener("click", () => {
 refreshStatus();
 refreshList();
 refreshPending();
+
+export {};
