@@ -81,22 +81,26 @@ skill layer for common workflows are still future work.
 ## Install
 
 Prereqs: Rust toolchain (Homebrew Rust works; `install.sh` finds cargo on
-PATH or at `/opt/homebrew/bin/cargo`).
+PATH or at `/opt/homebrew/bin/cargo`) and Node.js + npm (to bundle the
+TypeScript extension with esbuild).
 
 ```sh
 ./install.sh
 ```
 
-This builds the binary, installs it to `~/.browser-bridge/`, and writes the
-native messaging host manifest to
+This builds the Rust binary, installs it to `~/.browser-bridge/`, **bundles the
+extension** (`extension/src/*.ts` → `extension/dist/` via esbuild), and writes
+the native messaging host manifest to
 `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.zcode.browser_bridge.json`
 (with an empty `allowed_origins` placeholder).
 
 Then:
 
 1. **Load the extension.** `chrome://extensions` → enable Developer mode →
-   "Load unpacked" → select the `extension/` directory in this repo. Copy
-   the 32-char **extension ID** shown on the card.
+   "Load unpacked" → select the **`extension/dist/`** directory (the build
+   output, not `extension/` itself). Copy the 32-char **extension ID** shown
+   on the card. To rebuild after editing the TypeScript sources:
+   `cd extension && npm run build` (or `npm run watch`).
 
 2. **Patch the host manifest with the extension ID:**
    ```sh
@@ -176,12 +180,15 @@ browser-bridge/
 │   ├── tools.rs         # tool schemas + handlers
 │   └── session.rs       # connection + request/response correlation
 ├── extension/
-│   ├── manifest.json
-│   ├── background.js    # MV3 SW: native port + dispatch + allowlist
-│   ├── content.js       # snapshot / click / fill / scroll / wait / toast
-│   ├── toast.css
-│   ├── popup.html / popup.js
-│   └── icons/
+│   ├── src/             # TypeScript sources (bundled by esbuild)
+│   │   ├── background.ts # MV3 SW: native port + dispatch + allowlist
+│   │   ├── content.ts    # snapshot / click / fill / scroll / wait / toast
+│   │   ├── options.ts / popup.ts
+│   ├── manifest.json    # copied into dist/ at build time
+│   ├── toast.css / popup.html / options.html / icons/
+│   ├── build.mjs        # esbuild driver (src/ → dist/)
+│   ├── tsconfig.json / package.json
+│   └── dist/            # build output — the load-unpacked target (gitignored)
 ├── tests/
 │   ├── e2e.py            # protocol-layer tests (real subprocesses)
 │   ├── dom_test.ts       # DOM-layer tests (bun + headless Chrome CDP)

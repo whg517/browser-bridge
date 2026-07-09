@@ -61,6 +61,23 @@ fi
 echo "[install] building release…"
 "$CARGO" build --release --manifest-path "$HERE/Cargo.toml"
 
+# ---- build the extension bundle -------------------------------------------
+
+# The extension is authored in TypeScript and bundled to extension/dist/ with
+# esbuild; dist/ is the load-unpacked target. Needs Node + npm.
+if command -v npm >/dev/null 2>&1; then
+  echo "[install] building extension bundle (esbuild)…"
+  if [[ ! -d "$HERE/extension/node_modules" ]]; then
+    npm --prefix "$HERE/extension" install
+  fi
+  npm --prefix "$HERE/extension" run build
+  echo "[install] extension bundle at $HERE/extension/dist"
+else
+  echo "warning: npm not found — cannot build the extension bundle." >&2
+  echo "         Install Node.js (https://nodejs.org) then re-run, or build" >&2
+  echo "         manually: cd extension && npm install && npm run build" >&2
+fi
+
 # ---- install binary -------------------------------------------------------
 
 mkdir -p "$INSTALL_DIR"
@@ -113,7 +130,7 @@ NEXT STEPS
 1. Load the extension:
    - Open chrome://extensions
    - Enable "Developer mode" (top right)
-   - Click "Load unpacked" → select: $HERE/extension
+   - Click "Load unpacked" → select: $HERE/extension/dist
    - Copy the extension ID (the 32-char string under the extension name).
 
 2. Patch the host manifest with that ID:

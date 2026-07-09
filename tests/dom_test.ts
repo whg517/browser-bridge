@@ -19,7 +19,9 @@ import * as fs from "fs";
 import * as path from "path";
 
 const REPO = path.resolve(import.meta.dir, "..");
-const CONTENT_JS = path.join(REPO, "extension", "content.js");
+// The built bundle (esbuild strips TS types from src/content.ts). Run
+// `npm --prefix extension run build` first; `run_all.sh` / `just` do this.
+const CONTENT_JS = path.join(REPO, "extension", "dist", "content.js");
 const FIXTURES_DIR = path.join(REPO, "tests", "fixtures");
 const CHROME =
   process.env.CHROME_BIN ||

@@ -28,28 +28,38 @@ fi
 export PATH="$(dirname "$CARGO"):$PATH"
 
 echo "═══ browser-bridge test suite ═══"
-echo "(1/3) build release binary"
+echo "(1/4) build release binary"
 "$CARGO" build --release --manifest-path "$REPO/Cargo.toml" || { echo "BUILD FAILED"; exit 1; }
 
 echo ""
-echo "(2/3) protocol-layer tests (tests/e2e.py)"
+echo "(2/4) build extension bundle (esbuild)"
+# The DOM + smoke tests exercise the BUILT extension/dist/, so build it first.
+if command -v npm >/dev/null 2>&1; then
+  [[ -d "$REPO/extension/node_modules" ]] || npm --prefix "$REPO/extension" install
+  npm --prefix "$REPO/extension" run build || { echo "EXTENSION BUILD FAILED"; FAILED=1; }
+else
+  echo "  SKIP  npm not found — cannot build extension (DOM/smoke tests will skip)"
+fi
+
+echo ""
+echo "(3/4) protocol-layer tests (tests/e2e.py)"
 python3 "$HERE/e2e.py" || { echo "PROTOCOL TESTS FAILED"; FAILED=1; }
 
 echo ""
-echo "(3/3) DOM-layer tests (tests/dom_test.ts)"
-if command -v bun >/dev/null 2>&1; then
-  # Locate Chrome (env override, then macOS default).
-  : "${CHROME_BIN:=/Applications/Google Chrome.app/Contents/MacOS/Google Chrome}"
-  export CHROME_BIN
-  if [[ ! -x "$CHROME_BIN" ]]; then
-    echo "  SKIP  Chrome not found at $CHROME_BIN (set CHROME_BIN)"
-    echo "  (DOM tests require Chrome headless)"
-  else
-    bun "$HERE/dom_test.ts" || { echo "DOM TESTS FAILED"; FAILED=1; }
-  fi
+echo "(4/4) DOM-layer + smoke tests"
+: "${CHROME_BIN:=/Applications/Google Chrome.app/Contents/MacOS/Google Chrome}"
+export CHROME_BIN
+if [[ ! -d "$REPO/extension/dist" ]]; then
+  echo "  SKIP  extension/dist missing (build step above did not run)"
+elif [[ ! -x "$CHROME_BIN" ]]; then
+  echo "  SKIP  Chrome not found at $CHROME_BIN (set CHROME_BIN)"
 else
-  echo "  SKIP  bun not found (install: https://bun.sh)"
-  echo "  (DOM tests require bun + Chrome)"
+  if command -v bun >/dev/null 2>&1; then
+    bun "$HERE/dom_test.ts" || { echo "DOM TESTS FAILED"; FAILED=1; }
+  else
+    echo "  SKIP  bun not found for DOM tests (install: https://bun.sh)"
+  fi
+  node "$HERE/ext_test.js" || { echo "SMOKE TEST FAILED"; FAILED=1; }
 fi
 
 echo ""

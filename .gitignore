@@ -24,3 +24,7 @@ tests/node_modules/
 
 # ZCode working area (plans, session state)
 /.zcode/
+
+# Extension build output + deps
+/extension/dist/
+/extension/node_modules/
