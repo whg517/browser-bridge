@@ -31,7 +31,7 @@ pub fn run() -> i32 {
     let (listener, lock) = match ipc::listen() {
         Ok(x) => x,
         Err(e) => {
-            eprintln!("[mcp] failed to bind bridge socket: {e}");
+            log_error!("mcp", "failed to bind bridge socket: {e}");
             return 1;
         }
     };
@@ -43,7 +43,7 @@ pub fn run() -> i32 {
     // extension to reconnect against our new lock.
     if let Ok(Some(prev)) = ipc::LockFile::read() {
         if prev.pid != lock.pid && pid_is_alive(prev.pid) {
-            eprintln!("[mcp] supplanting prior MCP server pid {}", prev.pid);
+            log_info!("mcp", "supplanting prior MCP server pid {}", prev.pid);
             // SIGTERM → old server's stdin loop ends → it removes the lock and
             // exits → its TCP listener closes → native host gets EOF → SW
             // onDisconnect → reconnect spawns a fresh host → reads OUR lock.
@@ -62,11 +62,12 @@ pub fn run() -> i32 {
         }
     }
     if let Err(e) = lock.write() {
-        eprintln!("[mcp] failed to write lock file: {e}");
+        log_error!("mcp", "failed to write lock file: {e}");
         return 1;
     }
-    eprintln!(
-        "[mcp] bridge listening on 127.0.0.1:{} (pid {}) lock at {}",
+    log_info!(
+        "mcp",
+        "bridge listening on 127.0.0.1:{} (pid {}) lock at {}",
         lock.port,
         lock.pid,
         ipc::LockFile::path().display()
@@ -81,11 +82,11 @@ pub fn run() -> i32 {
             match listener.accept() {
                 Ok((stream, _addr)) => {
                     if let Err(e) = session.attach_connection(stream) {
-                        eprintln!("[mcp] accept handler error: {e}");
+                        log_warn!("mcp", "accept handler error: {e}");
                     }
                 }
                 Err(e) => {
-                    eprintln!("[mcp] accept failed: {e}");
+                    log_error!("mcp", "accept failed: {e}");
                     break;
                 }
             }
@@ -103,7 +104,7 @@ pub fn run() -> i32 {
             Ok(Some(m)) => m,
             Ok(None) => break, // stdin EOF
             Err(e) => {
-                eprintln!("[mcp] stdin parse error: {e}");
+                log_warn!("mcp", "stdin parse error: {e}");
                 // Send a parse-error with null id; keep going if possible.
                 let err = JsonRpc::err(Value::Null, -32700, format!("parse error: {e}"));
                 let _ = mcp_write(&mut writer, &err);
@@ -113,7 +114,7 @@ pub fn run() -> i32 {
         let resp = handle(&session, &msg);
         if let Some(r) = resp {
             if let Err(e) = mcp_write(&mut writer, &r) {
-                eprintln!("[mcp] stdout write failed: {e}");
+                log_error!("mcp", "stdout write failed: {e}");
                 break;
             }
         }
@@ -207,7 +208,7 @@ fn install_signal_cleanup<F: Fn() + Send + 'static>(f: F) {
             let mut sig: std::os::raw::c_int = 0;
             // Wait until one of the blocked signals is delivered.
             let _ = libc::sigwait(&set, &mut sig);
-            eprintln!("[mcp] received signal {sig}, cleaning up and exiting");
+            log_info!("mcp", "received signal {sig}, cleaning up and exiting");
             f();
             std::process::exit(0);
         });

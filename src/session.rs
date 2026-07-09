@@ -20,6 +20,7 @@ use std::time::Duration;
 
 use serde_json::Value;
 
+use crate::error::CallError;
 use crate::ipc;
 use crate::protocol::{bridge_read, bridge_write, BridgeReq, BridgeResp};
 
@@ -54,10 +55,10 @@ impl Session {
         let first: Option<Value> = bridge_read(&mut reader)?;
         let hello_ok = first.as_ref().map(ipc::validate_hello).unwrap_or(false);
         if !hello_ok {
-            eprintln!("[session] rejected inbound connection: bad/missing hello");
+            log_warn!("session", "rejected inbound connection: bad/missing hello");
             return Err(io::Error::new(io::ErrorKind::PermissionDenied, "bad hello"));
         }
-        eprintln!("[session] native host connected and authenticated");
+        log_info!("session", "native host connected and authenticated");
 
         // Store the writer half.
         let writer = BufWriter::new(stream);
@@ -73,14 +74,14 @@ impl Session {
                 let resp: Option<BridgeResp> = match bridge_read(&mut reader) {
                     Ok(r) => r,
                     Err(e) => {
-                        eprintln!("[session] bridge read error: {e}");
+                        log_warn!("session", "bridge read error: {e}");
                         break;
                     }
                 };
                 let resp = match resp {
                     Some(r) => r,
                     None => {
-                        eprintln!("[session] native host disconnected");
+                        log_info!("session", "native host disconnected");
                         break;
                     }
                 };
@@ -91,7 +92,7 @@ impl Session {
                 if let Some(tx) = tx {
                     let _ = tx.send(resp);
                 } else {
-                    eprintln!("[session] no pending caller for id {}", resp.id);
+                    log_warn!("session", "no pending caller for id {}", resp.id);
                 }
             }
             // Reader ended (disconnect / error): drop the writer so callers
@@ -104,8 +105,8 @@ impl Session {
     }
 
     /// Send a request to the extension and wait for the correlated response.
-    /// Returns the response data on success, or an error string.
-    pub fn call(&self, op: &str, tab_id: Option<i64>, args: Value) -> Result<Value, String> {
+    /// Returns the response data on success, or a typed [`CallError`].
+    pub fn call(&self, op: &str, tab_id: Option<i64>, args: Value) -> Result<Value, CallError> {
         let id = self.next_id.fetch_add(1, Ordering::SeqCst);
         let req = BridgeReq {
             id,
@@ -137,15 +138,17 @@ impl Session {
         // Send. If still no connection, error with a clear hint.
         {
             let mut guard = self.writer.lock().unwrap();
-            let writer = guard.as_mut().ok_or_else(|| {
-                // Clean up the pending entry on failure.
-                self.pending.lock().unwrap().remove(&id);
-                "browser extension not connected — is the extension loaded and Chrome running?"
-                    .to_string()
-            })?;
+            let writer = match guard.as_mut() {
+                Some(w) => w,
+                None => {
+                    // Clean up the pending entry on failure.
+                    self.pending.lock().unwrap().remove(&id);
+                    return Err(CallError::NotConnected);
+                }
+            };
             if let Err(e) = bridge_write(writer, &req) {
                 self.pending.lock().unwrap().remove(&id);
-                return Err(format!("write to extension failed: {e}"));
+                return Err(CallError::Write(e));
             }
         }
 
@@ -158,16 +161,18 @@ impl Session {
                 if resp.ok {
                     Ok(resp.data.unwrap_or(Value::Null))
                 } else {
-                    Err(resp.error.unwrap_or_else(|| "unknown error".into()))
+                    Err(CallError::Extension(
+                        resp.error.unwrap_or_else(|| "unknown error".into()),
+                    ))
                 }
             }
             Err(mpsc::RecvTimeoutError::Timeout) => {
                 self.pending.lock().unwrap().remove(&id);
-                Err(format!("extension did not respond within {timeout:?}"))
+                Err(CallError::Timeout(timeout))
             }
             Err(mpsc::RecvTimeoutError::Disconnected) => {
                 self.pending.lock().unwrap().remove(&id);
-                Err("extension connection lost while waiting for response".into())
+                Err(CallError::Disconnected)
             }
         }
     }

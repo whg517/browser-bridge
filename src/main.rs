@@ -5,6 +5,9 @@
 //! - --native-host: Chrome-spawned bridge subprocess. Chrome launches this
 //!   via the native messaging host manifest; it should never be invoked by hand.
 
+#[macro_use]
+mod log;
+mod error;
 mod ipc;
 mod mcp_server;
 mod native_host;

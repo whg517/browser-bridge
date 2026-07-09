@@ -180,3 +180,35 @@ pub fn validate_hello(hello_value: &serde_json::Value) -> bool {
         .map(|s| s == want)
         .unwrap_or(false)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn lockfile_serde_roundtrip() {
+        let lf = LockFile {
+            port: 5000,
+            secret: "deadbeef".into(),
+            pid: 42,
+        };
+        let bytes = serde_json::to_vec(&lf).unwrap();
+        let back: LockFile = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(back.port, 5000);
+        assert_eq!(back.secret, "deadbeef");
+        assert_eq!(back.pid, 42);
+    }
+
+    #[test]
+    fn secret_is_32_hex_chars() {
+        let s = generate_secret();
+        assert_eq!(s.len(), 32);
+        assert!(s.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn validate_hello_rejects_missing_key() {
+        // No "hello" key can never match, regardless of any on-disk lock file.
+        assert!(!validate_hello(&serde_json::json!({ "nothello": "x" })));
+    }
+}

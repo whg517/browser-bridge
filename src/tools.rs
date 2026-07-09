@@ -11,6 +11,7 @@
 
 use serde_json::{json, Value};
 
+use crate::error::CallError;
 use crate::session::Session;
 
 /// A tool exposed over MCP.
@@ -329,7 +330,7 @@ pub fn dispatch(session: &Session, name: &str, args: &Value) -> (Value, bool) {
             }
             call(session, "storage_get", None, Value::Object(payload))
         }
-        unknown => Err(format!("unknown tool: {unknown}")),
+        unknown => Err(CallError::UnknownTool(unknown.to_string())),
     };
 
     match result {
@@ -357,7 +358,7 @@ pub fn dispatch(session: &Session, name: &str, args: &Value) -> (Value, bool) {
     }
 }
 
-fn call(session: &Session, op: &str, tab_id: Option<i64>, args: Value) -> Result<Value, String> {
+fn call(session: &Session, op: &str, tab_id: Option<i64>, args: Value) -> Result<Value, CallError> {
     session.call(op, tab_id, args)
 }
 
@@ -381,4 +382,43 @@ fn ref_or_selector(args: &Value) -> Value {
         payload.insert("selector".into(), json!(s));
     }
     Value::Object(payload)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tool_names_are_unique() {
+        let tools = all();
+        let mut names: Vec<&str> = tools.iter().map(|t| t.name).collect();
+        let total = names.len();
+        names.sort_unstable();
+        names.dedup();
+        assert_eq!(names.len(), total, "duplicate tool names present");
+    }
+
+    #[test]
+    fn tool_count_is_pinned() {
+        // Bump deliberately when adding/removing a tool (keeps docs honest).
+        assert_eq!(all().len(), 15);
+    }
+
+    #[test]
+    fn every_tool_has_object_schema() {
+        for t in all() {
+            assert_eq!(t.input_schema["type"], "object", "tool {}", t.name);
+            assert!(t.input_schema["properties"].is_object(), "tool {}", t.name);
+            assert!(t.input_schema["required"].is_array(), "tool {}", t.name);
+        }
+    }
+
+    #[test]
+    fn schema_builder_shape() {
+        let s = schema(&["url"], &[("url", "string", "the url")]);
+        assert_eq!(s["type"], "object");
+        assert_eq!(s["required"][0], "url");
+        assert_eq!(s["properties"]["url"]["type"], "string");
+        assert_eq!(s["properties"]["url"]["description"], "the url");
+    }
 }

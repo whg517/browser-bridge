@@ -292,3 +292,81 @@ pub fn ignore_sigpipe() {
         libc::signal(libc::SIGPIPE, libc::SIG_IGN);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+    use std::io::Cursor;
+
+    #[test]
+    fn nm_frame_roundtrip() {
+        let v = json!({ "op": "tab_list", "id": 1 });
+        let mut buf = Vec::new();
+        nm_write_frame(&mut buf, &v).unwrap();
+        // 4-byte LE length prefix precedes the JSON body.
+        let body_len = u32::from_le_bytes([buf[0], buf[1], buf[2], buf[3]]) as usize;
+        assert_eq!(body_len, buf.len() - 4);
+        let mut cur = Cursor::new(buf);
+        assert_eq!(nm_read_frame(&mut cur).unwrap().unwrap(), v);
+    }
+
+    #[test]
+    fn nm_read_eof_is_none() {
+        let mut cur = Cursor::new(Vec::<u8>::new());
+        assert!(nm_read_frame(&mut cur).unwrap().is_none());
+    }
+
+    #[test]
+    fn nm_write_rejects_oversize() {
+        let v = json!({ "s": "x".repeat(NM_MAX_OUTGOING + 10) });
+        let err = nm_write_frame(&mut Vec::new(), &v).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+    }
+
+    #[test]
+    fn nm_read_rejects_huge_prefix() {
+        // 0xFFFFFFFF length (~4 GB) exceeds the 64 MB inbound clamp.
+        let mut cur = Cursor::new(vec![0xFF, 0xFF, 0xFF, 0xFF]);
+        let err = nm_read_frame(&mut cur).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+    }
+
+    #[test]
+    fn mcp_ndjson_single_line_roundtrip() {
+        // Embedded newline must be escaped so the frame stays one NDJSON line.
+        let msg = JsonRpc::ok(json!(1), json!({ "text": "a\nb" }));
+        let mut buf = Vec::new();
+        mcp_write(&mut buf, &msg).unwrap();
+        assert_eq!(buf.iter().filter(|&&b| b == b'\n').count(), 1);
+        assert!(buf.ends_with(b"\n"));
+        let got = mcp_read(&mut Cursor::new(buf)).unwrap().unwrap();
+        assert_eq!(got.id, Some(json!(1)));
+    }
+
+    #[test]
+    fn mcp_read_skips_blank_lines() {
+        let msg = JsonRpc::ok(json!(2), json!({}));
+        let mut buf = b"\n\n".to_vec();
+        mcp_write(&mut buf, &msg).unwrap();
+        let got = mcp_read(&mut Cursor::new(buf)).unwrap().unwrap();
+        assert_eq!(got.id, Some(json!(2)));
+    }
+
+    #[test]
+    fn bridge_envelope_roundtrip() {
+        let req = BridgeReq {
+            id: 7,
+            op: "page_click".into(),
+            tab_id: Some(3),
+            args: json!({ "ref": "e3" }),
+        };
+        let mut buf = Vec::new();
+        bridge_write(&mut buf, &req).unwrap();
+        let got: BridgeReq = bridge_read(&mut Cursor::new(buf)).unwrap().unwrap();
+        assert_eq!(got.id, 7);
+        assert_eq!(got.op, "page_click");
+        assert_eq!(got.tab_id, Some(3));
+        assert_eq!(got.args, json!({ "ref": "e3" }));
+    }
+}

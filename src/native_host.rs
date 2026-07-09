@@ -21,18 +21,18 @@ pub fn run() -> i32 {
     let stream = match ipc::connect() {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("[native-host] cannot connect to MCP server: {e}");
+            log_error!("native-host", "cannot connect to MCP server: {e}");
             // No way to talk to Chrome usefully without the server; exit so
             // the extension sees onDisconnect and can surface the error.
             return 1;
         }
     };
-    eprintln!("[native-host] connected to MCP server bridge socket");
+    log_info!("native-host", "connected to MCP server bridge socket");
 
     let stream_clone = match stream.try_clone() {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("[native-host] clone stream: {e}");
+            log_error!("native-host", "clone stream: {e}");
             return 1;
         }
     };
@@ -65,7 +65,7 @@ pub fn run() -> i32 {
             let frame: Option<Value> = match nm_read_frame(&mut stdin) {
                 Ok(v) => v,
                 Err(e) => {
-                    eprintln!("[native-host] stdin read error: {e}");
+                    log_warn!("native-host", "stdin read error: {e}");
                     break;
                 }
             };
@@ -73,18 +73,18 @@ pub fn run() -> i32 {
                 Some(v) => v,
                 None => {
                     // EOF on stdin: Chrome disconnected. Canonical shutdown.
-                    eprintln!("[native-host] stdin EOF, shutting down");
+                    log_info!("native-host", "stdin EOF, shutting down");
                     break;
                 }
             };
             if let Err(e) = bridge_write(&mut tcp, &frame) {
-                eprintln!("[native-host] tcp write error: {e}");
+                log_warn!("native-host", "tcp write error: {e}");
                 break;
             }
         }
         // Either side breaking means this process is done. Exit immediately so
         // Chrome tears down the port and the extension reconnects.
-        eprintln!("[native-host] stdin->TCP thread ending; exiting process");
+        log_debug!("native-host", "stdin->TCP thread ending; exiting process");
         std::process::exit(0);
     });
 
@@ -103,11 +103,11 @@ pub fn run() -> i32 {
             let line = match lines.next() {
                 Some(Ok(l)) => l,
                 Some(Err(e)) => {
-                    eprintln!("[native-host] tcp read error: {e}");
+                    log_warn!("native-host", "tcp read error: {e}");
                     break;
                 }
                 None => {
-                    eprintln!("[native-host] tcp EOF");
+                    log_info!("native-host", "tcp EOF");
                     break;
                 }
             };
@@ -117,7 +117,7 @@ pub fn run() -> i32 {
             let value: Value = match serde_json::from_str(&line) {
                 Ok(v) => v,
                 Err(e) => {
-                    eprintln!("[native-host] tcp line not json: {e}");
+                    log_warn!("native-host", "tcp line not json: {e}");
                     continue;
                 }
             };
@@ -126,17 +126,17 @@ pub fn run() -> i32 {
                 continue;
             }
             if let Err(e) = nm_write_frame(&mut out, &value) {
-                eprintln!("[native-host] stdout write error: {e}");
+                log_warn!("native-host", "stdout write error: {e}");
                 break;
             }
         }
-        eprintln!("[native-host] TCP->stdout thread ending");
+        log_debug!("native-host", "TCP->stdout thread ending");
     });
 
     // Block until the TCP->stdout thread ends. The stdin->TCP thread will
     // have already called process::exit(0) on its own close path; if it
     // hasn't, we exit here once the TCP side closes.
     let _ = out_handle.join();
-    eprintln!("[native-host] exit");
+    log_debug!("native-host", "exit");
     std::process::exit(0);
 }
