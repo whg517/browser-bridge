@@ -50,7 +50,7 @@ pub fn run() -> i32 {
             unsafe {
                 libc_kill(prev.pid, libc::SIGTERM);
             }
-              // Give it a moment to die and clean up its lock.
+            // Give it a moment to die and clean up its lock.
             for _ in 0..50 {
                 if !pid_is_alive(prev.pid) {
                     break;

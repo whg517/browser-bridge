@@ -1,0 +1,3 @@
+# Clippy configuration. Lint enforcement (`-D warnings`) lives in the justfile
+# and CI, not here; this file only tunes thresholds.
+cognitive-complexity-threshold = 30

@@ -21,3 +21,6 @@ tests/node_modules/
 
 # Test scratch
 /tmp/
+
+# ZCode working area (plans, session state)
+/.zcode/
