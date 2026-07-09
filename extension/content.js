@@ -1,4 +1,4 @@
-// content.js — runs in each page (declared in manifest content_scripts).
+// content.js — runs in each page after background.js injects it dynamically.
 //
 // Receives { op, args } from background.js via chrome.runtime.onMessage and
 // performs the actual DOM operation. Sends back a JSON-serializable result,
@@ -55,6 +55,8 @@
         // Informational toast (e.g. "about to attach debugger, infobar will
         // flash"). Returns true unless the user cancels.
         return await showInfoToast(args.message || "");
+      case "_confirm_toast":
+        return { approved: await showToast(args.message || "Confirm action?") };
       default:
         throw new Error(`content: unknown op ${op}`);
     }
@@ -272,7 +274,12 @@
     const el = resolveTarget(args);
     const highRisk = isHighRiskClick(el);
     if (highRisk) {
-      await confirmWithToast(`Click "${describeForToast(el)}"?`, describeAction(el, "click"));
+      // The confirmation gate can be disabled by the user in settings. This is
+      // dangerous (ADR-0006) but offered as an explicit opt-in.
+      const confirmEnabled = await getSetting("confirmHighRiskClick");
+      if (confirmEnabled !== false) {
+        await confirmWithToast(`Click "${describeForToast(el)}"?`, describeAction(el, "click"));
+      }
     }
     el.scrollIntoView({ block: "center" });
     el.focus?.();
@@ -380,19 +387,48 @@
     const timeoutMs = args.timeoutMs ?? 30000;
     const start = Date.now();
     return new Promise((resolve, reject) => {
+      let done = false;
+      const onLoad = () => {
+        if (args.nav) {
+          finish(resolve, {
+            matched: true,
+            nav: true,
+            url: location.href,
+            readyState: document.readyState,
+          });
+        }
+      };
+      const finish = (fn, value) => {
+        if (done) return;
+        done = true;
+        window.removeEventListener("load", onLoad, true);
+        fn(value);
+      };
+      if (args.nav) {
+        if (document.readyState === "complete") {
+          return finish(resolve, {
+            matched: true,
+            nav: true,
+            url: location.href,
+            readyState: document.readyState,
+          });
+        }
+        window.addEventListener("load", onLoad, true);
+      }
       const tick = () => {
+        if (done) return;
         if (args.selector) {
           if (document.querySelector(args.selector)) {
-            return resolve({ matched: true, selector: args.selector });
+            return finish(resolve, { matched: true, selector: args.selector });
           }
         }
         if (args.text) {
           if ((document.body.innerText || "").includes(args.text)) {
-            return resolve({ matched: true, text: args.text });
+            return finish(resolve, { matched: true, text: args.text });
           }
         }
         if (Date.now() - start > timeoutMs) {
-          return reject(new Error(`wait_for timed out after ${timeoutMs}ms`));
+          return finish(reject, new Error(`wait_for timed out after ${timeoutMs}ms`));
         }
         setTimeout(tick, 150);
       };
@@ -406,6 +442,12 @@
     const code = args.code;
     if (typeof code !== "string" || !code.trim()) {
       throw new Error("page_eval needs non-empty `code`");
+    }
+    // Global kill switch: if the user disabled page_eval in settings, refuse
+    // before any code runs (and before any confirmation prompt).
+    const evalEnabled = await getSetting("pageEvalEnabled");
+    if (evalEnabled === false) {
+      throw new Error("page_eval disabled in settings");
     }
     // Confirm with the user via an enlarged Toast showing the full code.
     // Reuses lastConfirmed so same-origin eval within 60s of a prior approval
@@ -560,6 +602,28 @@
     });
   }
 
+  // Default values for the configurable settings managed by the options page.
+  // KEEP IN SYNC with options.js DEFAULTS and background.js DEFAULTS. The
+  // content script only consumes the subset relevant to in-page behavior.
+  const DEFAULTS = {
+    pageEvalEnabled: true,
+    confirmHighRiskClick: true,
+    confirmGraceMs: 60000,
+    clickToastTimeoutMs: 30000,
+    evalToastTimeoutMs: 45000,
+  };
+
+  // Read a single setting with its default. Not cached (these are read once
+  // per action, and storage reads are cheap + async).
+  function getSetting(key) {
+    return new Promise((resolve) => {
+      chrome.storage.local.get(key, (r) => {
+        const v = r[key];
+        resolve(v === undefined ? DEFAULTS[key] : v);
+      });
+    });
+  }
+
   // ---- storage_get (page localStorage / sessionStorage) -------------------
   //
   // Read-only access to the PAGE's Web Storage (not chrome.storage). Must run
@@ -607,12 +671,13 @@
 
   async function confirmWithToast(question, actionDesc) {
     const key = `${location.origin}:${actionDesc}`;
-    if (lastConfirmed.key === key && Date.now() < lastConfirmed.until) {
+    const graceMs = await getSetting("confirmGraceMs");
+    if (graceMs > 0 && lastConfirmed.key === key && Date.now() < lastConfirmed.until) {
       return; // within the grace window
     }
     const approved = await showToast(question);
     if (!approved) throw new Error(`user denied: ${actionDesc}`);
-    lastConfirmed = { key, until: Date.now() + 60_000 };
+    lastConfirmed = { key, until: Date.now() + graceMs };
   }
 
   // Eval confirmation: enlarged Toast with the full code shown. Shares the
@@ -622,12 +687,13 @@
   // high-frequency use.
   async function confirmWithEvalToast(code) {
     const key = `${location.origin}:eval`;
-    if (lastConfirmed.key === key && Date.now() < lastConfirmed.until) {
+    const graceMs = await getSetting("confirmGraceMs");
+    if (graceMs > 0 && lastConfirmed.key === key && Date.now() < lastConfirmed.until) {
       return; // within grace window
     }
     const approved = await showEvalToast(code, location.href, document.title);
     if (!approved) throw new Error("user denied page_eval");
-    lastConfirmed = { key, until: Date.now() + 60_000 };
+    lastConfirmed = { key, until: Date.now() + graceMs };
   }
 
   function describeForToast(el) {
@@ -669,8 +735,9 @@
       };
       card.querySelector(".zcb-toast-allow").onclick = () => finish(true);
       card.querySelector(".zcb-toast-deny").onclick = () => finish(false);
-      // Auto-deny after 30s so the tool call doesn't hang forever.
-      setTimeout(() => finish(false), 30000);
+      // Auto-deny so the tool call doesn't hang forever. Timeout is
+      // configurable via settings (default 30s).
+      getSetting("clickToastTimeoutMs").then((ms) => setTimeout(() => finish(false), ms));
     });
   }
 
@@ -710,8 +777,9 @@
       // Esc key also denies, for keyboard users.
       const onKey = (e) => { if (e.key === "Escape") { finish(false); } };
       card.addEventListener("keydown", onKey);
-      // Auto-deny after 45s (longer than click's 30s — user needs time to read code).
-      setTimeout(() => { finish(false); }, 45000);
+      // Auto-deny (longer than click's — user needs time to read code).
+      // Timeout is configurable via settings (default 45s).
+      getSetting("evalToastTimeoutMs").then((ms) => setTimeout(() => { finish(false); }, ms));
     });
   }
 

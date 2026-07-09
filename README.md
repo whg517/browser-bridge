@@ -26,6 +26,7 @@ approve.
   - [0008 page_eval 高危确认通道](./docs/adr/0008-page-eval-confirmation-channel.md)
   - [0009 page_snapshot_precise 用 chrome.debugger](./docs/adr/0009-page-snapshot-precise-debugger.md)
   - [0010 Cookie/Storage 只读访问](./docs/adr/0010-cookie-storage-readonly.md)
+  - [0011 配置通过独立 Options 页管理](./docs/adr/0011-options-page-for-settings.md)
 
 ```
 ZCode ──stdio MCP──▶ browser-bridge (MCP server, Rust)
@@ -73,9 +74,9 @@ server, which means the MV3 service worker recycling (Chrome kills SWs every
 | `cookie_get` | Read cookies for the active tab (incl. httpOnly). Scoped to allowlisted hosts. Read-only; values masked. |
 | `storage_get` | Read the page's localStorage / sessionStorage (where frameworks keep tokens). Same-origin only. Always masked. |
 
-Not yet implemented (planned): cookie/storage *writes* (read-only by design —
-see [ADR-0010](./docs/adr/0010-cookie-storage-readonly.md)), IndexedDB reads,
-and a skill layer for common workflows.
+Not implemented by design: cookie/storage *writes* (read-only by design — see
+[ADR-0010](./docs/adr/0010-cookie-storage-readonly.md)). IndexedDB reads and a
+skill layer for common workflows are still future work.
 
 ## Install
 
@@ -137,7 +138,7 @@ Then:
 
 ## Testing
 
-Two independent test suites (119 assertions total), run together with
+Two independent test suites, run together with
 `./tests/run_all.sh`:
 
 **Protocol layer** — `tests/e2e.py` (45 assertions). Drives the real release
@@ -146,12 +147,13 @@ with real Native-Messaging framing, and a mock extension over the localhost
 TCP bridge. Verifies the wire protocols (NM framing, MCP handshake, tools/list,
 every tool's request/response round-trip, error codes).
 
-**DOM layer** — `tests/dom_test.ts` (74 assertions). **Injects the real
+**DOM layer** — `tests/dom_test.ts`. **Injects the real
 `extension/content.js` into a headless Chrome page** via the DevTools
 Protocol and exercises every content-script op against a real DOM: snapshot
 (refs/roles/names/visibility), click (verifies real onclick fires), fill
 (native setter + framework change events), eval (masking + serialization +
-error handling), storage_get (JWT masking), the high-risk Toast flow, plus
+error handling), storage_get (JWT masking), page_wait_for navigation waits,
+the high-risk Toast flow, plus
 shadow-DOM/iframe limitations and dynamic-insertion + re-snapshot ref
 stability (SPA case). This suite has caught two real bugs in content.js:
 `isVisible` missing aria-hidden ancestors, and `assignRef` reusing refs that
@@ -191,12 +193,11 @@ browser-bridge/
 
 ## Status
 
-v0.1 — minimal viable bridge. The protocol layers (NM framing, MCP JSON-RPC,
-TCP bridge) are covered by end-to-end tests. The DOM-side snapshot uses a
-content-script approximation of the accessibility tree (no `chrome.debugger`
-infobar); it covers ~90% of common interactions but will miss edge cases
-(closed shadow DOM, complex ARIA). A debugger-based precise snapshot is
-planned for a later phase.
+v0.1 + phase-two/three tools — the protocol layers (NM framing, MCP JSON-RPC,
+TCP bridge) are covered by end-to-end tests. The default DOM-side snapshot uses
+a content-script approximation of the accessibility tree; `page_snapshot_precise`
+is available as an explicit debugger-based fallback for complex ARIA/shadow DOM
+cases. Cookie/storage access is read-only and masked.
 
 ## License
 

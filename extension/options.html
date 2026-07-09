@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>Browser Bridge 设置</title>
+  <style>
+    :root { font-family: -apple-system, system-ui, sans-serif; color: #1a1a1a; }
+    body { max-width: 760px; margin: 0 auto; padding: 32px 24px 64px; font-size: 14px; line-height: 1.6; }
+    h1 { font-size: 22px; margin: 0 0 4px; }
+    h2 { font-size: 16px; margin: 28px 0 8px; padding-bottom: 6px; border-bottom: 1px solid #eee; color: #333; }
+    .sub { color: #888; font-size: 13px; margin-bottom: 20px; }
+    .card { padding: 10px 14px; border: 1px solid #e3e3e3; border-radius: 8px; margin-bottom: 10px;
+            display: flex; align-items: flex-start; gap: 12px; }
+    .card.danger { border-color: #f0c674; background: #fff8e1; }
+    .card .body { flex: 1; }
+    .card .title { font-weight: 600; }
+    .card .desc { color: #666; font-size: 12px; margin-top: 2px; }
+    .card .warn { color: #b00020; font-size: 12px; margin-top: 4px; font-weight: 600; }
+    .card input[type=checkbox] { margin-top: 3px; transform: scale(1.2); flex: none; }
+    .row { display: flex; align-items: center; gap: 10px; margin: 8px 0; flex-wrap: wrap; }
+    .row label { min-width: 200px; color: #444; }
+    .row input[type=number] { width: 100px; padding: 4px 8px; border: 1px solid #ccc; border-radius: 6px;
+                               font-size: 13px; }
+    .row .unit { color: #888; font-size: 12px; }
+    .row .hint { color: #999; font-size: 12px; width: 100%; margin-left: 210px; margin-top: -4px; }
+
+    .add-row { display: flex; gap: 8px; margin: 8px 0 12px; }
+    .add-row input { flex: 1; padding: 7px 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 13px;
+                     font-family: ui-monospace, monospace; }
+    button { padding: 6px 14px; border: 1px solid #ccc; border-radius: 6px; background: #fff;
+             cursor: pointer; font-size: 13px; }
+    button.primary { background: #2e8b57; color: #fff; border-color: #2e8b57; }
+    button.danger { color: #d9534f; border-color: #d9534f; }
+
+    .list { border: 1px solid #eee; border-radius: 8px; overflow: hidden; }
+    .item { display: flex; align-items: center; justify-content: space-between;
+            padding: 8px 12px; border-bottom: 1px solid #f3f3f3; }
+    .item:last-child { border-bottom: none; }
+    .item code { font-size: 12px; }
+    .empty { color: #999; padding: 12px; text-align: center; }
+    .tools { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .tool { display: flex; align-items: flex-start; gap: 8px; padding: 8px 10px;
+            border: 1px solid #eee; border-radius: 6px; }
+    .tool .name { font-family: ui-monospace, monospace; font-size: 12px; font-weight: 600; }
+    .tool .tdesc { font-size: 11px; color: #888; }
+    .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+             background: #333; color: #fff; padding: 8px 18px; border-radius: 20px;
+             font-size: 13px; opacity: 0; transition: opacity 0.2s; pointer-events: none; }
+    .toast.show { opacity: 0.9; }
+  </style>
+</head>
+<body>
+  <h1>Browser Bridge 设置</h1>
+  <div class="sub">所有更改即时保存。安全类开关请谨慎调整。</div>
+
+  <!-- ===== 安全 ===== -->
+  <h2>安全</h2>
+  <div class="card" id="card-pageEvalEnabled">
+    <input type="checkbox" id="pageEvalEnabled" />
+    <div class="body">
+      <div class="title">允许 page_eval(执行任意 JavaScript)</div>
+      <div class="desc">关闭后,AI 调用 page_eval 会直接被拒绝,不会在页面执行任何代码。这是最危险的工具——即使有确认通道,关闭它可彻底消除静默代码执行的风险(ADR-0008)。</div>
+    </div>
+  </div>
+
+  <div class="card" id="card-evalMask">
+    <input type="checkbox" id="evalMask" />
+    <div class="body">
+      <div class="title">脱敏 page_eval 返回值</div>
+      <div class="desc">对 eval 结果做正则遮罩:JWT、长 hex、长数字、疑似 token/密钥的字符串(ADR-0008)。</div>
+      <div class="warn" id="evalMask-warn" style="display:none">⚠ 关闭后,token / Cookie / 密钥可能原样泄露给 AI。</div>
+    </div>
+  </div>
+
+  <div class="card" id="card-confirmHighRiskClick">
+    <input type="checkbox" id="confirmHighRiskClick" />
+    <div class="body">
+      <div class="title">高危点击二次确认(提交按钮 / 链接跳转)</div>
+      <div class="desc">点击表单提交按钮或链接时弹出确认 Toast,需用户批准。这是防止 AI 静默下单/转账/跳转的关键防线(ADR-0006)。</div>
+      <div class="warn" id="confirmHighRiskClick-warn" style="display:none">⚠ 关闭后,AI 点击提交/链接将不再确认,请仅在你完全信任 AI 时关闭。</div>
+    </div>
+  </div>
+
+  <div class="card" id="card-warnPreciseSnapshot">
+    <input type="checkbox" id="warnPreciseSnapshot" />
+    <div class="body">
+      <div class="title">精确 snapshot 前提示</div>
+      <div class="desc">调用 page_snapshot_precise(走 chrome.debugger)前在页面弹出信息提示。Chrome 顶部会短暂显示「调试中」横幅(ADR-0009)。</div>
+    </div>
+  </div>
+
+  <!-- ===== 确认超时与宽限期 ===== -->
+  <h2>确认超时与宽限期</h2>
+  <div class="row">
+    <label for="confirmGraceMs">确认后免重复宽限期</label>
+    <input type="number" id="confirmGraceMs" min="0" max="3600000" step="1000" />
+    <span class="unit">毫秒(0 = 每次都确认)</span>
+  </div>
+  <div class="row">
+    <label for="clickToastTimeoutMs">点击确认 Toast 超时</label>
+    <input type="number" id="clickToastTimeoutMs" min="5000" max="300000" step="1000" />
+    <span class="unit">毫秒(超时自动拒绝)</span>
+  </div>
+  <div class="row">
+    <label for="evalToastTimeoutMs">eval 确认 Toast 超时</label>
+    <input type="number" id="evalToastTimeoutMs" min="10000" max="300000" step="1000" />
+    <span class="unit">毫秒(超时自动拒绝)</span>
+  </div>
+
+  <!-- ===== 工具 ===== -->
+  <h2>工具启用</h2>
+  <div class="sub">取消勾选的工具,AI 调用时会收到「tool disabled in settings」错误。注意:AI 仍能看到该工具存在,但无法执行。</div>
+  <div class="tools" id="tools-grid"></div>
+
+  <!-- ===== 允许的站点 ===== -->
+  <h2>允许的站点(白名单)</h2>
+
+  <div class="card" id="card-allowAllSites">
+    <input type="checkbox" id="allowAllSites" />
+    <div class="body">
+      <div class="title">允许所有站点(跳过逐站点审批)</div>
+      <div class="desc">开启后,AI 可直接操作任意 http(s) 站点,不再为每个新站点弹窗授权。开启时会请求「<所有网址>」主机权限。适合信任 AI 全自动浏览的场景;否则建议保持关闭,用下面的逐站点白名单。</div>
+      <div class="warn" id="allowAllSites-warn" style="display:none">⚠ 开启后,任意站点(含银行、邮箱、内网)都无需授权即可被操作,请谨慎。</div>
+    </div>
+  </div>
+
+  <div class="sub">格式:<code>https://域名/*</code>。手动添加后,首次访问该站点时仍需批准 Chrome 的主机权限弹窗。</div>
+  <div class="add-row">
+    <input type="text" id="new-site" placeholder="https://example.com/*" />
+    <button class="primary" id="add-site">添加</button>
+  </div>
+  <div class="list" id="site-list"></div>
+
+  <div class="toast" id="toast"></div>
+  <script src="options.js"></script>
+</body>
+</html>

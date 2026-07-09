@@ -6,7 +6,7 @@
   <style>
     :root { font-family: -apple-system, system-ui, sans-serif; color: #1a1a1a; }
     body { width: 320px; margin: 0; padding: 12px; font-size: 13px; }
-    h1 { font-size: 14px; margin: 0 0 8px; }
+    h1 { font-size: 14px; margin: 0 0 8px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
     .status { display: flex; align-items: center; gap: 6px; margin-bottom: 10px;
               padding: 6px 8px; border-radius: 6px; background: #f4f4f4; }
     .dot { width: 8px; height: 8px; border-radius: 50%; }
@@ -33,7 +33,7 @@
   </style>
 </head>
 <body>
-  <h1>Browser Bridge</h1>
+  <h1>Browser Bridge <button id="open-settings" style="flex:none;width:auto">⚙ 设置</button></h1>
   <div class="status">
     <span id="dot" class="dot bad"></span>
     <span id="status-text">checking…</span>
@@ -51,13 +51,6 @@
   <div>Allowed sites</div>
   <div id="list" class="list"></div>
   <div id="empty" class="empty">No sites allowed yet.</div>
-
-  <div class="section-title" style="margin-top:10px">page_eval</div>
-  <label class="toggle">
-    <input type="checkbox" id="evalMask" />
-    <span>脱敏 eval 返回值(推荐)</span>
-  </label>
-  <div class="muted">关闭后,JS 执行的返回值原样发给 AI(token / Cookie 等可能泄露)。</div>
 
   <script src="popup.js"></script>
 </body>

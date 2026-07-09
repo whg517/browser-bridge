@@ -16,6 +16,30 @@
 
 const NATIVE_HOST = "com.zcode.browser_bridge";
 
+// Default values for the configurable settings managed by the options page.
+// KEEP IN SYNC with options.js DEFAULTS and content.js DEFAULTS.
+const DEFAULTS = {
+  pageEvalEnabled: true,
+  evalMask: true,
+  confirmHighRiskClick: true,
+  warnPreciseSnapshot: true,
+  confirmGraceMs: 60000,
+  clickToastTimeoutMs: 30000,
+  evalToastTimeoutMs: 45000,
+  disabledTools: [],
+  allowAllSites: false,
+};
+
+// Read a setting with its default. Resolves a single key.
+function getSetting(key) {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(key, (r) => {
+      const v = r[key];
+      resolve(v === undefined ? DEFAULTS[key] : v);
+    });
+  });
+}
+
 // ---- native port lifecycle ------------------------------------------------
 
 let port = null;       // current chrome.runtime.Port to the native host
@@ -89,6 +113,16 @@ function sendResponse(id, ok, data, error) {
 async function dispatch(req) {
   const { op, args } = req;
 
+  // Tool enable/disable gate: if the op is in the user's disabledTools list,
+  // reject before doing anything. The op strings here mirror the tool names in
+  // tools.rs and options.js TOOLS — keep in sync.
+  if (op) {
+    const disabled = await getSetting("disabledTools");
+    if (Array.isArray(disabled) && disabled.includes(op)) {
+      throw new Error(`tool disabled in settings: ${op}`);
+    }
+  }
+
   // Tab-level ops handled directly here (no content script needed).
   switch (op) {
     case "tab_list":
@@ -143,8 +177,27 @@ async function tabOpen(url) {
 }
 
 async function tabClose(tabId) {
+  const tab = await chrome.tabs.get(tabId);
+  await confirmTabClose(tab);
   await chrome.tabs.remove(tabId);
   return { closed: tabId };
+}
+
+async function confirmTabClose(tab) {
+  if (!tab || !tab.id) throw new Error("tab not found");
+  if (!tab.url || !/^https?:\/\//i.test(tab.url)) {
+    throw new Error("tab_close can only close http(s) tabs because the close confirmation must be shown in the page");
+  }
+  await ensureAllowed(tab.url);
+  await injectIfNeeded(tab.id);
+  const resp = await chrome.tabs.sendMessage(tab.id, {
+    op: "_confirm_toast",
+    args: { message: `Close tab "${tab.title || tab.url}"?` },
+  });
+  if (resp && resp.__error) throw new Error(resp.__error);
+  if (!resp || resp.approved !== true) {
+    throw new Error("user denied tab_close");
+  }
 }
 
 // ---- page_snapshot_precise (chrome.debugger / CDP) ------------------------
@@ -219,13 +272,17 @@ async function snapshotPrecise(maybeTabId, args) {
   }
 
   // Warn the user via an informational toast in the page. Proceed unless
-  // they actively cancel within the timeout.
+  // they actively cancel within the timeout. Skippable via settings.
+  const warnPrecise = await getSetting("warnPreciseSnapshot");
   await injectIfNeeded(tab.id);
-  const proceed = await chrome.tabs.sendMessage(tab.id, {
-    op: "_info_toast",
-    args: { message: "即将精确扫描页面 — Chrome 顶部会显示『调试中』横幅,扫描后自动消失(约 1 秒)。" },
-  }).catch(() => ({ /* content script missing? proceed anyway */ }));
-  if (proceed && proceed.__cancelled) {
+  let proceed = true; // default: proceed (skip warning)
+  if (warnPrecise) {
+    proceed = await chrome.tabs.sendMessage(tab.id, {
+      op: "_info_toast",
+      args: { message: "即将精确扫描页面 — Chrome 顶部会显示『调试中』横幅,扫描后自动消失(约 1 秒)。" },
+    }).catch(() => true /* content script missing → proceed anyway */);
+  }
+  if (proceed === false || (proceed && proceed.__cancelled)) {
     return { cancelled: true };
   }
   if (proceed && proceed.__error) {
@@ -344,9 +401,9 @@ async function cookieGet(maybeTabId, args) {
   } else if (url) {
     await ensureAllowed(url);
   }
-  // domain filter: we cannot check host_permissions against a bare domain
-  // cheaply, so we rely on chrome.cookies.getAll to return only what the
-  // extension is permitted to see (it silently omits unauthorized hosts).
+  if (domain) {
+    await ensureDomainAllowed(domain);
+  }
 
   const filter = {};
   if (url) filter.url = url;
@@ -401,9 +458,8 @@ async function resolveTargetTab(maybeTabId) {
 }
 
 async function injectIfNeeded(tabId) {
-  // The content script is declared in the manifest and auto-injected on page
-  // load, but for tabs that were open before install, or for
-  // restricted pages, it may be missing. Ping; if no response, inject.
+  // Content scripts are injected dynamically after the user grants the host
+  // permission for this origin. Ping first so repeated tool calls stay cheap.
   try {
     await chrome.tabs.sendMessage(tabId, { op: "ping" });
   } catch (e) {
@@ -450,6 +506,35 @@ function originGlobOf(url) {
   }
 }
 
+function hostFromOriginGlob(glob) {
+  try {
+    return new URL(glob.replace(/\*$/, "")).host.toLowerCase();
+  } catch (_) {
+    return null;
+  }
+}
+
+function normalizeCookieDomain(domain) {
+  if (typeof domain !== "string") return null;
+  let d = domain.trim().toLowerCase();
+  if (!d || d.includes("://") || d.includes("/") || d.includes("*")) return null;
+  while (d.startsWith(".")) d = d.slice(1);
+  return d || null;
+}
+
+async function ensureDomainAllowed(domain) {
+  const host = normalizeCookieDomain(domain);
+  if (!host) throw new Error(`invalid cookie domain: ${domain}`);
+  // Global bypass: if the user opted into "allow all sites", skip the
+  // per-site check entirely.
+  if ((await getSetting("allowAllSites")) === true) return;
+  const list = await getAllowlist();
+  const allowed = list.some((glob) => hostFromOriginGlob(glob) === host);
+  if (!allowed) {
+    throw new Error(`cookie domain not allowed by user: ${domain}. Use a URL for the active allowlisted origin, or approve that exact host first.`);
+  }
+}
+
 function matchesAny(glob, list) {
   return list.some((pattern) => simpleMatch(pattern, glob));
 }
@@ -470,6 +555,11 @@ function simpleMatch(pattern, target) {
 async function ensureAllowed(url) {
   const glob = originGlobOf(url);
   if (!glob) throw new Error(`cannot parse url: ${url}`);
+  // Global bypass: if the user opted into "allow all sites", skip the
+  // per-site prompt entirely. The <all_urls> host permission must have been
+  // granted when they enabled the toggle (see options.js), so content-script
+  // injection works on any origin.
+  if ((await getSetting("allowAllSites")) === true) return;
   const list = await getAllowlist();
   if (matchesAny(glob, list)) return;
   // Not allowlisted → ask the user via the popup. We open the popup by
@@ -517,6 +607,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     const pending = pendingAllowRequests.get(id);
     if (pending) {
       pendingAllowRequests.delete(id);
+      chrome.storage.local.remove("pendingAllow");
       maybeClearBadge();
       if (allow) {
         getAllowlist().then((list) => {
@@ -540,10 +631,40 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     getAllowlist().then((list) => sendResponse({ list }));
     return true;
   }
+  if (msg?.type === "add_allow") {
+    // Manual add from the options page. We only persist the glob here — MV3
+    // forbids chrome.permissions.request outside a user-gesture action
+    // context, so the actual host permission is requested on first visit via
+    // ensureAllowed().
+    const glob = msg.glob;
+    if (typeof glob !== "string" || !glob) {
+      sendResponse({ ok: false, error: "missing glob" });
+      return false;
+    }
+    getAllowlist().then((list) => {
+      if (!list.includes(glob)) list.push(glob);
+      setAllowlist(list).then(() => sendResponse({ ok: true, list }));
+    });
+    return true;
+  }
   if (msg?.type === "remove_allow") {
     getAllowlist().then((list) => {
       const next = list.filter((g) => g !== msg.glob);
-      setAllowlist(next).then(() => sendResponse({ ok: true, list: next }));
+      setAllowlist(next).then(() => {
+        const pattern = globToPermissionPattern(msg.glob);
+        if (!pattern) {
+          sendResponse({ ok: true, list: next, permissionRemoved: false });
+          return;
+        }
+        chrome.permissions.remove({ origins: [pattern] }, (removed) => {
+          sendResponse({
+            ok: true,
+            list: next,
+            permissionRemoved: Boolean(removed),
+            permissionError: chrome.runtime.lastError?.message,
+          });
+        });
+      });
     });
     return true;
   }
@@ -563,6 +684,11 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     return true; // async
   }
 });
+
+function globToPermissionPattern(glob) {
+  if (typeof glob !== "string" || !glob) return null;
+  return glob.endsWith("/*") ? glob : glob + "*";
+}
 
 // ---- startup ---------------------------------------------------------------
 
