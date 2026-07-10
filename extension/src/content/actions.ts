@@ -1,12 +1,13 @@
 // Direct DOM actions: click, fill, text, screenshot, scroll.
 
+import type { OpArgs } from "../shared/types";
 import { getSetting } from "../shared/settings";
 import { truncate } from "./util";
 import { resolveTarget } from "./refs";
 import { roleOf } from "./snapshot";
 import { confirmWithToast, describeForToast, describeAction } from "./toast";
 
-export async function click(args: any) {
+export async function click(args: OpArgs) {
   const el = resolveTarget(args);
   const highRisk = isHighRiskClick(el);
   if (highRisk) {
@@ -23,7 +24,7 @@ export async function click(args: any) {
   return { clicked: args.ref || args.selector, role: roleOf(el) };
 }
 
-function isHighRiskClick(el: any) {
+function isHighRiskClick(el: HTMLElement) {
   // Submit buttons, and links that navigate, are gated.
   const role = roleOf(el);
   if (role === "button") {
@@ -35,7 +36,7 @@ function isHighRiskClick(el: any) {
   return false;
 }
 
-export async function fill(args: any) {
+export async function fill(args: OpArgs) {
   const el = resolveTarget(args);
   const value = args.value ?? "";
   // Use the native setter path so frameworks (React, Vue) pick it up.
@@ -45,10 +46,11 @@ export async function fill(args: any) {
 
 // Setting el.value directly doesn't trigger React/Vue change detection. Use the
 // well-known trick of getting the native setter from the proto.
-function setNativeValue(el: any, value: any) {
+function setNativeValue(el: HTMLElement, value: string) {
   return new Promise<void>((resolve, reject) => {
     try {
       el.focus?.();
+      const field = el as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
       const proto =
         el.tagName === "TEXTAREA"
           ? HTMLTextAreaElement.prototype
@@ -59,7 +61,7 @@ function setNativeValue(el: any, value: any) {
       if (setter) {
         setter.call(el, value);
       } else {
-        el.value = value;
+        field.value = value;
       }
       el.dispatchEvent(new Event("input", { bubbles: true }));
       el.dispatchEvent(new Event("change", { bubbles: true }));
@@ -94,7 +96,7 @@ export async function screenshot() {
   });
 }
 
-export function scroll(args: any) {
+export function scroll(args: OpArgs) {
   if (typeof args.pixels === "number") {
     window.scrollBy(0, args.pixels);
   } else if (args.direction) {

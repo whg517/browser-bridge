@@ -36,9 +36,27 @@ export interface BridgeResp {
   error?: string;
 }
 
+// Arguments an op may carry. Every field is optional — each handler reads the
+// ones it needs (and validates them at runtime). Covers both content-script and
+// tab-level ops.
+export interface OpArgs {
+  ref?: string;
+  selector?: string;
+  value?: string;
+  code?: string;
+  direction?: string;
+  pixels?: number;
+  timeoutMs?: number;
+  text?: string;
+  nav?: boolean;
+  type?: string;
+  key?: string;
+  message?: string;
+}
+
 // The { op, args } envelope content.ts receives via chrome.runtime.onMessage.
 export interface ContentMsg {
   op: string;
-  args: any;
+  args: OpArgs;
   tabId?: number;
 }

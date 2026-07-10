@@ -2,13 +2,15 @@
 // attribute; refMap maps ref -> element for the most recent snapshot. Stale
 // refs resolve via a DOM-attribute fallback, or error asking for a re-snapshot.
 
+import type { OpArgs } from "../shared/types";
+
 export const REF_ATTR = "data-zcb-ref";
 
 let refCounter = 0;
 // ref -> element, rebuilt on every snapshot. Stale refs (from a previous
 // snapshot whose element has since gone) resolve to null and the caller gets a
 // clear "ref not found, re-snapshot" error.
-let refMap = new Map<string, any>();
+let refMap = new Map<string, HTMLElement>();
 
 // Reset for a fresh, dense ref numbering (called at the start of a snapshot).
 export function resetRefs() {
@@ -16,7 +18,7 @@ export function resetRefs() {
   refMap = new Map();
 }
 
-export function assignRef(el: any): string {
+export function assignRef(el: HTMLElement): string {
   // Reuse an existing ref if the element already has one from a prior
   // snapshot (keeps refs stable across calls when the page hasn't changed).
   // When reusing, we MUST advance refCounter past the reused number —
@@ -36,21 +38,21 @@ export function assignRef(el: any): string {
   return ref;
 }
 
-export function resolveTarget(args: any): any {
+export function resolveTarget(args: OpArgs): HTMLElement {
   if (args.ref) {
     // Prefer the live map from the most recent snapshot.
     let el = refMap.get(args.ref);
     if (!el) {
       // Fall back to a DOM query by attribute (covers SW-recycle cases where
       // the map was cleared but elements still carry the attr).
-      el = document.querySelector(`[${REF_ATTR}="${args.ref}"]`);
+      el = document.querySelector<HTMLElement>(`[${REF_ATTR}="${args.ref}"]`) ?? undefined;
       if (el) refMap.set(args.ref, el);
     }
     if (!el) throw new Error(`ref not found: ${args.ref} — call page_snapshot again`);
     return el;
   }
   if (args.selector) {
-    const el = document.querySelector(args.selector);
+    const el = document.querySelector<HTMLElement>(args.selector);
     if (!el) throw new Error(`selector matched nothing: ${args.selector}`);
     return el;
   }

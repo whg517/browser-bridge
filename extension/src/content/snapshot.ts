@@ -10,12 +10,14 @@ export function snapshot() {
 
   const out = [];
   const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT, {
-    acceptNode: (el) => (isInteractive(el) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP),
+    acceptNode: (el) =>
+      isInteractive(el as HTMLElement) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP,
   });
 
-  let el: Node | null = walker.currentNode;
+  let node: Node | null;
   // TreeWalker's first nextNode() walks from currentNode; start from root.
-  while ((el = walker.nextNode())) {
+  while ((node = walker.nextNode())) {
+    const el = node as HTMLElement; // SHOW_ELEMENT guarantees an element
     if (!isVisible(el)) continue;
     const ref = assignRef(el);
     out.push({
@@ -29,7 +31,7 @@ export function snapshot() {
   return { refCount: out.length, nodes: out, url: location.href, title: document.title };
 }
 
-function isInteractive(el: any) {
+function isInteractive(el: HTMLElement) {
   const tag = el.tagName.toLowerCase();
   if (INTERACTIVE_TAGS.has(tag)) return true;
   const role = el.getAttribute("role");
@@ -69,7 +71,7 @@ const INTERACTIVE_ROLES = new Set([
   "treeitem",
 ]);
 
-export function roleOf(el: any) {
+export function roleOf(el: HTMLElement) {
   const explicit = el.getAttribute("role");
   if (explicit) return explicit;
   const tag = el.tagName.toLowerCase();
@@ -88,15 +90,15 @@ export function roleOf(el: any) {
   return tag;
 }
 
-export function nameOf(el: any) {
+export function nameOf(el: HTMLElement) {
   // Simplified accessible-name computation (accname-1.2 subset).
   const labelledBy = el.getAttribute("aria-labelledby");
   if (labelledBy) {
     const parts = labelledBy
       .split(/\s+/)
-      .map((id: any) => document.getElementById(id))
-      .filter(Boolean)
-      .map((n: any) => n.innerText || n.textContent || "")
+      .map((id) => document.getElementById(id))
+      .filter((n): n is HTMLElement => n !== null)
+      .map((n) => n.innerText || n.textContent || "")
       .join(" ")
       .trim();
     if (parts) return truncate(parts, 120);
@@ -125,16 +127,17 @@ export function nameOf(el: any) {
   return "";
 }
 
-function previewValue(el: any): any {
+function previewValue(el: HTMLElement): string | undefined {
   if (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT") {
-    const v = el.value || "";
-    if (el.type === "password") return v ? "••••••" : "";
+    const field = el as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
+    const v = field.value || "";
+    if (field.type === "password") return v ? "••••••" : "";
     return truncate(v, 60);
   }
   return undefined;
 }
 
-function isVisible(el: any) {
+function isVisible(el: HTMLElement) {
   if (!el || !el.getClientRects) return false;
   const rects = el.getClientRects();
   if (rects.length === 0) return false;
@@ -144,9 +147,9 @@ function isVisible(el: any) {
   // aria-hidden hides the element AND its entire subtree. An element may be
   // visibly styled itself but still hidden from the a11y tree because an
   // ancestor is aria-hidden — walk up to catch that case.
-  let cur = el;
+  let cur: HTMLElement | null = el;
   while (cur && cur.nodeType === 1) {
-    if (cur.getAttribute && cur.getAttribute("aria-hidden") === "true") return false;
+    if (cur.getAttribute("aria-hidden") === "true") return false;
     cur = cur.parentElement;
   }
   return true;
@@ -154,9 +157,9 @@ function isVisible(el: any) {
 
 // A cheap, *best-effort* CSS selector. Not guaranteed unique — the AI should
 // prefer `ref`. Used only as a fallback diagnostic.
-function cssSelectorOf(el: any) {
+function cssSelectorOf(el: HTMLElement) {
   const parts: string[] = [];
-  let cur = el;
+  let cur: HTMLElement | null = el;
   while (cur && cur.nodeType === 1 && cur !== document.body) {
     let part = cur.tagName.toLowerCase();
     if (cur.id) {
@@ -166,7 +169,8 @@ function cssSelectorOf(el: any) {
     }
     const parent = cur.parentElement;
     if (parent) {
-      const siblings = Array.from(parent.children).filter((c: any) => c.tagName === cur.tagName);
+      const tag = cur.tagName;
+      const siblings = Array.from(parent.children).filter((c: Element) => c.tagName === tag);
       if (siblings.length > 1) {
         const idx = siblings.indexOf(cur) + 1;
         part += `:nth-of-type(${idx})`;

@@ -1,7 +1,9 @@
 // page_wait_for — resolve when a selector appears, text appears, or the page
 // finishes navigating, or reject on timeout.
 
-export function waitFor(args: any) {
+import type { OpArgs } from "../shared/types";
+
+export function waitFor(args: OpArgs) {
   const timeoutMs = args.timeoutMs ?? 30000;
   const start = Date.now();
   return new Promise((resolve, reject) => {

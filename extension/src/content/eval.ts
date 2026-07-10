@@ -2,12 +2,13 @@
 // scope after an enlarged confirmation toast. Result is safely serialized and
 // (by default) masked before returning.
 
+import type { OpArgs } from "../shared/types";
 import { getSetting } from "../shared/settings";
 import { maskSensitive } from "../shared/masking";
 import { truncate } from "./util";
 import { confirmWithEvalToast } from "./toast";
 
-export async function runEval(args: any) {
+export async function runEval(args: OpArgs) {
   const code = args.code;
   if (typeof code !== "string" || !code.trim()) {
     throw new Error("page_eval needs non-empty `code`");

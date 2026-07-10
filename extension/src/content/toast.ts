@@ -36,11 +36,11 @@ export async function confirmWithEvalToast(code: string) {
   lastConfirmed = { key, until: Date.now() + graceMs };
 }
 
-export function describeForToast(el: any) {
+export function describeForToast(el: HTMLElement) {
   return truncate(nameOf(el) || roleOf(el) || el.tagName.toLowerCase(), 40);
 }
 
-export function describeAction(el: any, kind: string) {
+export function describeAction(el: HTMLElement, kind: string) {
   const role = roleOf(el);
   if (kind === "click") {
     if (role === "link" || el.tagName === "A") return "navigate";
@@ -66,7 +66,7 @@ function showToast(question: string) {
     host.appendChild(card);
 
     let done = false;
-    const finish = (val: any) => {
+    const finish = (val: boolean) => {
       if (done) return;
       done = true;
       card.classList.add("zcb-toast-out");
@@ -105,7 +105,7 @@ function showEvalToast(code: string, url: string, tabTitle: string) {
     host.appendChild(card);
 
     let done = false;
-    const finish = (val: any) => {
+    const finish = (val: boolean) => {
       if (done) return;
       done = true;
       card.classList.add("zcb-toast-out");
@@ -150,7 +150,7 @@ export function showInfoToast(message: string) {
     host.appendChild(card);
 
     let done = false;
-    const finish = (proceed: any) => {
+    const finish = (proceed: boolean) => {
       if (done) return;
       done = true;
       card.classList.add("zcb-toast-out");
