@@ -16,7 +16,7 @@ async function refreshStatus() {
   dot.className = "dot " + (status?.nativeConnected ? "ok" : "bad");
   $("status-text").textContent = status?.nativeConnected
     ? "Connected to bridge"
-    : "Not connected (is ZCode running?)";
+    : "Not connected (is your MCP client running?)";
 }
 
 async function refreshList() {

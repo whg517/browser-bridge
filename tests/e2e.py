@@ -15,8 +15,8 @@ Exits 0 on success, 1 on any failure. Requires the release binary at
 target/release/browser-bridge (will build it if missing via cargo).
 
 This is an orchestration test (not a Rust #[test]) on purpose: it exercises
-the full process boundary the way ZCode and Chrome would, which a unit test
-inside the crate cannot.
+the full process boundary the way an MCP client and Chrome would, which a unit
+test inside the crate cannot.
 """
 import json
 import os

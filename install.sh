@@ -15,7 +15,7 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-HOST_NAME="com.zcode.browser_bridge"
+HOST_NAME="com.browser_bridge.host"
 INSTALL_DIR="$HOME/.browser-bridge"
 BINARY_NAME="browser-bridge"
 NM_DIR="$HOME/Library/Application Support/Google/Chrome/NativeMessagingHosts"
@@ -111,7 +111,7 @@ fi
 cat > "$MANIFEST" <<EOF
 {
   "name": "$HOST_NAME",
-  "description": "Browser Bridge for ZCode native messaging host",
+  "description": "Browser Bridge native messaging host",
   "path": "$WRAPPER",
   "type": "stdio",
   "allowed_origins": $ORIGINS
@@ -136,14 +136,15 @@ NEXT STEPS
 2. Patch the host manifest with that ID:
    $0 --extension-id <PASTE_ID_HERE>
 
-3. Add browser-bridge to ZCode. Copy the snippet from
-   zcode-mcp-config.json into ~/.zcode/cli/config.json under mcp.servers,
-   then restart your ZCode session.
+3. Register the MCP server with your agent (see README → Install for
+   Claude Code / Codex / generic MCP clients). The binary is at:
+   $INSTALL_DIR/$BINARY_NAME   (run with no arguments; it speaks MCP over stdio)
+   A ready-to-copy JSON snippet is in mcp-config.example.json.
 
 4. Restart Chrome (so it picks up the native messaging host manifest).
 
-5. In ZCode, the tools tab_list / page_snapshot / ... should now work.
-   Click the Browser Bridge toolbar icon to approve sites on demand.
+5. In your MCP client, the tools tab_list / page_snapshot / ... should now
+   work. Click the Browser Bridge toolbar icon to approve sites on demand.
 TIP
 else
   echo ""

@@ -27,6 +27,14 @@ tools themselves; the extension now ships from a build step).
   `.editorconfig`.
 
 ### Changed
+- **Decoupled from ZCode — now generic across MCP clients** (Claude Code, Codex,
+  any MCP client). The server already spoke standard MCP; this is a naming/docs
+  change plus two identifier renames:
+  - **Native host id `com.zcode.browser_bridge` → `com.browser_bridge.host`**
+    (breaking: reinstall the host manifest via `install.sh`, and the manifest
+    file is now `com.browser_bridge.host.json`).
+  - Example config `zcode-mcp-config.json` → `mcp-config.example.json` (generic
+    `mcpServers` shape); README documents Claude Code / Codex / generic setup.
 - **Load-unpacked target moved from `extension/` to `extension/dist/`** (the
   build output). `install.sh` now builds the bundle; update your unpacked
   extension path accordingly.

@@ -4,7 +4,7 @@
 //! 1. Chrome Native Messaging framing (4-byte LE length prefix + UTF-8 JSON)
 //!    — used between the native-host subprocess and the Chrome extension.
 //! 2. MCP JSON-RPC 2.0 messages (NDJSON over stdio) — used between the MCP
-//!    server and ZCode.
+//!    server and the MCP client.
 //! 3. The internal "bridge" envelope — request/response exchanged between the
 //!    MCP server and the native-host subprocess over a localhost TCP socket
 //!    (newline-delimited JSON).

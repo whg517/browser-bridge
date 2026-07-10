@@ -2,7 +2,7 @@
 
 - **状态**:Accepted(依赖清单部分由 [ADR-0014](./0014-leveled-logging.md) 修订)
 - **日期**:2026-07-07
-- **决策者**:用户 + ZCode
+- **决策者**:用户 + AI 助手
 
 > **修订note**:本 ADR 原文称唯一依赖是 `serde`/`serde_json`。工程化整改后另加了
 > `libc`(信号处理)与 `thiserror`(类型化错误),见 [ADR-0014](./0014-leveled-logging.md)。
@@ -12,7 +12,7 @@
 
 browser-bridge 的后端需要同时承担两个角色:
 
-1. **MCP server**:由 ZCode 通过 `mcp.servers` spawn,讲 JSON-RPC over stdio
+1. **MCP server**:由 MCP 客户端通过其 MCP server 配置 spawn,讲 JSON-RPC over stdio
 2. **Native Messaging host**:由 Chrome 通过 host manifest spawn,讲 4 字节长度前缀帧 over stdio
 
 这两个角色都需要长期运行、都需要处理 stdin/stdout 的二进制协议、都需要可靠。

@@ -1,8 +1,9 @@
 # browser-bridge
 
-Let ZCode (or any MCP client) operate **your real Chrome** — your tabs, your
-login sessions, your bookmarks — through a Chrome extension + native messaging
-host. No separate browser instance, no CDP debug port, no `--remote-debugging`
+Let any **MCP client** — Claude Code, Codex, or anything that speaks the Model
+Context Protocol — operate **your real Chrome**: your tabs, your login
+sessions, your bookmarks, through a Chrome extension + native messaging host.
+No separate browser instance, no CDP debug port, no `--remote-debugging`
 startup flag.
 
 You stay in control: every new site needs explicit approval, and high-risk
@@ -34,9 +35,9 @@ approve.
 开发与贡献:[开发指南](./docs/development.md) · [贡献指南](./CONTRIBUTING.md)
 
 ```
-ZCode ──stdio MCP──▶ browser-bridge (MCP server, Rust)
-                          │
-                          │ localhost TCP (NDJSON)
+MCP client ──stdio MCP──▶ browser-bridge (MCP server, Rust)
+(Claude Code,             │
+ Codex, …)                │ localhost TCP (NDJSON)
                           ▼
                    browser-bridge --native-host  ◀── spawned by Chrome
                           │
@@ -49,15 +50,16 @@ ZCode ──stdio MCP──▶ browser-bridge (MCP server, Rust)
 
 One Rust binary, two modes:
 
-- **Default (MCP server)** — launched by ZCode under `mcp.servers`. Speaks
-  JSON-RPC 2.0 over stdio (MCP, protocol version `2025-06-18`). Owns session
-  state and a localhost TCP socket published via a lock file.
+- **Default (MCP server)** — launched by your MCP client as a stdio MCP server.
+  Speaks JSON-RPC 2.0 over stdio (MCP, protocol version `2025-06-18`). Owns
+  session state and a localhost TCP socket published via a lock file.
 - **`--native-host`** — launched by Chrome via the native messaging host
   manifest. A thin bridge that translates Chrome's native-messaging frames
   (4-byte LE length prefix + JSON) to NDJSON lines on the TCP socket.
 
 Why two processes and a socket? Chrome spawns the native host itself; the MCP
-server is spawned by ZCode. They aren't parent/child, so they need an IPC.
+server is spawned by the MCP client. They aren't parent/child, so they need an
+IPC.
 The native host is intentionally dumb — all real logic lives in the MCP
 server, which means the MV3 service worker recycling (Chrome kills SWs every
 ~5 min) and host restarts don't lose session state.
@@ -96,7 +98,7 @@ TypeScript extension with esbuild).
 This builds the Rust binary, installs it to `~/.browser-bridge/`, **bundles the
 extension** (`extension/src/*.ts` → `extension/dist/` via esbuild), and writes
 the native messaging host manifest to
-`~/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.zcode.browser_bridge.json`
+`~/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.browser_bridge.host.json`
 (with an empty `allowed_origins` placeholder).
 
 Then:
@@ -112,14 +114,31 @@ Then:
    ./install.sh --extension-id <PASTE_ID_HERE>
    ```
 
-3. **Register the MCP server with ZCode.** Copy the `browser-bridge` entry
-   from `zcode-mcp-config.json` into `~/.zcode/cli/config.json` under
-   `mcp.servers`, then restart your ZCode session.
+3. **Register the MCP server with your MCP client.** The server is the
+   installed binary (`~/.browser-bridge/browser-bridge`) run with no arguments;
+   it speaks MCP over stdio. Use an **absolute path** — most clients don't
+   expand `~`. `mcp-config.example.json` has a ready-to-copy JSON snippet.
+
+   - **Claude Code** (CLI):
+     ```sh
+     claude mcp add browser-bridge -- "$HOME/.browser-bridge/browser-bridge"
+     ```
+   - **Codex** (`~/.codex/config.toml`):
+     ```toml
+     [mcp_servers.browser-bridge]
+     command = "/absolute/path/to/.browser-bridge/browser-bridge"
+     args = []
+     ```
+   - **Generic MCP client** (`mcpServers` JSON — Claude Desktop, etc.): copy the
+     `browser-bridge` entry from [`mcp-config.example.json`](./mcp-config.example.json)
+     into your client's config.
+
+   Then restart (or reconnect) your MCP client session.
 
 4. **Restart Chrome** so it picks up the native messaging host manifest.
 
-5. In ZCode, try: *"list my browser tabs."* The first time you target a new
-   site, the extension toolbar icon shows a badge — click it and approve.
+5. In your MCP client, try: *"list my browser tabs."* The first time you target
+   a new site, the extension toolbar icon shows a badge — click it and approve.
 
 ## Security model
 
@@ -134,7 +153,8 @@ Then:
 
 ## Debugging
 
-- **`/mcp` menu in ZCode** — check the server connects; disconnect/reconnect.
+- **Your MCP client's server/connection UI** — check the server connects;
+  disconnect/reconnect (e.g. `/mcp` in Claude Code).
 - **Extension DevTools** — `chrome://extensions` → Browser Bridge → "Service
   Worker" link opens the SW console. Look for `[bb]` logs and disconnect/
   reconnect events.
@@ -200,7 +220,7 @@ browser-bridge/
 │   ├── fixtures/page.html
 │   └── run_all.sh        # runs both suites
 ├── install.sh
-└── zcode-mcp-config.json
+└── mcp-config.example.json
 ```
 
 ## Status

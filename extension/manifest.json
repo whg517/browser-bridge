@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Browser Bridge for ZCode",
+  "name": "Browser Bridge",
   "version": "0.1.0",
-  "description": "Let ZCode (via MCP) operate this real Chrome — your tabs, your login sessions. You approve new sites and high-risk actions.",
+  "description": "Let an MCP client (Claude Code, Codex, …) operate this real Chrome — your tabs, your login sessions. You approve new sites and high-risk actions.",
   "permissions": [
     "tabs",
     "scripting",

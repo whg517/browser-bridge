@@ -16,7 +16,7 @@
 
 import type { Settings, BridgeReq } from "./types";
 
-const NATIVE_HOST = "com.zcode.browser_bridge";
+const NATIVE_HOST = "com.browser_bridge.host";
 
 // Default values for the configurable settings managed by the options page.
 // KEEP IN SYNC with options.js DEFAULTS and content.js DEFAULTS.

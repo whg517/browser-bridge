@@ -1,7 +1,8 @@
-//! browser-bridge — bridge ZCode (MCP) to your real Chrome.
+//! browser-bridge — bridge an MCP client (Claude Code, Codex, …) to your real
+//! Chrome.
 //!
 //! One binary, two modes selected by argv:
-//! - (no args): MCP server (default). Run under ZCode's mcp.servers.
+//! - (no args): MCP server (default). Run under your MCP client's server config.
 //! - --native-host: Chrome-spawned bridge subprocess. Chrome launches this
 //!   via the native messaging host manifest; it should never be invoked by hand.
 
@@ -31,13 +32,14 @@ fn main() {
 fn print_help() {
     eprintln!(
         "browser-bridge {version}\n\
-         Bridge ZCode (MCP) to a real Chrome via an extension + native host.\n\n\
+         Bridge an MCP client to a real Chrome via an extension + native host.\n\n\
          USAGE:\n    \
-         browser-bridge              Run as MCP server (for ZCode mcp.servers)\n    \
+         browser-bridge              Run as MCP server (for your MCP client)\n    \
          browser-bridge --native-host  Run as the Chrome native messaging host\n\n\
-         Configure ZCode to launch this binary with no arguments under \
-         mcp.servers; Chrome launches it with --native-host via the host \
-         manifest. You normally never invoke either mode by hand.",
+         Configure your MCP client (Claude Code, Codex, …) to launch this \
+         binary with no arguments as an MCP server; Chrome launches it with \
+         --native-host via the host manifest. You normally never invoke either \
+         mode by hand.",
         version = env!("CARGO_PKG_VERSION")
     );
 }

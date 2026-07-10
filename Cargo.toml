@@ -2,7 +2,7 @@
 name = "browser-bridge"
 version = "0.1.0"
 edition = "2021"
-description = "Bridge ZCode (MCP) to your real Chrome via an extension + native messaging host"
+description = "Bridge an MCP client to your real Chrome via an extension + native messaging host"
 license = "Apache-2.0"
 
 [[bin]]

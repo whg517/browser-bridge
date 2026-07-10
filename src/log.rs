@@ -2,7 +2,7 @@
 //!
 //! Both binary modes speak framed / NDJSON protocols over *stdout*, so every
 //! diagnostic must go to *stderr* (Chrome captures the native host's stderr in
-//! its internal logs; ZCode surfaces the MCP server's stderr). Levels let a
+//! its internal logs; the MCP client surfaces the MCP server's stderr). Levels let a
 //! user raise verbosity with `BB_LOG=debug` at launch without recompiling. The
 //! default threshold is `info`, so `debug` lines stay hidden unless requested.
 //!

@@ -1,6 +1,6 @@
 //! MCP server mode: the default (no args) mode. Speaks JSON-RPC 2.0 over
-//! stdio with ZCode, and accepts inbound bridge connections from the native
-//! host over a localhost TCP socket.
+//! stdio with the MCP client, and accepts inbound bridge connections from the
+//! native host over a localhost TCP socket.
 
 use std::io::{self, BufReader, BufWriter};
 use std::thread;
@@ -35,8 +35,8 @@ pub fn run() -> i32 {
             return 1;
         }
     };
-    // Take over from any prior MCP server instance. ZCode may spawn a fresh
-    // server per session; if the previous one is still alive, the native host
+    // Take over from any prior MCP server instance. The MCP client may spawn a
+    // fresh server per session; if the previous one is still alive, the native host
     // will keep talking to IT (it doesn't follow lock-file changes), so the
     // new server's tool calls report "extension not connected". Kill the old
     // instance first so the native host's TCP connection drops, forcing the
@@ -121,7 +121,7 @@ pub fn run() -> i32 {
         // None means notification (no response).
     }
 
-    // stdin EOF: ZCode disconnected. Remove lock file.
+    // stdin EOF: the MCP client disconnected. Remove lock file.
     ipc::LockFile::remove();
     0
 }

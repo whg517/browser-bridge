@@ -122,7 +122,7 @@ impl Session {
 
         // If the native host hasn't connected yet, wait briefly for it. The
         // extension's service worker reconnects on a ~2s timer; right after
-        // ZCode spawns a fresh MCP server, the first tool call can arrive
+        // the MCP client spawns a fresh MCP server, the first tool call can arrive
         // before the host has re-established its bridge connection. Waiting
         // here (rather than failing instantly) makes startup robust.
         if self.writer.lock().unwrap().is_none() {
