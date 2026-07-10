@@ -43,6 +43,10 @@ ext-build:
 ext-typecheck:
     npm --prefix extension run typecheck
 
+# Unit-test the extension's shared modules (bun; no browser)
+ext-test:
+    npm --prefix extension test
+
 # Lint the extension sources
 ext-lint:
     npm --prefix extension run lint
@@ -62,7 +66,7 @@ test-browser: ext-build
 test: test-rust test-e2e
 
 # Everything CI runs (browser tests are separate — see test-browser)
-ci: fmt-check lint test-rust ext-typecheck ext-lint ext-format-check ext-build test-e2e
+ci: fmt-check lint test-rust ext-typecheck ext-lint ext-format-check ext-test ext-build test-e2e
 
 # Install locally (build + copy binary + host manifest)
 install:

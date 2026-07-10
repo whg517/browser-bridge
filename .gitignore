@@ -28,3 +28,6 @@ tests/node_modules/
 # Extension build output + deps
 /extension/dist/
 /extension/node_modules/
+
+# Playwright MCP scratch
+/.playwright-mcp/

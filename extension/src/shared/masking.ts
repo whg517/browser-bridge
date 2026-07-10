@@ -21,7 +21,10 @@ export function maskPatterns(s: string): string {
   // Long digit runs (>=12): card numbers, account ids
   out = out.replace(/\b\d{12,}\b/g, "••••[num]");
   // Bearer / key-like patterns
-  out = out.replace(/(?:bearer|token|password|secret|api[_-]?key)\s*[:=]\s*\S+/gi, "••••[redacted]");
+  out = out.replace(
+    /(?:bearer|token|password|secret|api[_-]?key)\s*[:=]\s*\S+/gi,
+    "••••[redacted]"
+  );
   return out;
 }
 
