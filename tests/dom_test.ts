@@ -14,7 +14,7 @@
  * Requires: Chrome (uses the system Chrome in headless mode), bun.
  */
 
-import { spawn, ChildProcess } from "bun";
+import { spawn, type Subprocess } from "bun";
 import * as fs from "fs";
 import * as path from "path";
 
@@ -47,7 +47,7 @@ function check(cond: boolean, label: string): void {
 
 // ─── headless Chrome process ───────────────────────────────────────────────
 class Chrome {
-  proc: ChildProcess;
+  proc: Subprocess;
   port: number;
   constructor(port = 9444) {
     this.port = port;

@@ -30,7 +30,7 @@ push 到 main / PR / 手动触发,含并发取消,分五个 job:
 | **extension** | `npm ci` → `typecheck` → `lint` → `format:check` → `build`(在 `extension/`) |
 | **version-consistency** | `./scripts/check-version.sh` |
 | **e2e** | 构建 release 二进制后 `python3 tests/e2e.py`(驱动真实二进制) |
-| **browser** | 装 Chrome + bun,构建扩展后跑 `dom_test.ts` + `ext_test.js` |
+| **browser** | 装 Chrome + bun,构建扩展后跑 `dom_test.ts` + `ext_test.ts` |
 
 ### 3. 质量门禁
 - **Rust**:`rustfmt`(`--check`)+ `clippy` 以 **`-D warnings`** 把所有 lint 警告升级为错误。

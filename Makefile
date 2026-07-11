@@ -55,7 +55,7 @@ ext-test: ## Unit-test the extension's shared modules (bun; no browser)
 
 test-browser: ext-build ## DOM + smoke tests (needs bun + Chrome; builds first)
 	cd tests && bun dom_test.ts
-	node tests/ext_test.js
+	bun tests/ext_test.ts
 
 test: test-rust test-e2e ## All tests that run without a browser
 

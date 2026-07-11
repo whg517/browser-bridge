@@ -96,6 +96,9 @@ jobs:
         working-directory: extension
       - run: npm ci
         working-directory: tests
+      - name: Typecheck tests
+        run: npm run typecheck
+        working-directory: tests
       - name: DOM-layer tests
         env:
           CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}
@@ -103,4 +106,4 @@ jobs:
       - name: Extension smoke test
         env:
           CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}
-        run: node tests/ext_test.js
+        run: bun tests/ext_test.ts

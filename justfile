@@ -62,7 +62,7 @@ ext-format-check:
 # DOM-layer + smoke tests (needs bun + Chrome; builds the bundle first)
 test-browser: ext-build
     cd tests && bun dom_test.ts
-    node tests/ext_test.js
+    bun tests/ext_test.ts
 
 # ---- aggregates -----------------------------------------------------------
 

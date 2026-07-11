@@ -26,7 +26,7 @@ extension/
   dist/              esbuild output — the load-unpacked target (gitignored)
   build.mjs          esbuild driver
   manifest.json, *.html, toast.css, icons/   static assets, copied into dist/
-tests/               e2e.py (protocol), dom_test.ts (DOM), ext_test.js (smoke)
+tests/               e2e.py (protocol), dom_test.ts (DOM), ext_test.ts (smoke)
 scripts/             lib.sh (shared helpers) + check-version.sh, sync-version.sh
 ```
 
@@ -89,7 +89,7 @@ Three suites, all wired into `tests/run_all.sh` (and CI):
   subprocesses over the actual wire protocols. No browser needed.
 - **DOM** (`tests/dom_test.ts`, bun) — injects the built `dist/content.js` into
   a headless Chrome page via CDP and exercises every content-script op.
-- **Smoke** (`tests/ext_test.js`, node + puppeteer-core) — launches Chrome with
+- **Smoke** (`tests/ext_test.ts`, bun + puppeteer-core) — launches Chrome with
   `dist/` loaded and checks the service worker boots. Set `BB_EXT_DIR` to point
   at a different unpacked extension.
 

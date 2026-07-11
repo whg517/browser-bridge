@@ -10,31 +10,27 @@
  * but the host connection is forbidden without an interactive user load.
  * End-to-end verification is therefore a manual step (see README → Testing).
  *
- * Run:  node tests/ext_test.js
- * Requires: node + puppeteer-core + system Chrome (CHROME_BIN).
- *
- * SETUP: cd tests && npm install puppeteer-core   (uses your system Chrome,
- *        does not download Chromium).
+ * Run:  bun tests/ext_test.ts
+ * Requires: bun + puppeteer-core + system Chrome (CHROME_BIN).
+ * Override the loaded extension dir with BB_EXT_DIR.
  */
 
-const puppeteer = require("puppeteer-core");
-const fs = require("fs");
-const path = require("path");
-const os = require("os");
+import puppeteer, { type Target } from "puppeteer-core";
+import * as fs from "fs";
+import * as path from "path";
+import * as os from "os";
 
-const REPO = path.resolve(__dirname, "..");
+const REPO = path.resolve(import.meta.dir, "..");
 // The load-unpacked target is the built bundle. Run
 // `npm --prefix extension run build` first (run_all.sh / just handle this).
 // Override with BB_EXT_DIR to point at a different unpacked extension.
-const EXTENSION_DIR =
-  process.env.BB_EXT_DIR || path.join(REPO, "extension", "dist");
+const EXTENSION_DIR = process.env.BB_EXT_DIR || path.join(REPO, "extension", "dist");
 const CHROME =
-  process.env.CHROME_BIN ||
-  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+  process.env.CHROME_BIN || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 
 let _pass = 0;
 let _fail = 0;
-function check(cond, label) {
+function check(cond: boolean, label: string): void {
   if (cond) {
     _pass++;
     console.log("  PASS  " + label);
@@ -43,9 +39,9 @@ function check(cond, label) {
     console.log("  FAIL  " + label);
   }
 }
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
-async function main() {
+async function main(): Promise<void> {
   for (const [label, p] of [
     ["extension dir", EXTENSION_DIR],
     ["system Chrome", CHROME],
@@ -85,15 +81,11 @@ async function main() {
   try {
     // Find OUR extension's service worker (skip built-in extensions like
     // Hangouts, which also register a background target).
-    let sw = null;
+    let sw: Target | undefined;
     for (let i = 0; i < 30; i++) {
       sw = browser
         .targets()
-        .find(
-          (t) =>
-            t.type() === "service_worker" &&
-            t.url().startsWith("chrome-extension://")
-        );
+        .find((t) => t.type() === "service_worker" && t.url().startsWith("chrome-extension://"));
       if (sw) break;
       await sleep(500);
     }
@@ -106,11 +98,13 @@ async function main() {
       throw new Error("no service worker — extension did not load");
     }
 
-    const extId = sw.url().match(/chrome-extension:\/\/([a-z]+)\//)[1];
+    const idMatch = sw.url().match(/chrome-extension:\/\/([a-z]+)\//);
+    const extId = idMatch ? idMatch[1] : "";
     console.log("extension ID:", extId);
     check(/^[a-p]{32}$/.test(extId), "extension ID is 32 lowercase a-p chars");
 
     const worker = await sw.worker();
+    if (!worker) throw new Error("service worker target has no worker");
     const alive = await worker.evaluate(
       () => typeof chrome !== "undefined" && typeof chrome.runtime !== "undefined"
     );

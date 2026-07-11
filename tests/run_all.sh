@@ -5,7 +5,8 @@
 # Requirements:
 #   - Rust toolchain (cargo) for building the release binary
 #   - Python 3 for tests/e2e.py
-#   - bun + Chrome for tests/dom_test.ts (set CHROME_BIN to override the path)
+#   - bun + Chrome for tests/dom_test.ts and tests/ext_test.ts
+#     (set CHROME_BIN to override the path)
 #
 # Each layer is independent; failures in one still let the others run so you see
 # all problems in one pass — hence no `set -e` (we collect failures in FAILED).
@@ -54,7 +55,7 @@ else
   else
     echo "  SKIP  bun not found for DOM tests (install: https://bun.sh)"
   fi
-  node "$HERE/ext_test.js" || { echo "SMOKE TEST FAILED"; FAILED=1; }
+  bun "$HERE/ext_test.ts" || { echo "SMOKE TEST FAILED"; FAILED=1; }
 fi
 
 echo ""
