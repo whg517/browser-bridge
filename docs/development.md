@@ -14,6 +14,7 @@ release process. For *why* the project is structured the way it is, see
 | bun | DOM-layer tests | runs `tests/dom_test.ts` |
 | Chrome | DOM + smoke tests | `CHROME_BIN` overrides the path |
 | [`just`](https://github.com/casey/just) | task runner (optional) | every recipe is a plain command you can also run by hand |
+| `make` | task runner (optional) | `Makefile` mirrors the justfile; use whichever you have (`make help`) |
 | [`shellcheck`](https://www.shellcheck.net/) | linting the shell scripts (optional) | `just lint-scripts`; CI gates it |
 
 ## Layout
@@ -36,7 +37,8 @@ it; `just lint-scripts` locally).
 
 ## Common tasks
 
-With `just`:
+With `just` (or `make` — the `Makefile` mirrors these recipes 1:1, e.g.
+`make ci`, `make test`, `make help`):
 
 ```sh
 just build          # cargo build --release
