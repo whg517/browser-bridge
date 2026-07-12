@@ -2,11 +2,12 @@
 # install.sh — build browser-bridge and register the Chrome native messaging host.
 #
 # Usage:
-#   ./install.sh                        Build + install host manifest (uses a
-#                                       placeholder allowed_origin that you
-#                                       must patch after loading the extension).
-#   ./install.sh --extension-id ABCD... Build, then write the real extension ID
-#                                       into allowed_origins.
+#   ./install.sh                        Build + install everything. The
+#                                       extension ID is fixed (pinned by the
+#                                       `key` in extension/manifest.json), so no
+#                                       ID copy-paste is needed.
+#   ./install.sh --extension-id ABCD... Override the pinned ID (e.g. a Web Store
+#                                       build with a different ID).
 #
 # Prereqs: Rust toolchain. We look for cargo in the usual spots (PATH, then
 # Homebrew's /opt/homebrew/bin) so this works even on shells where Homebrew
@@ -20,6 +21,11 @@ INSTALL_DIR="$HOME/.browser-bridge"
 BINARY_NAME="browser-bridge"
 NM_DIR="$HOME/Library/Application Support/Google/Chrome/NativeMessagingHosts"
 
+# Deterministic extension ID, derived from the public `key` in
+# extension/manifest.json (same for everyone, regardless of load path). If you
+# ever change that key, update this to match (or pass --extension-id).
+PINNED_EXTENSION_ID="fignfifoniblkonapihmkfakmlgkbkcf"
+
 # shellcheck source=scripts/lib.sh
 source "$HERE/scripts/lib.sh"
 
@@ -32,7 +38,7 @@ echo "[install] using cargo: $CARGO ($("$CARGO" --version))"
 
 # ---- parse args -----------------------------------------------------------
 
-EXTENSION_ID=""
+EXTENSION_ID="$PINNED_EXTENSION_ID"
 if [[ "${1:-}" == "--extension-id" ]]; then
   EXTENSION_ID="${2:-}"
   if [[ -z "$EXTENSION_ID" ]]; then
@@ -86,12 +92,8 @@ chmod 0755 "$WRAPPER"
 mkdir -p "$NM_DIR"
 MANIFEST="$NM_DIR/$HOST_NAME.json"
 
-# allowed_origins: empty list if we don't yet know the extension id (Chrome
-# will refuse to connect, which is the safe default). Patch after loading.
-ORIGINS="[]"
-if [[ -n "$EXTENSION_ID" ]]; then
-  ORIGINS="[\"chrome-extension://$EXTENSION_ID/\"]"
-fi
+# allowed_origins pins the extension ID (fixed via the manifest key).
+ORIGINS="[\"chrome-extension://$EXTENSION_ID/\"]"
 
 cat > "$MANIFEST" <<EOF
 {
@@ -106,32 +108,24 @@ EOF
 echo "[install] host manifest written to $MANIFEST"
 echo "[install]   allowed_origins: $ORIGINS"
 
-if [[ -z "$EXTENSION_ID" ]]; then
-  cat <<TIP
+cat <<TIP
 
 ────────────────────────────────────────────────────────────────────
-NEXT STEPS
+NEXT STEPS  (no extension-ID copying — it's pinned to $EXTENSION_ID)
 ────────────────────────────────────────────────────────────────────
 1. Load the extension:
-   - Open chrome://extensions
-   - Enable "Developer mode" (top right)
-   - Click "Load unpacked" → select: $HERE/extension/dist
-   - Copy the extension ID (the 32-char string under the extension name).
+   - Open chrome://extensions → enable "Developer mode" (top right)
+   - "Load unpacked" → select: $HERE/extension/dist
+   (Verify the ID under the name is $EXTENSION_ID — the manifest already
+    trusts it, so nothing to patch.)
 
-2. Patch the host manifest with that ID:
-   $0 --extension-id <PASTE_ID_HERE>
+2. Register the MCP server with your client. The binary is at:
+   $INSTALL_DIR/$BINARY_NAME   (run with no arguments; speaks MCP over stdio)
+   A ready-to-copy JSON snippet is in mcp-config.example.json. E.g. Claude Code:
+   claude mcp add browser-bridge -- "$INSTALL_DIR/$BINARY_NAME"
 
-3. Register the MCP server with your agent (see README → Install for
-   Claude Code / Codex / generic MCP clients). The binary is at:
-   $INSTALL_DIR/$BINARY_NAME   (run with no arguments; it speaks MCP over stdio)
-   A ready-to-copy JSON snippet is in mcp-config.example.json.
+3. Restart Chrome (so it picks up the native messaging host manifest).
 
-4. Restart Chrome (so it picks up the native messaging host manifest).
-
-5. In your MCP client, the tools tab_list / page_snapshot / ... should now
-   work. Click the Browser Bridge toolbar icon to approve sites on demand.
+4. In your MCP client, try "list my browser tabs". Approve new sites via the
+   Browser Bridge toolbar icon when prompted.
 TIP
-else
-  echo ""
-  echo "[install] extension ID set. Restart Chrome for the change to take effect."
-fi

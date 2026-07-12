@@ -31,3 +31,6 @@ tests/node_modules/
 
 # Playwright MCP scratch
 /.playwright-mcp/
+
+# Extension signing keys — never commit
+*.pem

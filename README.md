@@ -105,16 +105,13 @@ Then:
 
 1. **Load the extension.** `chrome://extensions` → enable Developer mode →
    "Load unpacked" → select the **`extension/dist/`** directory (the build
-   output, not `extension/` itself). Copy the 32-char **extension ID** shown
-   on the card. To rebuild after editing the TypeScript sources:
-   `cd extension && npm run build` (or `npm run watch`).
+   output, not `extension/` itself). The extension ID is **pinned** (via the
+   `key` in the manifest) to `fignfifoniblkonapihmkfakmlgkbkcf`, which
+   `install.sh` already trusted — **no ID to copy, nothing to patch.** To
+   rebuild after editing the TypeScript sources: `cd extension && npm run build`
+   (or `npm run watch`).
 
-2. **Patch the host manifest with the extension ID:**
-   ```sh
-   ./install.sh --extension-id <PASTE_ID_HERE>
-   ```
-
-3. **Register the MCP server with your MCP client.** The server is the
+2. **Register the MCP server with your MCP client.** The server is the
    installed binary (`~/.browser-bridge/browser-bridge`) run with no arguments;
    it speaks MCP over stdio. Use an **absolute path** — most clients don't
    expand `~`. `mcp-config.example.json` has a ready-to-copy JSON snippet.
@@ -135,9 +132,9 @@ Then:
 
    Then restart (or reconnect) your MCP client session.
 
-4. **Restart Chrome** so it picks up the native messaging host manifest.
+3. **Restart Chrome** so it picks up the native messaging host manifest.
 
-5. In your MCP client, try: *"list my browser tabs."* The first time you target
+4. In your MCP client, try: *"list my browser tabs."* The first time you target
    a new site, the extension toolbar icon shows a badge — click it and approve.
 
 ## Security model

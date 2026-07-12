@@ -27,6 +27,11 @@ tools themselves; the extension now ships from a build step).
   `.editorconfig`.
 
 ### Changed
+- **Extension ID is now pinned** via a public `key` in the manifest
+  (`fignfifoniblkonapihmkfakmlgkbkcf`), so it's the same for everyone
+  regardless of load path. `install.sh` writes the host manifest with that ID
+  directly — **no more "copy the extension ID and re-run with --extension-id"**.
+  (`--extension-id` remains as an override.)
 - **Decoupled from ZCode — now generic across MCP clients** (Claude Code, Codex,
   any MCP client). The server already spoke standard MCP; this is a naming/docs
   change plus two identifier renames:
