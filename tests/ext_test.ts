@@ -74,6 +74,10 @@ async function main(): Promise<void> {
       `--load-extension=${EXTENSION_DIR}`,
       "--no-first-run",
       "--no-default-browser-check",
+      // Required for Chrome to launch on CI runners (unprivileged/containerized);
+      // harmless for this throwaway-profile test locally.
+      "--no-sandbox",
+      "--disable-dev-shm-usage",
     ],
     defaultViewport: null,
   });
