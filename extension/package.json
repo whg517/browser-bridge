@@ -14,7 +14,7 @@
     "format:check": "prettier --check \"src/**/*.ts\""
   },
   "devDependencies": {
-    "@eslint/js": "^9.39.4",
+    "@eslint/js": "^10.0.1",
     "@types/chrome": "^0.0.287",
     "esbuild": "^0.24.0",
     "eslint": "^9.15.0",
