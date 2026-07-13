@@ -1,0 +1,6 @@
+# Pin the Rust toolchain for reproducible builds (dev + CI). Bump deliberately,
+# not on CI's schedule. CI reads this file via actions-rust-lang/setup-rust-toolchain.
+[toolchain]
+channel = "1.96.1"
+components = ["rustfmt", "clippy"]
+profile = "minimal"

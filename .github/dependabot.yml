@@ -1,0 +1,33 @@
+version: 2
+updates:
+  # Rust crate deps
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "deps(cargo)"
+
+  # Extension (esbuild / typescript / eslint / prettier / @types)
+  - package-ecosystem: npm
+    directory: /extension
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "deps(ext)"
+
+  # Test harness (puppeteer-core / bun+chrome types / typescript)
+  - package-ecosystem: npm
+    directory: /tests
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "deps(tests)"
+
+  # GitHub Actions versions (keeps the pinned actions fresh)
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "ci(actions)"

@@ -29,6 +29,10 @@ lint: ## Lint Rust, denying all warnings (CI gate)
 lint-scripts: ## Lint shell scripts (needs shellcheck)
 	shellcheck install.sh scripts/*.sh tests/run_all.sh
 
+audit: ## Supply-chain checks (needs cargo-deny, cargo-audit)
+	cargo deny check
+	cargo audit
+
 test-rust: ## Rust unit tests
 	cargo test
 
