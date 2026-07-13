@@ -221,8 +221,12 @@ fn install_signal_cleanup<F: Fn() + Send + 'static>(f: F) {
 /// `kill(pid, 0)` checks existence without delivering a signal.
 fn pid_is_alive(pid: u32) -> bool {
     #[cfg(unix)]
-    unsafe {
-        libc::kill(pid as i32, 0) == 0
+    {
+        let Some(pid) = unix_pid(pid) else {
+            return false;
+        };
+        let result = unsafe { libc::kill(pid, 0) };
+        result == 0 || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
     }
     #[cfg(windows)]
     {
@@ -235,21 +239,45 @@ fn pid_is_alive(pid: u32) -> bool {
     }
 }
 
-/// Send SIGTERM to a pid (Unix). Used to supplant a stale MCP server instance.
 #[cfg(unix)]
-unsafe fn libc_kill(pid: u32, sig: i32) {
-    libc::kill(pid as i32, sig);
+fn unix_pid(pid: u32) -> Option<libc::pid_t> {
+    // POSIX reserves zero and negative values for process groups or broadcast
+    // signalling. Reject values that cannot be represented as pid_t instead
+    // of truncating (u32::MAX would otherwise become -1 and signal every
+    // process the current user is allowed to terminate).
+    libc::pid_t::try_from(pid).ok().filter(|pid| *pid > 0)
 }
 
 fn terminate_process(pid: u32) {
     #[cfg(unix)]
-    unsafe {
-        libc_kill(pid, libc::SIGTERM);
+    if let Some(pid) = unix_pid(pid) {
+        unsafe {
+            libc::kill(pid, libc::SIGTERM);
+        }
     }
     #[cfg(windows)]
     windows_process::terminate(pid);
     #[cfg(all(not(unix), not(windows)))]
     let _ = pid;
+}
+
+#[cfg(all(test, unix))]
+mod unix_process_tests {
+    use super::unix_pid;
+
+    #[test]
+    fn rejects_group_and_overflow_pid_values() {
+        assert_eq!(unix_pid(0), None);
+        assert_eq!(unix_pid(u32::MAX), None);
+    }
+
+    #[test]
+    fn accepts_current_process_pid() {
+        assert_eq!(
+            unix_pid(std::process::id()),
+            Some(std::process::id() as libc::pid_t)
+        );
+    }
 }
 
 #[cfg(windows)]

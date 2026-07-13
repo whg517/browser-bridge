@@ -16,6 +16,7 @@ approve.
 
 - [需求文档](./docs/requirements.md) — 目标、用户故事、功能/非功能需求、范围边界
 - [架构文档](./docs/architecture.md) — 组件、数据流、协议、安全模型、关键约束
+- [WSL 使用指南](./docs/wsl.md) — Windows Chrome interop 与 WSLg 原生 Linux 两种模式
 - [架构决策记录 (ADR)](./docs/adr/) — 每一个"为什么这么选"的可追溯记录:
   - [0001 用 Rust 单二进制](./docs/adr/0001-use-rust-single-binary.md)
   - [0002 三进程架构 + localhost TCP](./docs/adr/0002-three-process-architecture-localhost-tcp.md)
@@ -32,6 +33,7 @@ approve.
   - [0013 CI 与工具链](./docs/adr/0013-ci-and-toolchain.md)
   - [0014 分级日志与类型化错误](./docs/adr/0014-leveled-logging.md)
   - [0015 Windows 本地运行与安装](./docs/adr/0015-windows-support.md)
+  - [0016 Linux 与 WSL 双运行模式](./docs/adr/0016-linux-wsl-support.md)
 
 开发与贡献:[开发指南](./docs/development.md) · [贡献指南](./CONTRIBUTING.md)
 
@@ -88,7 +90,8 @@ skill layer for common workflows are still future work.
 
 ## Install
 
-Google Chrome on macOS or Windows.
+Google Chrome on macOS, Windows, or Linux. Chromium is also supported on
+Linux.
 
 ### Windows
 
@@ -114,6 +117,30 @@ args = []
 A prebuilt Windows archive can use the same command when it contains
 `browser-bridge.exe` and `extension\dist`; source files being absent makes the
 installer skip Rust and Node.js automatically.
+
+### Linux / WSL
+
+WSL has two supported topologies. If your everyday browser is **Windows
+Chrome**, install on Windows and configure the WSL MCP client to launch the
+Windows `.exe` through `/mnt/c`; do not install a Linux native host. If Chrome
+or Chromium itself runs under **WSLg**, install everything natively in WSL.
+See the [WSL usage guide](./docs/wsl.md) for complete configuration examples
+and the OS-boundary rules.
+
+For native Linux/WSLg, download the `…-linux-x64` archive from the
+[latest release](https://github.com/whg517/browser-bridge/releases/latest), or
+build from source with Rust, Node.js, and npm installed:
+
+```sh
+./install.sh                    # auto-detect Chrome or Chromium
+./install.sh --browser chrome   # Google Chrome only
+./install.sh --browser chromium # Chromium only
+./install.sh --browser both     # register both browsers
+```
+
+The Linux installer puts the binary at
+`~/.local/share/browser-bridge/browser-bridge` by default and follows
+`XDG_DATA_HOME` / `XDG_CONFIG_HOME` when set.
 
 ### macOS
 
@@ -141,8 +168,9 @@ Prereqs: Rust toolchain (`install.sh` finds cargo on PATH or at
 ./install.sh
 ```
 
-Either way, `install.sh` installs the binary to `~/.browser-bridge/` and writes
-the native messaging host manifest (`com.browser_bridge.host.json`) with the
+On macOS, `install.sh` installs the binary to `~/.browser-bridge/`. On Linux it
+uses `~/.local/share/browser-bridge/` by default. In both cases it writes the
+native messaging host manifest (`com.browser_bridge.host.json`) with the
 **pinned extension ID** already trusted.
 
 Then:
@@ -156,14 +184,15 @@ Then:
    (or `npm run watch`).
 
 2. **Register the MCP server with your MCP client.** The server is the
-   installed binary (`~/.browser-bridge/browser-bridge` on macOS or
+   installed binary (`~/.browser-bridge/browser-bridge` on macOS,
+   `~/.local/share/browser-bridge/browser-bridge` on Linux, or
    `%LOCALAPPDATA%\browser-bridge\browser-bridge.exe` on Windows) run with no arguments;
    it speaks MCP over stdio. Use an **absolute path** — most clients don't
    expand `~`. `mcp-config.example.json` has a ready-to-copy JSON snippet.
 
    - **Claude Code** (CLI):
      ```sh
-     claude mcp add browser-bridge -- "$HOME/.browser-bridge/browser-bridge"
+     claude mcp add browser-bridge -- "/absolute/path/to/browser-bridge"
      ```
    - **Codex** (`~/.codex/config.toml`):
      ```toml
@@ -204,7 +233,9 @@ Then:
   from a terminal (`/Applications/Google Chrome.app/Contents/MacOS/Google
   Chrome`) to see `[native-host]` / `[mcp]` stderr live.
 - **Lock file** — `~/Library/Application Support/browser-bridge/run.lock` on
-  macOS, or `%LOCALAPPDATA%\browser-bridge\run.lock` on Windows
+  macOS, `%LOCALAPPDATA%\browser-bridge\run.lock` on Windows, or
+  `$XDG_RUNTIME_DIR/browser-bridge/run.lock` on Linux (with an XDG cache
+  fallback)
   shows the current MCP server's port + pid. If it's stale (server crashed),
   the native host removes it on next failed connect.
 

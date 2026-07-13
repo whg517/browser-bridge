@@ -34,7 +34,8 @@
 - ✅ **Cookie/Storage 只读已补齐**:阶段三补了 `cookie_get` / `storage_get`,严格只读且输出脱敏。详见 [ADR-0010](./adr/0010-cookie-storage-readonly.md)
 - ✅ **精确 snapshot 已补齐**:`page_snapshot_precise` 显式使用 chrome.debugger,调用前提示用户,调用期间会短暂显示 infobar。默认 `page_snapshot` 仍用 content script 近似。详见 [ADR-0003](./adr/0003-content-script-snapshot-vs-chrome-debugger.md) 和 [ADR-0009](./adr/0009-page-snapshot-precise-debugger.md)
 - ❌ **不做录制/回放、批量任务编排**。这是阶段三的玩法层
-- ❌ **不支持非 Chrome 浏览器**。当前针对 macOS/Windows 上的 Google Chrome
+- ❌ **不支持非 Chromium 系浏览器**。当前针对 macOS/Windows/Linux 上的
+  Google Chrome，以及 Linux 上的 Chromium
 
 ## 3. 用户故事
 
@@ -112,7 +113,8 @@
 - 11 个工具(见 FR-1~FR-3);**阶段二追加 `page_eval` + `page_snapshot_precise`**(共 13 个);**阶段三追加 `cookie_get` + `storage_get`**(共 15 个)
 - 白名单 + Toast 双层安全
 - content script 风格 snapshot
-- macOS/Windows + Chrome
+- macOS/Windows/Linux + Chrome；Linux 同时支持 Chromium；WSL 支持 Windows
+  Chrome interop 与 WSLg Linux 浏览器两种模式
 
 ### 6.2 v0.1 不包含,后续阶段
 - **阶段二**:
@@ -139,7 +141,7 @@
 
 ## 8. 验收标准(v0.1)
 
-1. `install.sh`(macOS)或 `install.ps1`(Windows)跑通,扩展加载成功,host manifest 注册
+1. `install.sh`(macOS/Linux)或 `install.ps1`(Windows)跑通,扩展加载成功,host manifest 注册
 2. MCP 客户端能看到 `browser-bridge` 已连接
 3. AI 在对话里说"列出标签页" → 看到真实标签页列表
 4. AI 说"截当前页" → AI 能分析到截图

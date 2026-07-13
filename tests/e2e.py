@@ -34,11 +34,16 @@ _XDG = os.environ.get("XDG_RUNTIME_DIR")
 if os.name == "nt":
     _LOCAL = os.environ.get("LOCALAPPDATA", os.path.expanduser("~/AppData/Local"))
     LOCK = os.path.join(_LOCAL, "browser-bridge", "run.lock")
-else:
+elif sys.platform == "darwin":
     LOCK = (
-        os.path.join(_XDG, "browser-bridge.lock")
+        os.path.join(_XDG, "browser-bridge", "run.lock")
         if _XDG
         else os.path.expanduser("~/Library/Application Support/browser-bridge/run.lock")
+    )
+else:
+    _CACHE = os.environ.get("XDG_CACHE_HOME", os.path.expanduser("~/.cache"))
+    LOCK = os.path.join(_XDG, "browser-bridge", "run.lock") if _XDG else os.path.join(
+        _CACHE, "browser-bridge", "run.lock"
     )
 
 _passed = 0

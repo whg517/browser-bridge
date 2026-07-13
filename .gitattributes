@@ -1,0 +1,9 @@
+* text=auto eol=lf
+
+*.sh text eol=lf
+*.py text eol=lf
+*.mjs text eol=lf
+Makefile text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.ps1 text eol=crlf

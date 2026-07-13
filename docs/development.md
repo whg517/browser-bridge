@@ -119,8 +119,8 @@ make sync-version        # ./scripts/sync-version.sh
 # 4. gate on a clean tree
 make release             # check-version + full ci
 # 5. tag — pushing a v* tag triggers .github/workflows/release.yml, which
-#    builds a macOS (Apple Silicon) tarball (binary + built extension +
-#    install.sh) and publishes it to GitHub Releases.
+#    builds macOS Apple Silicon and Linux x64 tarballs (binary + built
+#    extension + install.sh) and publishes them to GitHub Releases.
 git tag vX.Y.Z && git push --tags
 ```
 

@@ -6,39 +6,108 @@
 #                                       extension ID is fixed (pinned by the
 #                                       `key` in extension/manifest.json), so no
 #                                       ID copy-paste is needed.
-#   ./install.sh --extension-id ABCD... Override the pinned ID (e.g. a Web Store
-#                                       build with a different ID).
+#   ./install.sh --extension-id ID      Override the pinned extension ID.
+#   ./install.sh --browser chrome       Linux: install for chrome, chromium,
+#                                       or both (default: auto-detect).
+#   ./install.sh --skip-extension-build Reuse an existing extension/dist. Useful
+#                                       in WSL when only the Rust toolchain is
+#                                       installed in Linux.
 #
 # Two modes, auto-detected:
 #   - source checkout (Cargo.toml present): builds the binary (Rust) + the
 #     extension (Node/npm), then installs.
 #   - prebuilt release tarball (no Cargo.toml): installs the shipped binary +
 #     extension/dist directly — no Rust or Node needed.
-# macOS + Google Chrome.
+# macOS/Linux + Google Chrome or Chromium.
 
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HOST_NAME="com.browser_bridge.host"
-INSTALL_DIR="$HOME/.browser-bridge"
 BINARY_NAME="browser-bridge"
-NM_DIR="$HOME/Library/Application Support/Google/Chrome/NativeMessagingHosts"
 
 # Deterministic extension ID, derived from the public `key` in
 # extension/manifest.json (same for everyone, regardless of load path). If you
 # ever change that key, update this to match (or pass --extension-id).
 PINNED_EXTENSION_ID="mkjjlmjbcljpcfkfadfmhblmmddkdihf"
 
-# ---- parse args -----------------------------------------------------------
+# ---- platform + args ------------------------------------------------------
 
 EXTENSION_ID="$PINNED_EXTENSION_ID"
-if [[ "${1:-}" == "--extension-id" ]]; then
-  EXTENSION_ID="${2:-}"
-  if [[ -z "$EXTENSION_ID" ]]; then
-    echo "error: --extension-id requires a value (the 32-char extension id)" >&2
+BROWSER="auto"
+SKIP_EXTENSION_BUILD="${BB_SKIP_EXTENSION_BUILD:-0}"
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --extension-id)
+      EXTENSION_ID="${2:-}"
+      [[ -n "$EXTENSION_ID" ]] || { echo "error: --extension-id requires a value" >&2; exit 1; }
+      shift 2
+      ;;
+    --browser)
+      BROWSER="${2:-}"
+      [[ -n "$BROWSER" ]] || { echo "error: --browser requires chrome, chromium, or both" >&2; exit 1; }
+      shift 2
+      ;;
+    --skip-extension-build)
+      SKIP_EXTENSION_BUILD=1
+      shift
+      ;;
+    -h|--help)
+      sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'
+      exit 0
+      ;;
+    *)
+      echo "error: unknown argument: $1" >&2
+      exit 1
+      ;;
+  esac
+done
+
+[[ "$EXTENSION_ID" =~ ^[a-p]{32}$ ]] || {
+  echo "error: extension id must be 32 characters in the range a-p" >&2
+  exit 1
+}
+
+OS="$(uname -s)"
+declare -a NM_DIRS=()
+case "$OS" in
+  Darwin)
+    INSTALL_DIR="${BB_INSTALL_DIR:-$HOME/.browser-bridge}"
+    NM_DIRS+=("${BB_NM_DIR:-$HOME/Library/Application Support/Google/Chrome/NativeMessagingHosts}")
+    ;;
+  Linux)
+    INSTALL_DIR="${BB_INSTALL_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/browser-bridge}"
+    CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
+    if [[ -n "${BB_NM_DIR:-}" ]]; then
+      NM_DIRS+=("$BB_NM_DIR")
+    else
+      if [[ "$BROWSER" == "auto" ]]; then
+        if command -v google-chrome >/dev/null 2>&1 || command -v google-chrome-stable >/dev/null 2>&1 || [[ -d "$CONFIG_HOME/google-chrome" ]]; then
+          BROWSER="chrome"
+        elif command -v chromium >/dev/null 2>&1 || command -v chromium-browser >/dev/null 2>&1 || [[ -d "$CONFIG_HOME/chromium" ]]; then
+          BROWSER="chromium"
+        else
+          BROWSER="chrome"
+          echo "[install] no Linux browser detected; installing manifest for Google Chrome"
+        fi
+      fi
+      case "$BROWSER" in
+        chrome) NM_DIRS+=("$CONFIG_HOME/google-chrome/NativeMessagingHosts") ;;
+        chromium) NM_DIRS+=("$CONFIG_HOME/chromium/NativeMessagingHosts") ;;
+        both)
+          NM_DIRS+=("$CONFIG_HOME/google-chrome/NativeMessagingHosts")
+          NM_DIRS+=("$CONFIG_HOME/chromium/NativeMessagingHosts")
+          ;;
+        *) echo "error: --browser must be chrome, chromium, or both" >&2; exit 1 ;;
+      esac
+    fi
+    ;;
+  *)
+    echo "error: unsupported platform: $OS (use install.ps1 on Windows)" >&2
     exit 1
-  fi
-fi
+    ;;
+esac
 
 # ---- source vs prebuilt ---------------------------------------------------
 # Source checkout (Cargo.toml present) → build the binary + extension.
@@ -53,15 +122,24 @@ if [[ -f "$HERE/Cargo.toml" ]]; then
   "$BB_CARGO" build --release --manifest-path "$HERE/Cargo.toml"
   BIN_SRC="$HERE/target/release/$BINARY_NAME"
 
-  if ! command -v npm >/dev/null 2>&1; then
-    echo "error: npm not found — needed to build the extension in source mode." >&2
-    echo "       Install Node.js (https://nodejs.org) and re-run." >&2
-    exit 1
+  if [[ "$SKIP_EXTENSION_BUILD" == "1" ]]; then
+    DIST_DIR="$HERE/extension/dist"
+    [[ -d "$DIST_DIR" ]] || {
+      echo "error: --skip-extension-build requires an existing $DIST_DIR" >&2
+      exit 1
+    }
+    echo "[install] reusing existing extension bundle at $DIST_DIR"
+  else
+    if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1; then
+      echo "error: Linux/macOS Node.js + npm are needed to build the extension." >&2
+      echo "       Install Node.js, or build extension/dist elsewhere and pass --skip-extension-build." >&2
+      exit 1
+    fi
+    echo "[install] building extension bundle (esbuild)…"
+    [[ -d "$HERE/extension/node_modules" ]] || npm --prefix "$HERE/extension" install
+    npm --prefix "$HERE/extension" run build
+    DIST_DIR="$HERE/extension/dist"
   fi
-  echo "[install] building extension bundle (esbuild)…"
-  [[ -d "$HERE/extension/node_modules" ]] || npm --prefix "$HERE/extension" install
-  npm --prefix "$HERE/extension" run build
-  DIST_DIR="$HERE/extension/dist"
 else
   echo "[install] prebuilt mode — using shipped binary + extension (no build)"
   BIN_SRC="$HERE/$BINARY_NAME"
@@ -81,8 +159,8 @@ echo "[install] binary installed at $INSTALL_DIR/$BINARY_NAME"
 
 # ---- host manifest --------------------------------------------------------
 
-# We need to pass --native-host to the binary. Chrome's native messaging has
-# no `args` field, so on macOS we use a tiny wrapper script with a shebang.
+# Chrome native-messaging manifests have no `args` field, so Unix installs use
+# a tiny wrapper to select the binary's native-host mode.
 WRAPPER="$INSTALL_DIR/run-host.sh"
 cat > "$WRAPPER" <<EOF
 #!/usr/bin/env bash
@@ -90,13 +168,13 @@ exec "$INSTALL_DIR/$BINARY_NAME" --native-host
 EOF
 chmod 0755 "$WRAPPER"
 
-mkdir -p "$NM_DIR"
-MANIFEST="$NM_DIR/$HOST_NAME.json"
-
 # allowed_origins pins the extension ID (fixed via the manifest key).
 ORIGINS="[\"chrome-extension://$EXTENSION_ID/\"]"
 
-cat > "$MANIFEST" <<EOF
+for NM_DIR in "${NM_DIRS[@]}"; do
+  mkdir -p "$NM_DIR"
+  MANIFEST="$NM_DIR/$HOST_NAME.json"
+  cat > "$MANIFEST" <<EOF
 {
   "name": "$HOST_NAME",
   "description": "Browser Bridge native messaging host",
@@ -105,8 +183,9 @@ cat > "$MANIFEST" <<EOF
   "allowed_origins": $ORIGINS
 }
 EOF
-
-echo "[install] host manifest written to $MANIFEST"
+  chmod 0644 "$MANIFEST"
+  echo "[install] host manifest written to $MANIFEST"
+done
 echo "[install]   allowed_origins: $ORIGINS"
 
 cat <<TIP

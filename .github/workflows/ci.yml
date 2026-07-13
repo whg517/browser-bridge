@@ -72,6 +72,38 @@ jobs:
       # shellcheck is preinstalled on GitHub's ubuntu runners.
       - run: shellcheck install.sh scripts/*.sh tests/run_all.sh
 
+  linux-install:
+    name: Linux installer (isolated XDG directories)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1
+        with:
+          cache: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: extension/package-lock.json
+      - run: npm ci
+        working-directory: extension
+      - run: npm run build
+        working-directory: extension
+      - name: Install for Chrome and Chromium
+        run: |
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+          XDG_DATA_HOME="$tmp/data" \
+          XDG_CONFIG_HOME="$tmp/config" \
+            ./install.sh --browser both --skip-extension-build
+          test -x "$tmp/data/browser-bridge/browser-bridge"
+          test -x "$tmp/data/browser-bridge/run-host.sh"
+          test -f "$tmp/config/google-chrome/NativeMessagingHosts/com.browser_bridge.host.json"
+          test -f "$tmp/config/chromium/NativeMessagingHosts/com.browser_bridge.host.json"
+          grep -q 'chrome-extension://mkjjlmjbcljpcfkfadfmhblmmddkdihf/' \
+            "$tmp/config/google-chrome/NativeMessagingHosts/com.browser_bridge.host.json"
+          "$tmp/data/browser-bridge/browser-bridge" --help
+
   e2e:
     name: Protocol e2e (Python)
     runs-on: ubuntu-latest
