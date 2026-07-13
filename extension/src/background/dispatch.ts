@@ -4,10 +4,31 @@
 
 import type { BridgeReq, PageResponse } from "../shared/types";
 import { getSetting } from "../shared/settings";
+import { TOOL_META } from "../shared/ops";
+import { decide } from "./policy";
 import { ensureAllowed } from "./allowlist-store";
 import { resolveTargetTab, injectIfNeeded, tabList, tabFocus, tabOpen, tabClose } from "./tabs";
 import { snapshotPrecise } from "./precise";
 import { cookieGet } from "./cookies";
+
+/**
+ * The disable gate, factored out for testability. Routes through the pure
+ * policy `decide()` but preserves dispatch's original behavior exactly:
+ *
+ * - Only *known* tools (present in TOOL_META) are consulted, because `decide()`
+ *   fail-closes unknown ops. Unknown/empty ops pass through untouched — the Rust
+ *   side validates tool names upstream, and the switch handles the rest.
+ * - A known, disabled tool throws `tool disabled in settings: <op>` — the same
+ *   message the old inline check produced (`decision.reason` is
+ *   "tool disabled in settings").
+ */
+export function assertNotDisabled(op: string | undefined, disabledTools: string[]): void {
+  if (!op || !(op in TOOL_META)) return;
+  const decision = decide(op, { disabledTools });
+  if (!decision.allowed && decision.reason === "tool disabled in settings") {
+    throw new Error(`${decision.reason}: ${op}`);
+  }
+}
 
 export async function dispatch(req: BridgeReq): Promise<unknown> {
   const { op, args } = req;
@@ -15,12 +36,8 @@ export async function dispatch(req: BridgeReq): Promise<unknown> {
   // Tool enable/disable gate: if the op is in the user's disabledTools list,
   // reject before doing anything. The op strings here mirror the tool names in
   // tools.rs and options.ts TOOLS — keep in sync.
-  if (op) {
-    const disabled = await getSetting("disabledTools");
-    if (Array.isArray(disabled) && disabled.includes(op)) {
-      throw new Error(`tool disabled in settings: ${op}`);
-    }
-  }
+  const disabled = await getSetting("disabledTools");
+  assertNotDisabled(op, Array.isArray(disabled) ? disabled : []);
 
   // Tab-level ops handled directly here (no content script needed). The `!`
   // assertions reflect the Rust side's JSON-schema validation of required args.
