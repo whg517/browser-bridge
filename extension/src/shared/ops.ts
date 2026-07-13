@@ -1,9 +1,8 @@
-// The tool catalogue, JS side.
+// GENERATED from contracts/tools.json by scripts/gen-ops.mjs — DO NOT EDIT.
+// Edit the contract, then run `make gen` (or `node scripts/gen-ops.mjs`).
 //
-// `tools.rs` on the Rust side is the authority for which tools exist; this list
-// mirrors it for the options-page UI (toggleable tools) and as a single place
-// the extension enumerates op names. Keep the `op` strings in sync with
-// tools.rs (a future test can assert equality).
+// The tool catalogue, JS side: op names + Chinese UI labels for the options
+// page. tools.rs is verified against the same contract in `cargo test`.
 
 export interface ToolInfo {
   op: string;

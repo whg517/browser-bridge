@@ -33,6 +33,10 @@ audit: ## Supply-chain checks (needs cargo-deny, cargo-audit)
 	cargo deny check
 	cargo audit
 
+gen: ## Regenerate code from contracts/ (ops.ts from tools.json)
+	node scripts/gen-ops.mjs
+	npm --prefix extension exec prettier -- --write extension/src/shared/ops.ts
+
 test-rust: ## Rust unit tests
 	cargo test
 

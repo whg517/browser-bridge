@@ -404,6 +404,36 @@ mod tests {
         assert_eq!(all().len(), 15);
     }
 
+    // contracts/tools.json is the single source of truth for the catalogue.
+    // tools.rs is verified against it here; the TS ops.ts is generated from it.
+    #[test]
+    fn matches_contract() {
+        let contract: Value =
+            serde_json::from_str(include_str!("../contracts/tools.json")).unwrap();
+        let ctools = contract["tools"].as_array().unwrap();
+        let cnames: Vec<&str> = ctools.iter().map(|t| t["name"].as_str().unwrap()).collect();
+        let tools = all();
+        let names: Vec<&str> = tools.iter().map(|t| t.name).collect();
+        assert_eq!(
+            names, cnames,
+            "tools.rs names/order must match contracts/tools.json (run `make gen`)"
+        );
+        for t in &tools {
+            let c = ctools.iter().find(|c| c["name"] == t.name).unwrap();
+            assert_eq!(
+                c["description"].as_str().unwrap(),
+                t.description,
+                "description mismatch for {} vs contract",
+                t.name
+            );
+            assert_eq!(
+                &t.input_schema, &c["inputSchema"],
+                "inputSchema mismatch for {} vs contract",
+                t.name
+            );
+        }
+    }
+
     #[test]
     fn every_tool_has_object_schema() {
         for t in all() {

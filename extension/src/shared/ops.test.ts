@@ -15,13 +15,18 @@ describe("ops catalogue", () => {
     }
   });
 
-  // Cross-language guard: the JS op list must match the Rust authority
-  // (src/tools.rs). This catches the drift that once left docs claiming 11
-  // tools when there were really 15.
-  test("matches the Rust tool list in tools.rs", () => {
-    const toolsRs = readFileSync(resolve(import.meta.dir, "../../../src/tools.rs"), "utf8");
-    const rustNames = [...toolsRs.matchAll(/name:\s*"([a-z_]+)"/g)].map((m) => m[1]);
-    expect(rustNames.length).toBeGreaterThan(0);
-    expect([...OP_NAMES].sort()).toEqual([...rustNames].sort());
+  // ops.ts is generated from contracts/tools.json (scripts/gen-ops.mjs); assert
+  // it's in sync with the contract (the single source). tools.rs is checked
+  // against the same contract in `cargo test` — so all three stay aligned.
+  test("matches contracts/tools.json (the source)", () => {
+    const contract = JSON.parse(
+      readFileSync(resolve(import.meta.dir, "../../../contracts/tools.json"), "utf8")
+    );
+    const names = contract.tools.map((t: { name: string }) => t.name);
+    const labels = Object.fromEntries(
+      contract.tools.map((t: { name: string; uiLabel: string }) => [t.name, t.uiLabel])
+    );
+    expect(OP_NAMES).toEqual(names);
+    for (const t of TOOLS) expect(t.desc).toBe(labels[t.op]);
   });
 });

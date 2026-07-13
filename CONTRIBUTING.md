@@ -40,12 +40,17 @@ for preserving the safety model.
 
 A new tool touches both sides (see architecture.md §10):
 
-1. Add the `Tool` definition + a `dispatch` arm in `src/tools.rs`, and bump the
-   count in the `tool_count_is_pinned` test.
-2. Handle the `op` in `extension/src/background.ts` (and `content.ts` if it's a
+1. **Add it to [`contracts/tools.json`](contracts/tools.json)** — the single
+   source for the catalogue (name, description, uiLabel, risk, scope,
+   permission, confirmation, inputSchema). Run `make gen` to regenerate
+   `extension/src/shared/ops.ts`, and bump the count in `tool_count_is_pinned`.
+2. Add the matching `Tool` definition + `dispatch` arm in `src/tools.rs`. The
+   `matches_contract` test (`cargo test`) enforces name/description/schema parity
+   with the contract.
+3. Handle the `op` in `extension/src/background.ts` (and `content.ts` if it's a
    page-level DOM op).
-3. Add it to the `TOOLS` list in `options.ts` if it should be toggleable.
-4. Extend `tests/e2e.py` (and `dom_test.ts` for DOM ops).
+4. Give it a risk row in the [tool risk matrix](docs/security/tool-risk-matrix.md).
+5. Extend `tests/e2e.py` (and `dom_test.ts` for DOM ops).
 
 ## Versioning
 

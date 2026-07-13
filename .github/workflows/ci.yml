@@ -39,6 +39,12 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
       - run: npm ci
         working-directory: extension
+      - name: Contracts in sync (ops.ts generated from contracts/tools.json)
+        run: |
+          node scripts/gen-ops.mjs
+          npm --prefix extension exec prettier -- --write extension/src/shared/ops.ts
+          git diff --exit-code -- extension/src/shared/ops.ts \
+            || { echo "::error::ops.ts is stale — run 'make gen' after editing contracts/tools.json"; exit 1; }
       - run: npm run typecheck
         working-directory: extension
       - run: npm run lint

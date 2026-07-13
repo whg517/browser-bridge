@@ -1,0 +1,320 @@
+{
+  "$comment": "SINGLE SOURCE OF TRUTH for the tool catalogue. TS ops.ts is GENERATED from this (scripts/gen-ops.mjs); Rust tools.rs is VERIFIED against it (cargo test). Edit here, then regenerate + test.",
+  "tools": [
+    {
+      "name": "tab_list",
+      "uiLabel": "列出所有标签页",
+      "risk": "low",
+      "scope": "tab",
+      "permission": "tabs",
+      "confirmation": "none",
+      "description": "List all open browser tabs. Returns id, title, url, and which is active.",
+      "inputSchema": {
+        "properties": {},
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "name": "tab_focus",
+      "uiLabel": "切换到指定标签页",
+      "risk": "low",
+      "scope": "tab",
+      "permission": "tabs",
+      "confirmation": "none",
+      "description": "Bring a tab to the foreground (make it active).",
+      "inputSchema": {
+        "properties": {
+          "tabId": {
+            "description": "Tab id from tab_list",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "tabId"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "tab_open",
+      "uiLabel": "打开新标签页(需白名单)",
+      "risk": "medium",
+      "scope": "tab",
+      "permission": "tabs",
+      "confirmation": "none",
+      "description": "Open a URL in a new tab. The host domain must be in the user's allowlist.",
+      "inputSchema": {
+        "properties": {
+          "url": {
+            "description": "Absolute URL to open",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "tab_close",
+      "uiLabel": "关闭标签页(带确认)",
+      "risk": "high",
+      "scope": "tab",
+      "permission": "tabs",
+      "confirmation": "page-toast",
+      "description": "Close an http(s) tab after showing a user-confirmation prompt in that page.",
+      "inputSchema": {
+        "properties": {
+          "tabId": {
+            "description": "Tab id from tab_list",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "tabId"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "page_snapshot",
+      "uiLabel": "快照页面可交互元素",
+      "risk": "low",
+      "scope": "page",
+      "permission": "scripting",
+      "confirmation": "none",
+      "description": "Capture the active tab's interactive elements as an accessibility-style tree. Each node has a stable `ref` (e.g. \"e3\"), a role, an accessible name, and a fallback CSS selector. Use the `ref` in page_click/page_fill when possible.",
+      "inputSchema": {
+        "properties": {},
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "name": "page_click",
+      "uiLabel": "点击元素",
+      "risk": "high",
+      "scope": "page",
+      "permission": "scripting",
+      "confirmation": "high-risk",
+      "description": "Click an element on the active tab. Prefer passing `ref` (from page_snapshot); fall back to `selector`. Clicking a submit button or a link triggers a user-confirmation prompt.",
+      "inputSchema": {
+        "properties": {
+          "ref": {
+            "description": "Element ref from page_snapshot, e.g. \"e3\"",
+            "type": "string"
+          },
+          "selector": {
+            "description": "CSS selector fallback",
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "name": "page_fill",
+      "uiLabel": "填写表单字段",
+      "risk": "high",
+      "scope": "page",
+      "permission": "scripting",
+      "confirmation": "none",
+      "description": "Type a value into a form field on the active tab. Prefer `ref`; fall back to `selector`. Password fields are masked in logs/history.",
+      "inputSchema": {
+        "properties": {
+          "ref": {
+            "description": "Element ref from page_snapshot",
+            "type": "string"
+          },
+          "selector": {
+            "description": "CSS selector fallback",
+            "type": "string"
+          },
+          "value": {
+            "description": "Text to type into the field",
+            "type": "string"
+          }
+        },
+        "required": [
+          "value"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "page_text",
+      "uiLabel": "读取页面可见文本",
+      "risk": "medium",
+      "scope": "page",
+      "permission": "scripting",
+      "confirmation": "none",
+      "description": "Return the visible text content of the active tab (sensitive fields masked).",
+      "inputSchema": {
+        "properties": {},
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "name": "page_screenshot",
+      "uiLabel": "截取可视区域",
+      "risk": "medium",
+      "scope": "page",
+      "permission": "tabs",
+      "confirmation": "none",
+      "description": "Capture the visible viewport of the active tab as a PNG (base64).",
+      "inputSchema": {
+        "properties": {},
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "name": "page_scroll",
+      "uiLabel": "滚动页面",
+      "risk": "low",
+      "scope": "page",
+      "permission": "scripting",
+      "confirmation": "none",
+      "description": "Scroll the active tab. Pass `direction` (up|down|top|bottom) or `pixels`.",
+      "inputSchema": {
+        "properties": {
+          "direction": {
+            "description": "One of: up, down, top, bottom",
+            "type": "string"
+          },
+          "pixels": {
+            "description": "Number of pixels to scroll (positive = down)",
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "name": "page_wait_for",
+      "uiLabel": "等待条件满足",
+      "risk": "low",
+      "scope": "page",
+      "permission": "scripting",
+      "confirmation": "none",
+      "description": "Wait until a condition is met on the active tab, or until timeout. One of: `selector` exists, `text` appears, or `nav` waits for page load completion.",
+      "inputSchema": {
+        "properties": {
+          "nav": {
+            "description": "Wait for a navigation event",
+            "type": "boolean"
+          },
+          "selector": {
+            "description": "Wait for this selector to match an element",
+            "type": "string"
+          },
+          "text": {
+            "description": "Wait for this text to appear in the page",
+            "type": "string"
+          },
+          "timeoutMs": {
+            "description": "Max wait in ms (default 30000)",
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "name": "page_eval",
+      "uiLabel": "执行任意 JS(高危)",
+      "risk": "critical",
+      "scope": "page",
+      "permission": "scripting",
+      "confirmation": "every-call",
+      "description": "HIGH RISK — execute arbitrary JavaScript on the active tab. EVERY call shows the user the full code in a confirmation prompt and waits for approval; within 60s of an approval, same-origin evals run without re-prompting. The return value is masked (JWT / long hex / long numbers / token-like strings) by default. This is the most powerful tool: prefer page_click / page_fill / page_snapshot whenever possible, and only use page_eval when those cannot achieve the goal (custom events, reading framework state, SPA routing, canvas/WebGL, etc.). Code runs in the page's global scope, wrapped as `async`, so you can `await` and `return` a value. Async results are awaited. Errors are returned as {name, message}.",
+      "inputSchema": {
+        "properties": {
+          "code": {
+            "description": "JavaScript code to execute",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "page_snapshot_precise",
+      "uiLabel": "精确快照(走 debugger)",
+      "risk": "medium",
+      "scope": "page",
+      "permission": "debugger",
+      "confirmation": "warn",
+      "description": "Like page_snapshot, but uses Chrome's debugger (CDP Accessibility.getFullAXTree) to capture the AUTHORITATIVE accessibility tree — accurate for shadow DOM and complex ARIA where the content-script approximation misses. The user is warned first (a brief on-page notice); Chrome then shows a 'Started debugging this browser' banner on all tabs for ~1 second while the snapshot is taken, then it disappears. Cannot run on chrome:// / web store pages, or tabs with DevTools open. Refs use a 'p' prefix (p1, p2...) and work with page_click / page_fill unchanged. Use this when page_snapshot misses elements or roles look wrong.",
+      "inputSchema": {
+        "properties": {
+          "frameId": {
+            "description": "Optional: limit to a specific frame's tree",
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "name": "cookie_get",
+      "uiLabel": "读取 Cookie(脱敏)",
+      "risk": "high",
+      "scope": "tab",
+      "permission": "cookies",
+      "confirmation": "none",
+      "description": "Read cookies for the active tab (or a url/domain you specify). Includes httpOnly cookies (the main reason to use this over document.cookie). Scoped to hosts in the user's allowlist — unauthorized hosts silently return nothing. Read-only; there is no cookie_set (writing httpOnly cookies is a session-fixation risk). Values are masked (JWT / long hex / long numbers) before being returned. If you omit url/domain/name, cookies for the active tab's URL are returned.",
+      "inputSchema": {
+        "properties": {
+          "domain": {
+            "description": "Match this domain and its subdomains",
+            "type": "string"
+          },
+          "name": {
+            "description": "Exact cookie name to match",
+            "type": "string"
+          },
+          "url": {
+            "description": "Return cookies that would be sent to this URL",
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "name": "storage_get",
+      "uiLabel": "读取 localStorage/sessionStorage(脱敏)",
+      "risk": "high",
+      "scope": "page",
+      "permission": "scripting",
+      "confirmation": "none",
+      "description": "Read the page's localStorage or sessionStorage (where frameworks like Auth0 / NextAuth / Firebase store tokens). Must run on the active tab; same-origin only (cross-origin iframes are not readable). Pass `key` to fetch one entry, or omit it to dump all entries (capped at 500). Values are ALWAYS masked (JWT / long hex / long numbers) — this masking is not toggleable. Read-only.",
+      "inputSchema": {
+        "properties": {
+          "key": {
+            "description": "Specific key to read; omit for all entries",
+            "type": "string"
+          },
+          "type": {
+            "description": "\"local\" (default) or \"session\"",
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    }
+  ]
+}
