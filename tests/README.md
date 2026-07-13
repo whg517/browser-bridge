@@ -14,6 +14,25 @@ The two browser suites are **TypeScript run under bun** (matching the
 extension). The protocol suite stays **Python on purpose** — rewriting it in
 TS/JS would remove the independent-implementation value and add nothing.
 
+## ⚠ Safety — never point browser tests at your daily Chrome
+
+The smoke and integration tests launch a **non-headless Chrome with
+`--load-extension`**. Driving your everyday Google Chrome this way can **capture
+and then close your real browser session** (all tabs/windows) on cleanup. So:
+
+- Browser tests require **`CHROME_BIN` set to an isolated browser** — a
+  [Chrome for Testing](https://developer.chrome.com/blog/chrome-for-testing) or
+  Chromium binary that is **not** your daily browser.
+- If `CHROME_BIN` is unset (or points at the standard `Google Chrome.app` /
+  `chrome.exe`), the tests and `run_all.sh` **skip** instead of running — they
+  will not touch your daily Chrome.
+- The tests only ever terminate the browser instance they launched — never a
+  broad/pattern process kill.
+
+```sh
+export CHROME_BIN="/Applications/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"
+```
+
 ## Running
 
 ```sh

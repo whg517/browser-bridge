@@ -43,13 +43,19 @@ python3 "$HERE/e2e.py" || { echo "PROTOCOL TESTS FAILED"; FAILED=1; }
 
 echo ""
 echo "(4/4) DOM-layer + smoke tests"
-: "${CHROME_BIN:=/Applications/Google Chrome.app/Contents/MacOS/Google Chrome}"
-export CHROME_BIN
+# SAFETY: browser tests must run against an ISOLATED browser (Chrome for
+# Testing / Chromium via CHROME_BIN), never your daily Chrome — a non-headless
+# --load-extension launch can capture and close your real session. We do NOT
+# default CHROME_BIN to the system Chrome; if it's unset, skip the browser suite.
 if [[ ! -d "$REPO/extension/dist" ]]; then
   echo "  SKIP  extension/dist missing (build step above did not run)"
+elif [[ -z "${CHROME_BIN:-}" ]]; then
+  echo "  SKIP  browser tests: set CHROME_BIN to an isolated Chrome for Testing /"
+  echo "        Chromium binary (NOT your daily Chrome). See tests/README.md → Safety."
 elif [[ ! -x "$CHROME_BIN" ]]; then
-  echo "  SKIP  Chrome not found at $CHROME_BIN (set CHROME_BIN)"
+  echo "  SKIP  CHROME_BIN not executable: $CHROME_BIN"
 else
+  export CHROME_BIN
   if command -v bun >/dev/null 2>&1; then
     bun "$HERE/dom_test.ts" || { echo "DOM TESTS FAILED"; FAILED=1; }
   else

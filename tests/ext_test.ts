@@ -28,6 +28,24 @@ const EXTENSION_DIR = process.env.BB_EXT_DIR || path.join(REPO, "extension", "di
 const CHROME =
   process.env.CHROME_BIN || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 
+// SAFETY (do not remove): this launches a NON-HEADLESS Chrome with
+// --load-extension. On macOS, launching your normal Google Chrome while it is
+// running forwards the flags to the EXISTING instance (ignoring --user-data-dir),
+// so the test captures — and on cleanup CLOSES — your real browser session.
+// (This actually happened.) Refuse unless CHROME_BIN points at an ISOLATED
+// browser (Chrome for Testing / Chromium) that is NOT your daily Chrome.
+function assertIsolatedBrowser(bin: string): void {
+  const isDailyChrome = bin.includes("/Google Chrome.app/") && bin.endsWith("/Google Chrome");
+  if (!process.env.CHROME_BIN || isDailyChrome) {
+    console.log(
+      "SKIP: refusing to drive your daily Google Chrome — it can capture and close\n" +
+        "your real session. Set CHROME_BIN to a Chrome for Testing / Chromium binary\n" +
+        "(see tests/README.md → Safety) to run this test."
+    );
+    process.exit(0);
+  }
+}
+
 let _pass = 0;
 let _fail = 0;
 function check(cond: boolean, label: string): void {
@@ -42,6 +60,7 @@ function check(cond: boolean, label: string): void {
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
 async function main(): Promise<void> {
+  assertIsolatedBrowser(CHROME);
   for (const [label, p] of [
     ["extension dir", EXTENSION_DIR],
     ["system Chrome", CHROME],

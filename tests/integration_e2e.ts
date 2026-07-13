@@ -58,6 +58,22 @@ if (process.platform !== "darwin" && !IS_WINDOWS) {
   console.log("SKIP: real integration test supports macOS and Windows only.");
   process.exit(0);
 }
+// SAFETY (do not remove): this launches a NON-HEADLESS Chrome with
+// --load-extension. Driving your daily Google Chrome can capture and then CLOSE
+// your real browser session. Require an ISOLATED Chrome for Testing / Chromium
+// binary via CHROME_BIN — never the everyday browser.
+{
+  const isDailyMac = CHROME.includes("/Google Chrome.app/") && CHROME.endsWith("/Google Chrome");
+  const isDailyWin = /\\Google\\Chrome\\Application\\chrome\.exe$/i.test(CHROME);
+  if (!process.env.CHROME_BIN || isDailyMac || isDailyWin) {
+    console.log(
+      "SKIP: refusing to drive your daily Chrome (it can capture and close your\n" +
+        "real session). Set CHROME_BIN to a Chrome for Testing / Chromium binary\n" +
+        "(see tests/README.md → Safety)."
+    );
+    process.exit(0);
+  }
+}
 for (const [label, p] of [
   ["release binary", BIN],
   ["extension dist", DIST],
