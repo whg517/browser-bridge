@@ -352,7 +352,10 @@ pub fn dispatch(session: &Session, name: &str, args: &Value) -> (Value, bool) {
             (json!([{ "type": "text", "text": data.to_string() }]), false)
         }
         Err(e) => (
-            json!([{ "type": "text", "text": format!("Error: {e}") }]),
+            // Prefix the stable cross-process code (contracts/errors.json) so
+            // clients can branch programmatically, while the text stays
+            // human-readable. isError stays true.
+            json!([{ "type": "text", "text": format!("Error [{}]: {e}", e.code()) }]),
             true,
         ),
     }
