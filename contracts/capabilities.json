@@ -1,0 +1,53 @@
+{
+  "$comment": "SINGLE SOURCE OF TRUTH for capability negotiation. Each capability groups tools that share a Chrome permission / scope; it is derived CONCEPTUALLY from tools.json (permission + scope). On connect, the extension/host advertise which capability `id`s are actually available (permission granted, tool enabled) and the server negotiates against this list. A tool is callable only if its capability is advertised. `permissions` are the Chrome manifest permissions the capability needs; `tools` are the tool names (from tools.json) it covers. Keep in sync with tools.json when tools are added.",
+  "capabilities": [
+    {
+      "id": "tab_control",
+      "description": "Enumerate, focus, open, close browser tabs and capture the visible viewport. Opening/closing are gated by allowlist + user confirmation.",
+      "permissions": ["tabs"],
+      "tools": ["tab_list", "tab_focus", "tab_open", "tab_close", "page_screenshot"]
+    },
+    {
+      "id": "page_snapshot",
+      "description": "Capture the active tab's interactive elements as an accessibility-style tree via the content script (fast approximation, ~90% coverage).",
+      "permissions": ["scripting"],
+      "tools": ["page_snapshot"]
+    },
+    {
+      "id": "page_snapshot_precise",
+      "description": "Capture the authoritative accessibility tree via Chrome's debugger (CDP Accessibility.getFullAXTree). Requires the debugger permission and briefly shows the 'Started debugging this browser' banner.",
+      "permissions": ["debugger"],
+      "tools": ["page_snapshot_precise"]
+    },
+    {
+      "id": "page_interact",
+      "description": "Drive the page: click elements, fill form fields, scroll, and wait for conditions. High-risk clicks trigger an on-page confirmation Toast.",
+      "permissions": ["scripting"],
+      "tools": ["page_click", "page_fill", "page_scroll", "page_wait_for"]
+    },
+    {
+      "id": "page_read",
+      "description": "Read the active tab's visible text content (sensitive fields masked).",
+      "permissions": ["scripting"],
+      "tools": ["page_text"]
+    },
+    {
+      "id": "page_eval",
+      "description": "Execute arbitrary JavaScript on the active tab. Highest-risk capability: every call requires explicit user approval and return values are masked by default.",
+      "permissions": ["scripting"],
+      "tools": ["page_eval"]
+    },
+    {
+      "id": "cookie_read",
+      "description": "Read cookies (including httpOnly) for allowlisted hosts. Read-only; values are masked. Backed by chrome.cookies in the service worker.",
+      "permissions": ["cookies"],
+      "tools": ["cookie_get"]
+    },
+    {
+      "id": "storage_read",
+      "description": "Read the active tab's localStorage / sessionStorage (same-origin only). Read-only; values are always masked.",
+      "permissions": ["scripting"],
+      "tools": ["storage_get"]
+    }
+  ]
+}
