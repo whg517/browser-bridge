@@ -91,9 +91,9 @@ macOS + Google Chrome. Two ways:
 
 ### Prebuilt (no Rust/Node) — recommended
 
-Download the tarball for your Mac from the
-[latest release](https://github.com/whg517/browser-bridge/releases/latest)
-(`…-macos-arm64` for Apple Silicon, `…-macos-x64` for Intel), then:
+Download the `…-macos-arm64` tarball (Apple Silicon) from the
+[latest release](https://github.com/whg517/browser-bridge/releases/latest),
+then:
 
 ```sh
 tar xzf browser-bridge-*-macos-*.tar.gz

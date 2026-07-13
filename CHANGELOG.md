@@ -26,7 +26,7 @@ tools themselves; the extension now ships from a build step).
 - `LICENSE` (Apache-2.0), `CONTRIBUTING.md`, `docs/development.md`,
   `.editorconfig`.
 - **Prebuilt release tarballs** — tagging `v*` triggers a GitHub Actions release
-  build (macOS arm64 + x64) that publishes a binary + built extension +
+  build (macOS Apple Silicon) that publishes a binary + built extension +
   installer. `install.sh` auto-detects a prebuilt tarball and installs with no
   Rust/Node toolchain.
 

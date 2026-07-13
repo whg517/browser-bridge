@@ -16,15 +16,11 @@ permissions:
 
 jobs:
   release:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: macos-14
-            arch: arm64
-          - os: macos-13
-            arch: x64
-    runs-on: ${{ matrix.os }}
+    # Apple Silicon only. (Intel/x64 dropped — the macos-13 runners are scarce
+    # and the build was unreliable; revisit if there's demand.)
+    runs-on: macos-14
+    env:
+      ARCH: arm64
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -54,7 +50,7 @@ jobs:
         id: pkg
         run: |
           TAG="${{ github.event.inputs.tag || github.ref_name }}"
-          NAME="browser-bridge-${TAG}-macos-${{ matrix.arch }}"
+          NAME="browser-bridge-${TAG}-macos-${ARCH}"
           mkdir -p "$NAME/extension"
           cp target/release/browser-bridge "$NAME/"
           cp -r extension/dist "$NAME/extension/dist"
