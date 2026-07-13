@@ -8,6 +8,7 @@
 
 #[macro_use]
 mod log;
+mod doctor;
 mod error;
 mod ipc;
 mod mcp_server;
@@ -23,6 +24,8 @@ fn main() {
     } else if args.len() > 1 && (args[1] == "-h" || args[1] == "--help") {
         print_help();
         0
+    } else if args.len() > 1 && (args[1] == "doctor" || args[1] == "status") {
+        doctor::run()
     } else {
         mcp_server::run()
     };
@@ -50,6 +53,7 @@ fn print_help() {
          Bridge an MCP client to a real Chrome via an extension + native host.\n\n\
          USAGE:\n    \
          browser-bridge              Run as MCP server (for your MCP client)\n    \
+         browser-bridge doctor       Print a read-only health report (alias: status)\n    \
          browser-bridge --native-host  Run as the Chrome native messaging host\n\n\
          Configure your MCP client (Claude Code, Codex, …) to launch this \
          binary with no arguments as an MCP server; Chrome launches it with \
