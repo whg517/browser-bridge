@@ -9,7 +9,9 @@
 //!   secret as the first NDJSON line ("hello").
 
 use std::fs;
-use std::io::{self, Read, Write};
+#[cfg(unix)]
+use std::io::Read;
+use std::io::{self, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::PathBuf;
 use std::time::Duration;
@@ -28,20 +30,35 @@ pub struct LockFile {
 }
 
 impl LockFile {
-    /// Path of the lock file. Lives in a per-user runtime dir. We prefer
-    /// `$XDG_RUNTIME_DIR` if set (often /run/user/<uid> on Linux), else fall
-    /// back to a directory under the user's home on macOS where we can rely
-    /// on 0700 home perms.
+    /// Path of the lock file in a per-user runtime/data directory.
     pub fn path() -> PathBuf {
-        if let Ok(xdg) = std::env::var("XDG_RUNTIME_DIR") {
-            return PathBuf::from(xdg).join("browser-bridge.lock");
+        #[cfg(windows)]
+        {
+            let base = std::env::var_os("LOCALAPPDATA")
+                .map(PathBuf::from)
+                .or_else(|| {
+                    std::env::var_os("USERPROFILE")
+                        .map(PathBuf::from)
+                        .map(|p| p.join("AppData/Local"))
+                })
+                .unwrap_or_else(std::env::temp_dir);
+            let dir = base.join("browser-bridge");
+            let _ = fs::create_dir_all(&dir);
+            dir.join("run.lock")
         }
-        // macOS: use ~/Library/Application Support/browser-bridge/run.lock
-        let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
-        let mut p = PathBuf::from(home);
-        p.push("Library/Application Support/browser-bridge");
-        let _ = fs::create_dir_all(&p);
-        p.join("run.lock")
+
+        #[cfg(not(windows))]
+        {
+            if let Ok(xdg) = std::env::var("XDG_RUNTIME_DIR") {
+                return PathBuf::from(xdg).join("browser-bridge.lock");
+            }
+            // macOS: use ~/Library/Application Support/browser-bridge/run.lock
+            let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
+            let mut p = PathBuf::from(home);
+            p.push("Library/Application Support/browser-bridge");
+            let _ = fs::create_dir_all(&p);
+            p.join("run.lock")
+        }
     }
 
     pub fn write(&self) -> io::Result<()> {
@@ -49,6 +66,7 @@ impl LockFile {
         let mut tmp = path.clone();
         tmp.set_extension("lock.tmp");
         let bytes = serde_json::to_vec(self)?;
+        #[cfg(unix)]
         {
             use std::os::unix::fs::OpenOptionsExt;
             let mut f = fs::OpenOptions::new()
@@ -60,7 +78,25 @@ impl LockFile {
             f.write_all(&bytes)?;
             f.flush()?;
         }
-        // Atomic replace so a concurrent native host never reads a half-write.
+        #[cfg(windows)]
+        {
+            let mut f = fs::OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .open(&tmp)?;
+            f.write_all(&bytes)?;
+            f.flush()?;
+        }
+        // Unix rename atomically replaces an existing destination. Windows'
+        // std::fs::rename does not, so remove a stale destination first. That
+        // creates a tiny not-found window, but the extension's reconnect loop
+        // retries after 2 seconds and can never observe a half-written JSON
+        // file because all bytes were flushed to the temporary file first.
+        #[cfg(windows)]
+        if path.exists() {
+            fs::remove_file(&path)?;
+        }
         fs::rename(&tmp, &path)?;
         Ok(())
     }
@@ -99,16 +135,37 @@ pub fn listen() -> io::Result<(TcpListener, LockFile)> {
 }
 
 fn generate_secret() -> String {
-    // 128 bits of entropy from the OS RNG. We avoid pulling in `rand` by
-    // reading /dev/urandom directly (macOS and Linux both expose it).
-    let mut buf = [0u8; 16];
-    if let Ok(mut f) = fs::File::open("/dev/urandom") {
-        if f.read_exact(&mut buf).is_ok() {
+    #[cfg(windows)]
+    {
+        let mut buf = [0u8; 16];
+        // BCRYPT_USE_SYSTEM_PREFERRED_RNG lets BCryptGenRandom use the system
+        // RNG without opening and managing an algorithm-provider handle.
+        let status = unsafe {
+            BCryptGenRandom(
+                std::ptr::null_mut(),
+                buf.as_mut_ptr(),
+                buf.len() as u32,
+                0x0000_0002,
+            )
+        };
+        if status >= 0 {
             return hex_encode(&buf);
         }
     }
+
+    #[cfg(unix)]
+    {
+        // 128 bits of entropy from the OS RNG. We avoid pulling in `rand` by
+        // reading /dev/urandom directly (macOS and Linux both expose it).
+        let mut buf = [0u8; 16];
+        if let Ok(mut f) = fs::File::open("/dev/urandom") {
+            if f.read_exact(&mut buf).is_ok() {
+                return hex_encode(&buf);
+            }
+        }
+    }
     // Fallback: mix in time + pid + a stack address. Not cryptographic, but
-    // this is only the connect-back token for a 0600 lock file on a
+    // this is only the connect-back token for a per-user lock file on a
     // single-user machine.
     let t = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -120,6 +177,17 @@ fn generate_secret() -> String {
         .chars()
         .take(32)
         .collect::<String>()
+}
+
+#[cfg(windows)]
+#[link(name = "bcrypt")]
+extern "system" {
+    fn BCryptGenRandom(
+        algorithm: *mut std::ffi::c_void,
+        buffer: *mut u8,
+        buffer_len: u32,
+        flags: u32,
+    ) -> i32;
 }
 
 fn hex_encode(bytes: &[u8]) -> String {
@@ -210,5 +278,10 @@ mod tests {
     fn validate_hello_rejects_missing_key() {
         // No "hello" key can never match, regardless of any on-disk lock file.
         assert!(!validate_hello(&serde_json::json!({ "nothello": "x" })));
+    }
+
+    #[test]
+    fn lock_path_has_expected_filename() {
+        assert_eq!(LockFile::path().file_name().unwrap(), "run.lock");
     }
 }

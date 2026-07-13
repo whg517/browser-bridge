@@ -8,7 +8,7 @@ NPM := npm --prefix extension
 
 .PHONY: help build fmt fmt-check lint lint-scripts test-rust test-e2e \
 	ext-deps ext-build ext-typecheck ext-lint ext-format-check ext-test \
-	test-browser test-integration test ci install sync-version check-version release
+	test-browser test-integration test ci install sync-version check-extension-id check-version release
 
 help: ## List available targets
 	@grep -hE '^[a-zA-Z0-9_-]+:.*## ' $(MAKEFILE_LIST) \
@@ -81,5 +81,8 @@ sync-version: ## Propagate the Cargo.toml version into the extension files
 check-version: ## Verify the crate and extension versions agree
 	./scripts/check-version.sh
 
-release: check-version ci ## Pre-release gate: versions consistent + full CI green
+check-extension-id: ## Verify the manifest key and installer extension IDs agree
+	node scripts/check-extension-id.mjs
+
+release: check-version check-extension-id ci ## Pre-release gate: versions consistent + full CI green
 	@echo "Release checks passed. Now tag the release, e.g.: git tag v$$(./scripts/check-version.sh | awk '/Cargo.toml/{print $$2}')"

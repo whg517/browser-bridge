@@ -27,7 +27,7 @@ NM_DIR="$HOME/Library/Application Support/Google/Chrome/NativeMessagingHosts"
 # Deterministic extension ID, derived from the public `key` in
 # extension/manifest.json (same for everyone, regardless of load path). If you
 # ever change that key, update this to match (or pass --extension-id).
-PINNED_EXTENSION_ID="fignfifoniblkonapihmkfakmlgkbkcf"
+PINNED_EXTENSION_ID="mkjjlmjbcljpcfkfadfmhblmmddkdihf"
 
 # ---- parse args -----------------------------------------------------------
 

@@ -8,7 +8,7 @@ historical accident:
 | **Protocol** | `e2e.py` | `python3` (stdlib only) | Drives the real release binary as a subprocess and speaks the wire protocols (Native-Messaging framing, MCP JSON-RPC, the TCP bridge) *from the outside*. A second, independent implementation of the protocols — in a different language with no deps — is what makes it good at catching framing/encoding bugs the Rust code and its own types would miss. |
 | **DOM** | `dom_test.ts` | `bun` + Chrome (CDP) | Injects the built `extension/dist/content.js` into a real headless Chrome page and exercises every content-script op (snapshot, click, fill, eval, storage, toast). Needs a real browser DOM; TypeScript shares the extension's toolchain. |
 | **Smoke** | `ext_test.ts` | `bun` + puppeteer-core | Launches Chrome with `extension/dist/` loaded and checks the MV3 service worker boots with its APIs. |
-| **Integration** (opt-in) | `integration_e2e.ts` | `bun` + puppeteer-core | The full real chain with nothing mocked — MCP client → real MCP server → native host → real extension → `chrome.tabs` → back. Closes the seam `e2e.py` mocks. |
+| **Integration** (opt-in) | `integration_e2e.ts` | `bun` or Node 22.12+ + puppeteer-core | The full real chain with nothing mocked — MCP client → real MCP server → native host → real extension → `chrome.tabs` → back. Closes the seam `e2e.py` mocks. |
 
 The two browser suites are **TypeScript run under bun** (matching the
 extension). The protocol suite stays **Python on purpose** — rewriting it in
@@ -56,18 +56,17 @@ and restoring any existing one), and drives a `tab_list` call all the way to
 `chrome.tabs.query` and back.
 
 ```sh
-BB_REAL_E2E=1 bun integration_e2e.ts     # or: make test-integration
+BB_REAL_E2E=1 bun integration_e2e.ts     # macOS/Linux shell
+$env:BB_REAL_E2E='1'; node integration_e2e.ts  # Windows PowerShell, Node 22.12+
 ```
 
-- **Opt-in** (skips unless `BB_REAL_E2E=1`), macOS + Google Chrome only, and
-  pops a non-headless window. Not in the default suite or CI.
+- **Opt-in** (skips unless `BB_REAL_E2E=1`), macOS/Windows, and pops a
+  non-headless window. Not in the default suite or CI. Use Chrome for Testing
+  or Chromium: official Google Chrome 137+ ignores `--load-extension`.
 - It always proves the round-trip (native host connects, `tab_list` returns
   real structured `chrome.tabs` data). One **extra** assertion — that the
   reply came from *our* throwaway profile — only holds when the launch is
-  isolated. **If your normal Chrome is already running it captures
-  `--load-extension`**, so the extension answers from that session instead;
-  quit Chrome (or set `CHROME_BIN` to a separate Chromium/Canary) for full
-  isolation.
+  isolated. Set `CHROME_BIN` to the Chrome for Testing/Chromium executable.
 
 (Historical note: the smoke test's comment claimed Chrome *forbids*
 `nativeMessaging` under automated launches — that was a misdiagnosis of a

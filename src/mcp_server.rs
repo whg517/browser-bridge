@@ -47,9 +47,7 @@ pub fn run() -> i32 {
             // SIGTERM → old server's stdin loop ends → it removes the lock and
             // exits → its TCP listener closes → native host gets EOF → SW
             // onDisconnect → reconnect spawns a fresh host → reads OUR lock.
-            unsafe {
-                libc_kill(prev.pid, libc::SIGTERM);
-            }
+            terminate_process(prev.pid);
             // Give it a moment to die and clean up its lock.
             for _ in 0..50 {
                 if !pid_is_alive(prev.pid) {
@@ -226,7 +224,11 @@ fn pid_is_alive(pid: u32) -> bool {
     unsafe {
         libc::kill(pid as i32, 0) == 0
     }
-    #[cfg(not(unix))]
+    #[cfg(windows)]
+    {
+        windows_process::is_alive(pid)
+    }
+    #[cfg(all(not(unix), not(windows)))]
     {
         let _ = pid;
         false
@@ -237,4 +239,56 @@ fn pid_is_alive(pid: u32) -> bool {
 #[cfg(unix)]
 unsafe fn libc_kill(pid: u32, sig: i32) {
     libc::kill(pid as i32, sig);
+}
+
+fn terminate_process(pid: u32) {
+    #[cfg(unix)]
+    unsafe {
+        libc_kill(pid, libc::SIGTERM);
+    }
+    #[cfg(windows)]
+    windows_process::terminate(pid);
+    #[cfg(all(not(unix), not(windows)))]
+    let _ = pid;
+}
+
+#[cfg(windows)]
+mod windows_process {
+    use std::ffi::c_void;
+
+    type Handle = *mut c_void;
+    const PROCESS_TERMINATE: u32 = 0x0001;
+    const PROCESS_QUERY_LIMITED_INFORMATION: u32 = 0x1000;
+    const STILL_ACTIVE: u32 = 259;
+
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn OpenProcess(access: u32, inherit_handle: i32, process_id: u32) -> Handle;
+        fn GetExitCodeProcess(process: Handle, exit_code: *mut u32) -> i32;
+        fn TerminateProcess(process: Handle, exit_code: u32) -> i32;
+        fn CloseHandle(object: Handle) -> i32;
+    }
+
+    pub fn is_alive(pid: u32) -> bool {
+        unsafe {
+            let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+            if handle.is_null() {
+                return false;
+            }
+            let mut exit_code = 0;
+            let ok = GetExitCodeProcess(handle, &mut exit_code) != 0;
+            CloseHandle(handle);
+            ok && exit_code == STILL_ACTIVE
+        }
+    }
+
+    pub fn terminate(pid: u32) {
+        unsafe {
+            let handle = OpenProcess(PROCESS_TERMINATE, 0, pid);
+            if !handle.is_null() {
+                let _ = TerminateProcess(handle, 0);
+                CloseHandle(handle);
+            }
+        }
+    }
 }

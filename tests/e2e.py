@@ -28,15 +28,18 @@ import threading
 import time
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-BIN = os.path.join(REPO, "target", "release", "browser-bridge")
-# Mirror the binary's LockFile::path() (src/ipc.rs): prefer $XDG_RUNTIME_DIR
-# (Linux/CI), else the macOS Application Support path.
+BIN = os.path.join(REPO, "target", "release", "browser-bridge" + (".exe" if os.name == "nt" else ""))
+# Mirror the binary's LockFile::path() (src/ipc.rs).
 _XDG = os.environ.get("XDG_RUNTIME_DIR")
-LOCK = (
-    os.path.join(_XDG, "browser-bridge.lock")
-    if _XDG
-    else os.path.expanduser("~/Library/Application Support/browser-bridge/run.lock")
-)
+if os.name == "nt":
+    _LOCAL = os.environ.get("LOCALAPPDATA", os.path.expanduser("~/AppData/Local"))
+    LOCK = os.path.join(_LOCAL, "browser-bridge", "run.lock")
+else:
+    LOCK = (
+        os.path.join(_XDG, "browser-bridge.lock")
+        if _XDG
+        else os.path.expanduser("~/Library/Application Support/browser-bridge/run.lock")
+    )
 
 _passed = 0
 _failed = 0
@@ -169,7 +172,7 @@ def test_mcp_handshake_and_tools():
     except FileNotFoundError:
         pass
     mcp = subprocess.Popen([BIN], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                           stderr=subprocess.PIPE, text=True)
+                           stderr=subprocess.PIPE, text=True, encoding="utf-8")
     try:
         lf = wait_lock(mcp)
         check(lf is not None, "lock file written on startup")
@@ -209,6 +212,25 @@ def test_mcp_handshake_and_tools():
         mcp.wait(timeout=3)
 
 
+def test_stale_lock_is_replaced():
+    print("\n[test] stale lock file is replaced on startup")
+    os.makedirs(os.path.dirname(LOCK), exist_ok=True)
+    with open(LOCK, "w", encoding="utf-8") as f:
+        json.dump({"port": 9, "secret": "0" * 32, "pid": 4294967295}, f)
+    mcp = subprocess.Popen([BIN], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                           stderr=subprocess.PIPE, text=True, encoding="utf-8")
+    try:
+        lock = wait_lock(mcp)
+        check(lock is not None and lock.get("pid") == mcp.pid,
+              "server replaced a dead process's lock file")
+    finally:
+        try:
+            mcp.stdin.close()
+        except Exception:
+            pass
+        mcp.wait(timeout=3)
+
+
 def test_tab_list_round_trip():
     print("\n[test] tab_list round-trip via mock extension (TCP bridge)")
     try:
@@ -216,7 +238,7 @@ def test_tab_list_round_trip():
     except FileNotFoundError:
         pass
     mcp = subprocess.Popen([BIN], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                           stderr=subprocess.PIPE, text=True)
+                           stderr=subprocess.PIPE, text=True, encoding="utf-8")
     try:
         lf = wait_lock(mcp)
         check(lf is not None, "lock file written")
@@ -259,7 +281,7 @@ def test_page_eval_round_trip():
     except FileNotFoundError:
         pass
     mcp = subprocess.Popen([BIN], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                           stderr=subprocess.PIPE, text=True)
+                           stderr=subprocess.PIPE, text=True, encoding="utf-8")
     try:
         lf = wait_lock(mcp)
         check(lf is not None, "lock file written")
@@ -308,7 +330,7 @@ def test_page_snapshot_precise_round_trip():
     except FileNotFoundError:
         pass
     mcp = subprocess.Popen([BIN], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                           stderr=subprocess.PIPE, text=True)
+                           stderr=subprocess.PIPE, text=True, encoding="utf-8")
     try:
         lf = wait_lock(mcp)
         check(lf is not None, "lock file written")
@@ -365,7 +387,7 @@ def test_cookie_get_round_trip():
     except FileNotFoundError:
         pass
     mcp = subprocess.Popen([BIN], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                           stderr=subprocess.PIPE, text=True)
+                           stderr=subprocess.PIPE, text=True, encoding="utf-8")
     try:
         lf = wait_lock(mcp)
         check(lf is not None, "lock file written")
@@ -421,7 +443,7 @@ def test_storage_get_round_trip():
     except FileNotFoundError:
         pass
     mcp = subprocess.Popen([BIN], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                           stderr=subprocess.PIPE, text=True)
+                           stderr=subprocess.PIPE, text=True, encoding="utf-8")
     try:
         lf = wait_lock(mcp)
         check(lf is not None, "lock file written")
@@ -470,7 +492,7 @@ def test_native_host_mode():
     except FileNotFoundError:
         pass
     mcp = subprocess.Popen([BIN], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                           stderr=subprocess.PIPE, text=True)
+                           stderr=subprocess.PIPE, text=True, encoding="utf-8")
     try:
         lf = wait_lock(mcp)
         check(lf is not None, "lock file written")
@@ -512,6 +534,35 @@ def test_native_host_mode():
         mcp.wait(timeout=5)
 
 
+def test_server_takeover():
+    print("\n[test] new MCP server supplants the previous server")
+    try:
+        os.remove(LOCK)
+    except FileNotFoundError:
+        pass
+    first = subprocess.Popen([BIN], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                             stderr=subprocess.PIPE, text=True, encoding="utf-8")
+    second = None
+    try:
+        first_lock = wait_lock(first)
+        check(first_lock is not None, "first server wrote its lock file")
+        second = subprocess.Popen([BIN], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                  stderr=subprocess.PIPE, text=True, encoding="utf-8")
+        second_lock = wait_lock(second)
+        check(second_lock is not None, "second server replaced the lock file")
+        first.wait(timeout=8)
+        check(first.poll() is not None, "previous server was terminated")
+    finally:
+        if first.poll() is None:
+            first.kill()
+        if second is not None:
+            try:
+                second.stdin.close()
+            except Exception:
+                pass
+            second.wait(timeout=3)
+
+
 def test_unknown_method_returns_32601():
     print("\n[test] unknown method returns JSON-RPC -32601")
     try:
@@ -519,7 +570,7 @@ def test_unknown_method_returns_32601():
     except FileNotFoundError:
         pass
     mcp = subprocess.Popen([BIN], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                           stderr=subprocess.PIPE, text=True)
+                           stderr=subprocess.PIPE, text=True, encoding="utf-8")
     try:
         c = McpClient(mcp)
         c.initialize()
@@ -539,6 +590,7 @@ def test_unknown_method_returns_32601():
 def main():
     ensure_binary()
     print(f"binary: {BIN}")
+    test_stale_lock_is_replaced()
     test_mcp_handshake_and_tools()
     test_tab_list_round_trip()
     test_page_eval_round_trip()
@@ -546,6 +598,7 @@ def main():
     test_cookie_get_round_trip()
     test_storage_get_round_trip()
     test_native_host_mode()
+    test_server_takeover()
     test_unknown_method_returns_32601()
     print(f"\n{'='*40}\n{_passed} passed, {_failed} failed")
     sys.exit(0 if _failed == 0 else 1)

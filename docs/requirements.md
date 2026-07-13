@@ -34,7 +34,7 @@
 - ✅ **Cookie/Storage 只读已补齐**:阶段三补了 `cookie_get` / `storage_get`,严格只读且输出脱敏。详见 [ADR-0010](./adr/0010-cookie-storage-readonly.md)
 - ✅ **精确 snapshot 已补齐**:`page_snapshot_precise` 显式使用 chrome.debugger,调用前提示用户,调用期间会短暂显示 infobar。默认 `page_snapshot` 仍用 content script 近似。详见 [ADR-0003](./adr/0003-content-script-snapshot-vs-chrome-debugger.md) 和 [ADR-0009](./adr/0009-page-snapshot-precise-debugger.md)
 - ❌ **不做录制/回放、批量任务编排**。这是阶段三的玩法层
-- ❌ **不支持非 Chrome 浏览器**。v0.1 只针对 macOS 上的 Google Chrome
+- ❌ **不支持非 Chrome 浏览器**。当前针对 macOS/Windows 上的 Google Chrome
 
 ## 3. 用户故事
 
@@ -87,7 +87,7 @@
 ### FR-4 安全控制
 - **FR-4.1 域名白名单**:新 origin 首次操作时,扩展弹 popup 请求授权;授权同时通过 `chrome.permissions.request` 申请该域名的 host 权限。白名单存 `chrome.storage.local`,可在 popup 撤销。详见 [ADR-0004](./adr/0004-allowlist-with-optional-host-permissions.md)
 - **FR-4.2 高危 Toast**:submit 点击、链接跳转触发页面 Toast,30 秒超时拒绝,批准后 60 秒同源同类免确认。详见 [ADR-0006](./adr/0006-toast-confirmation-for-high-risk.md)
-- **FR-4.3 host 鉴权**:native messaging manifest 的 `allowed_origins` 写死扩展 ID;桥接 socket 用 per-run secret + 0600 锁文件鉴权
+- **FR-4.3 host 鉴权**:native messaging manifest 的 `allowed_origins` 写死扩展 ID;桥接 socket 用 per-run secret + 用户目录锁文件鉴权(Unix mode 0600)
 - **FR-4.4 脱敏**:`page_text` 遮罩 `<input type=password>` 和长数字串;`page_fill` 密码字段值在参数回显中脱敏
 
 ### FR-5 Cookie/Storage 只读(阶段三)
@@ -112,7 +112,7 @@
 - 11 个工具(见 FR-1~FR-3);**阶段二追加 `page_eval` + `page_snapshot_precise`**(共 13 个);**阶段三追加 `cookie_get` + `storage_get`**(共 15 个)
 - 白名单 + Toast 双层安全
 - content script 风格 snapshot
-- macOS + Chrome
+- macOS/Windows + Chrome
 
 ### 6.2 v0.1 不包含,后续阶段
 - **阶段二**:
@@ -139,7 +139,7 @@
 
 ## 8. 验收标准(v0.1)
 
-1. `install.sh` 跑通,扩展加载成功,host manifest 注册
+1. `install.sh`(macOS)或 `install.ps1`(Windows)跑通,扩展加载成功,host manifest 注册
 2. MCP 客户端能看到 `browser-bridge` 已连接
 3. AI 在对话里说"列出标签页" → 看到真实标签页列表
 4. AI 说"截当前页" → AI 能分析到截图

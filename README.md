@@ -31,6 +31,7 @@ approve.
   - [0012 扩展改用 TypeScript + esbuild 构建](./docs/adr/0012-typescript-esbuild-extension-build.md)
   - [0013 CI 与工具链](./docs/adr/0013-ci-and-toolchain.md)
   - [0014 分级日志与类型化错误](./docs/adr/0014-leveled-logging.md)
+  - [0015 Windows 本地运行与安装](./docs/adr/0015-windows-support.md)
 
 开发与贡献:[开发指南](./docs/development.md) · [贡献指南](./CONTRIBUTING.md)
 
@@ -87,7 +88,34 @@ skill layer for common workflows are still future work.
 
 ## Install
 
-macOS + Google Chrome. Two ways:
+Google Chrome on macOS or Windows.
+
+### Windows
+
+Prerequisites: Rust and Node.js. Run from PowerShell:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\install.ps1
+```
+
+The installer builds both components, installs the executable to
+`%LOCALAPPDATA%\browser-bridge\browser-bridge.exe`, writes the native-host
+manifest, and registers it under the current user's Chrome Native Messaging
+registry key. Administrator privileges are not required.
+
+For Codex, the corresponding configuration is:
+
+```toml
+[mcp_servers.browser-bridge]
+command = "C:\\Users\\YOUR_NAME\\AppData\\Local\\browser-bridge\\browser-bridge.exe"
+args = []
+```
+
+A prebuilt Windows archive can use the same command when it contains
+`browser-bridge.exe` and `extension\dist`; source files being absent makes the
+installer skip Rust and Node.js automatically.
+
+### macOS
 
 ### Prebuilt (no Rust/Node) — recommended
 
@@ -122,13 +150,14 @@ Then:
 1. **Load the extension.** `chrome://extensions` → enable Developer mode →
    "Load unpacked" → select the **`extension/dist/`** directory (the build
    output, not `extension/` itself). The extension ID is **pinned** (via the
-   `key` in the manifest) to `fignfifoniblkonapihmkfakmlgkbkcf`, which
+   `key` in the manifest) to `mkjjlmjbcljpcfkfadfmhblmmddkdihf`, which
    `install.sh` already trusted — **no ID to copy, nothing to patch.** To
    rebuild after editing the TypeScript sources: `cd extension && npm run build`
    (or `npm run watch`).
 
 2. **Register the MCP server with your MCP client.** The server is the
-   installed binary (`~/.browser-bridge/browser-bridge`) run with no arguments;
+   installed binary (`~/.browser-bridge/browser-bridge` on macOS or
+   `%LOCALAPPDATA%\browser-bridge\browser-bridge.exe` on Windows) run with no arguments;
    it speaks MCP over stdio. Use an **absolute path** — most clients don't
    expand `~`. `mcp-config.example.json` has a ready-to-copy JSON snippet.
 
@@ -161,7 +190,7 @@ Then:
 | High-risk actions | Submit-button clicks and link navigations inject a confirmation toast in the page; 30 s auto-deny, 60 s grace window after approval for the same kind of action on the same origin. |
 | `page_eval` | High-risk channel: enlarged confirmation toast per call, same-origin 60s grace window, return value masked (JWT/hex/numbers/secrets) by default. See [ADR-0008](./docs/adr/0008-page-eval-confirmation-channel.md). |
 | Sensitive data | `page_text` masks `<input type=password>` and long digit runs. `page_fill` on a password field masks the value in the args echo. |
-| Host impersonation | The host manifest's `allowed_origins` pins the extension ID. The bridge socket authenticates each inbound connection with a per-run secret written to a 0600 lock file. |
+| Host impersonation | The host manifest's `allowed_origins` pins the extension ID. The bridge socket authenticates each inbound connection with a per-run secret written to a per-user lock file (mode 0600 on Unix). |
 | Protocol safety | Native-messaging frames cap at 1 MB outbound (Chrome's hard limit). All stdout writes are single-threaded and flushed per frame. A stderr panic hook prevents panic messages from corrupting the binary stream. |
 
 ## Debugging
@@ -174,7 +203,8 @@ Then:
 - **Native host stderr** — captured into Chrome's internal log. Launch Chrome
   from a terminal (`/Applications/Google Chrome.app/Contents/MacOS/Google
   Chrome`) to see `[native-host]` / `[mcp]` stderr live.
-- **Lock file** — `~/Library/Application Support/browser-bridge/run.lock`
+- **Lock file** — `~/Library/Application Support/browser-bridge/run.lock` on
+  macOS, or `%LOCALAPPDATA%\browser-bridge\run.lock` on Windows
   shows the current MCP server's port + pid. If it's stale (server crashed),
   the native host removes it on next failed connect.
 
@@ -183,7 +213,7 @@ Then:
 Independent suites across two languages (see [tests/README.md](./tests/README.md)
 for why), run together with `./tests/run_all.sh`:
 
-**Protocol layer** — `tests/e2e.py` (45 assertions). Drives the real release
+**Protocol layer** — `tests/e2e.py` (49 assertions). Drives the real release
 binary as subprocesses: MCP server over JSON-RPC/stdio, `--native-host` mode
 with real Native-Messaging framing, and a mock extension over the localhost
 TCP bridge. Verifies the wire protocols (NM framing, MCP handshake, tools/list,
@@ -207,8 +237,10 @@ collided with newly-inserted elements' refs on re-snapshot.
 **Real integration** (opt-in) — `tests/integration_e2e.ts`. Closes the seam the
 others mock: the real MCP server ↔ real extension round-trip over native
 messaging (MCP client → binary → native host → extension → `chrome.tabs` →
-back). Run with `BB_REAL_E2E=1 bun tests/integration_e2e.ts` (or
-`make test-integration`); macOS + Chrome, non-headless. See
+back). Run with `BB_REAL_E2E=1 bun tests/integration_e2e.ts` (or, on Windows
+with Node 22.12+, `$env:BB_REAL_E2E=1; node tests/integration_e2e.ts`). Chrome
+for Testing or Chromium is required because official Chrome 137+ ignores
+`--load-extension`. See
 [tests/README.md](./tests/README.md) for the language split and details.
 
 Requirements: Rust (cargo) for the build, Python 3, and (for the browser
@@ -243,7 +275,7 @@ browser-bridge/
 │   ├── dom_test.ts       # DOM-layer tests (bun + headless Chrome CDP)
 │   ├── fixtures/page.html
 │   └── run_all.sh        # runs both suites
-├── install.sh
+├── install.sh / install.ps1
 └── mcp-config.example.json
 ```
 

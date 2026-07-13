@@ -17,6 +17,7 @@ tests/node_modules/
 # Local install destination (binaries live here after install.sh)
 # ~/.browser-bridge/ is outside the repo, but guard against accidental copies
 /browser-bridge
+/browser-bridge.exe
 *.dSYM/
 
 # Test scratch

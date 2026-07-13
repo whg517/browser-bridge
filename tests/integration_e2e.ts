@@ -9,43 +9,53 @@
  *
  * Isolation matters: a raw Chrome launch merges into an already-running Chrome
  * (and would query your real session). puppeteer launches a truly isolated
- * instance, and a UNIQUE extension copy (unique path => unique id) means the
- * host manifest only ever authorizes THIS throwaway profile.
+ * instance. If the manifest has a pinned public key, the test derives the
+ * pinned extension id; otherwise it derives the id from the throwaway path.
  *
- * OPT-IN, macOS + Google Chrome only. Pops a non-headless Chrome window and
- * temporarily writes a native-messaging host manifest (backing up/restoring any
- * existing one). Not part of the default suite or CI.
+ * OPT-IN, macOS/Windows + Chrome for Testing (or Chromium). Pops a non-headless
+ * window and temporarily registers a native-messaging host manifest (backing
+ * up/restoring any existing registration). Not part of the default suite or CI.
  *
- * Run:  BB_REAL_E2E=1 bun tests/integration_e2e.ts
+ * Run:  BB_REAL_E2E=1 node tests/integration_e2e.ts
  */
 import puppeteer from "puppeteer-core";
-import { spawn } from "bun";
+import { execFileSync, spawn } from "child_process";
 import { createHash } from "crypto";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
+import { createInterface } from "readline";
+import { fileURLToPath, pathToFileURL } from "url";
 
-const REPO = path.resolve(import.meta.dir, "..");
-const BIN = path.join(REPO, "target", "release", "browser-bridge");
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const REPO = path.resolve(HERE, "..");
+const IS_WINDOWS = process.platform === "win32";
+const BIN = path.join(REPO, "target", "release", "browser-bridge" + (IS_WINDOWS ? ".exe" : ""));
 const DIST = path.join(REPO, "extension", "dist");
 const CHROME =
-  process.env.CHROME_BIN || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+  process.env.CHROME_BIN ||
+  (IS_WINDOWS
+    ? "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
+    : "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome");
 const NM_DIR = path.join(
   os.homedir(),
   "Library/Application Support/Google/Chrome/NativeMessagingHosts"
 );
 const HOST_NAME = "com.browser_bridge.host";
 const MANIFEST = path.join(NM_DIR, HOST_NAME + ".json");
-const LOCK = path.join(os.homedir(), "Library/Application Support/browser-bridge/run.lock");
-const FIXTURE = "file://" + path.join(REPO, "tests", "fixtures", "page.html");
+const REG_KEY = `HKCU\\Software\\Google\\Chrome\\NativeMessagingHosts\\${HOST_NAME}`;
+const LOCK = IS_WINDOWS
+  ? path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData/Local"), "browser-bridge/run.lock")
+  : path.join(os.homedir(), "Library/Application Support/browser-bridge/run.lock");
+const FIXTURE = pathToFileURL(path.join(REPO, "tests", "fixtures", "page.html")).href;
 
 // ── preflight (opt-in) ─────────────────────────────────────────────────────
 if (process.env.BB_REAL_E2E !== "1") {
   console.log("SKIP: set BB_REAL_E2E=1 to run the real Chrome integration test.");
   process.exit(0);
 }
-if (process.platform !== "darwin") {
-  console.log("SKIP: real integration test is macOS + Google Chrome only.");
+if (process.platform !== "darwin" && !IS_WINDOWS) {
+  console.log("SKIP: real integration test supports macOS and Windows only.");
   process.exit(0);
 }
 for (const [label, p] of [
@@ -72,28 +82,60 @@ function check(cond: boolean, label: string): void {
 }
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
-/** Chrome derives an unpacked extension's id from SHA-256 of its absolute path:
- * first 128 bits, each hex digit mapped 0-f -> a-p. */
+/** Chrome derives an extension id from its public key when pinned, or from the
+ * unpacked extension's absolute path otherwise. */
 function extIdFromPath(p: string): string {
+  const manifest = JSON.parse(fs.readFileSync(path.join(p, "manifest.json"), "utf8"));
+  if (typeof manifest.key === "string") {
+    const h = createHash("sha256").update(Buffer.from(manifest.key, "base64")).digest("hex");
+    return [...h.slice(0, 32)].map((c) => String.fromCharCode(97 + parseInt(c, 16))).join("");
+  }
   const h = createHash("sha256").update(p).digest("hex");
   return [...h.slice(0, 32)].map((c) => String.fromCharCode(97 + parseInt(c, 16))).join("");
 }
 
+function readWindowsRegistration(): string | null {
+  try {
+    const out = execFileSync("reg.exe", ["query", REG_KEY, "/ve"], { encoding: "utf8" });
+    return out.match(/REG_SZ\s+(.+)\r?$/m)?.[1]?.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+function writeWindowsRegistration(manifestPath: string): void {
+  execFileSync("reg.exe", ["add", REG_KEY, "/ve", "/t", "REG_SZ", "/d", manifestPath, "/f"], {
+    stdio: "ignore",
+  });
+}
+
+function removeWindowsRegistration(): void {
+  try {
+    execFileSync("reg.exe", ["delete", REG_KEY, "/f"], { stdio: "ignore" });
+  } catch {}
+}
+
 async function main(): Promise<void> {
-  // Unique copy => unique id => the manifest authorizes only this throwaway.
+  // Use a throwaway copy/profile so the test never operates on the real session.
   const work = fs.mkdtempSync(path.join(os.tmpdir(), "bb-e2e-"));
   fs.cpSync(DIST, path.join(work, "ext"), { recursive: true });
   const extDir = fs.realpathSync(path.join(work, "ext"));
   const extId = extIdFromPath(extDir);
   console.log("[e2e] extension id:", extId);
 
-  const wrapper = path.join(work, "run-host.sh");
-  fs.writeFileSync(wrapper, `#!/bin/sh\nexec "${BIN}" --native-host\n`);
-  fs.chmodSync(wrapper, 0o755);
+  let hostPath = BIN;
+  if (!IS_WINDOWS) {
+    const wrapper = path.join(work, "run-host.sh");
+    fs.writeFileSync(wrapper, `#!/bin/sh\nexec "${BIN}" --native-host\n`);
+    fs.chmodSync(wrapper, 0o755);
+    hostPath = wrapper;
+  }
 
-  // Back up any existing host manifest so a real install is untouched.
+  // Back up any existing host registration so a real install is untouched.
   let backup: string | null = null;
-  if (fs.existsSync(MANIFEST)) {
+  if (IS_WINDOWS) {
+    backup = readWindowsRegistration();
+  } else if (fs.existsSync(MANIFEST)) {
     backup = MANIFEST + ".bb-e2e-backup";
     fs.renameSync(MANIFEST, backup);
   }
@@ -101,39 +143,28 @@ async function main(): Promise<void> {
     fs.rmSync(LOCK);
   } catch {}
 
-  const mcp = spawn({ cmd: [BIN], stdin: "pipe", stdout: "pipe", stderr: "pipe" });
+  const mcp = spawn(BIN, [], { stdio: ["pipe", "pipe", "pipe"] });
   let connected = false;
-  (async () => {
-    const r = mcp.stderr.getReader();
-    const d = new TextDecoder();
-    try {
-      for (;;) {
-        const { value, done } = await r.read();
-        if (done) break;
-        if (d.decode(value).includes("native host connected and authenticated")) {
-          connected = true;
-        }
-      }
-    } catch {}
-  })();
-
-  const reader = mcp.stdout.getReader();
-  const dec = new TextDecoder();
-  let buf = "";
-  async function recv(): Promise<any> {
-    while (!buf.includes("\n")) {
-      const { value, done } = await reader.read();
-      if (done) throw new Error("mcp server stdout closed");
-      buf += dec.decode(value);
+  mcp.stderr.on("data", (chunk: Buffer) => {
+    if (chunk.toString("utf8").includes("native host connected and authenticated")) {
+      connected = true;
     }
-    const i = buf.indexOf("\n");
-    const line = buf.slice(0, i);
-    buf = buf.slice(i + 1);
+  });
+
+  const outputLines = createInterface({ input: mcp.stdout });
+  const queuedLines: string[] = [];
+  const lineWaiters: Array<(line: string) => void> = [];
+  outputLines.on("line", (line) => {
+    const waiter = lineWaiters.shift();
+    if (waiter) waiter(line);
+    else queuedLines.push(line);
+  });
+  async function recv(): Promise<any> {
+    const line = queuedLines.shift() || (await new Promise<string>((resolve) => lineWaiters.push(resolve)));
     return JSON.parse(line);
   }
   function send(obj: unknown): void {
     mcp.stdin.write(JSON.stringify(obj) + "\n");
-    mcp.stdin.flush();
   }
 
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), "bb-e2e-profile-"));
@@ -147,22 +178,25 @@ async function main(): Promise<void> {
 
     // Host manifest authorizes ONLY our throwaway extension id. Written before
     // launch so connectNative succeeds on the first try.
-    fs.mkdirSync(NM_DIR, { recursive: true });
+    const testManifest = IS_WINDOWS ? path.join(work, HOST_NAME + ".json") : MANIFEST;
+    if (!IS_WINDOWS) fs.mkdirSync(NM_DIR, { recursive: true });
     fs.writeFileSync(
-      MANIFEST,
+      testManifest,
       JSON.stringify({
         name: HOST_NAME,
         description: "browser-bridge integration test",
-        path: wrapper,
+        path: hostPath,
         type: "stdio",
         allowed_origins: [`chrome-extension://${extId}/`],
       })
     );
+    if (IS_WINDOWS) writeWindowsRegistration(testManifest);
 
     // puppeteer launches a TRULY isolated instance (unlike a raw subprocess).
     browser = await puppeteer.launch({
       executablePath: CHROME,
       headless: false,
+      dumpio: process.env.BB_REAL_E2E_DEBUG === "1",
       userDataDir: profile,
       ignoreDefaultArgs: [
         "--disable-extensions",
@@ -179,6 +213,24 @@ async function main(): Promise<void> {
     });
     const page = await browser.newPage();
     await page.goto(FIXTURE).catch(() => {});
+    await sleep(1000);
+
+    const expectedWorkerUrl = `chrome-extension://${extId}/background.js`;
+    const extensionLoaded = browser.targets().some((target) => target.url() === expectedWorkerUrl);
+    if (!extensionLoaded) {
+      throw new Error(
+        `test extension did not load (expected ${expectedWorkerUrl}). ` +
+          "Official Google Chrome 137+ ignores --load-extension; point CHROME_BIN " +
+          "to Chrome for Testing or Chromium."
+      );
+    }
+
+    if (process.env.BB_REAL_E2E_DEBUG === "1") {
+      console.log(
+        "[e2e] Chrome targets:",
+        browser.targets().map((target) => `${target.type()} ${target.url()}`)
+      );
+    }
 
     send({
       jsonrpc: "2.0",
@@ -202,6 +254,10 @@ async function main(): Promise<void> {
       params: { name: "tab_list", arguments: {} },
     });
     const r = await recv();
+    if (r.result?.isError === true) {
+      check(false, `tab_list failed: ${r.result.content?.[0]?.text || "unknown error"}`);
+      throw new Error("tab_list failed through the real native-messaging chain");
+    }
     const tabs = JSON.parse(r.result.content[0].text);
     // The real proof: structured chrome.tabs data crossed the entire chain.
     const first = Array.isArray(tabs) && tabs.length >= 1 ? tabs[0] : undefined;
@@ -228,10 +284,15 @@ async function main(): Promise<void> {
   } finally {
     if (browser) await browser.close().catch(() => {});
     mcp.kill();
-    try {
-      fs.rmSync(MANIFEST);
-    } catch {}
-    if (backup) fs.renameSync(backup, MANIFEST);
+    if (IS_WINDOWS) {
+      removeWindowsRegistration();
+      if (backup) writeWindowsRegistration(backup);
+    } else {
+      try {
+        fs.rmSync(MANIFEST);
+      } catch {}
+      if (backup) fs.renameSync(backup, MANIFEST);
+    }
     fs.rmSync(work, { recursive: true, force: true });
     fs.rmSync(profile, { recursive: true, force: true });
   }
