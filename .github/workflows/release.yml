@@ -16,13 +16,26 @@ permissions:
 
 jobs:
   release:
-    # Apple Silicon only. (Intel/x64 dropped — the macos-13 runners are scarce
-    # and the build was unreliable; revisit if there's demand.)
-    runs-on: macos-14
+    name: ${{ matrix.platform }}-${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Intel macOS remains intentionally omitted because the hosted
+          # runner is scarce; revisit if there is demand.
+          - os: macos-14
+            platform: macos
+            arch: arm64
+          # Build on an older glibc baseline for wider Linux compatibility.
+          - os: ubuntu-22.04
+            platform: linux
+            arch: x64
+    runs-on: ${{ matrix.os }}
     env:
-      ARCH: arm64
+      ARCH: ${{ matrix.arch }}
+      PLATFORM: ${{ matrix.platform }}
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1
         with:
           cache: false
@@ -52,13 +65,17 @@ jobs:
         id: pkg
         run: |
           TAG="${{ github.event.inputs.tag || github.ref_name }}"
-          NAME="browser-bridge-${TAG}-macos-${ARCH}"
+          NAME="browser-bridge-${TAG}-${PLATFORM}-${ARCH}"
           mkdir -p "$NAME/extension"
           cp target/release/browser-bridge "$NAME/"
           cp -r extension/dist "$NAME/extension/dist"
           cp install.sh mcp-config.example.json LICENSE README.md "$NAME/"
           tar czf "$NAME.tar.gz" "$NAME"
-          shasum -a 256 "$NAME.tar.gz" > "$NAME.tar.gz.sha256"
+          if command -v shasum >/dev/null 2>&1; then
+            shasum -a 256 "$NAME.tar.gz" > "$NAME.tar.gz.sha256"
+          else
+            sha256sum "$NAME.tar.gz" > "$NAME.tar.gz.sha256"
+          fi
           echo "name=$NAME" >> "$GITHUB_OUTPUT"
 
       - name: Publish to GitHub Release

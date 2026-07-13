@@ -47,17 +47,33 @@ impl LockFile {
             dir.join("run.lock")
         }
 
-        #[cfg(not(windows))]
+        #[cfg(target_os = "macos")]
         {
             if let Ok(xdg) = std::env::var("XDG_RUNTIME_DIR") {
-                return PathBuf::from(xdg).join("browser-bridge.lock");
+                let dir = PathBuf::from(xdg).join("browser-bridge");
+                ensure_private_dir(&dir);
+                return dir.join("run.lock");
             }
-            // macOS: use ~/Library/Application Support/browser-bridge/run.lock
             let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
             let mut p = PathBuf::from(home);
             p.push("Library/Application Support/browser-bridge");
-            let _ = fs::create_dir_all(&p);
+            ensure_private_dir(&p);
             p.join("run.lock")
+        }
+
+        #[cfg(all(unix, not(target_os = "macos")))]
+        {
+            let dir = if let Some(xdg) = std::env::var_os("XDG_RUNTIME_DIR") {
+                PathBuf::from(xdg).join("browser-bridge")
+            } else if let Some(xdg_cache) = std::env::var_os("XDG_CACHE_HOME") {
+                PathBuf::from(xdg_cache).join("browser-bridge")
+            } else if let Some(home) = std::env::var_os("HOME") {
+                PathBuf::from(home).join(".cache/browser-bridge")
+            } else {
+                std::env::temp_dir().join(format!("browser-bridge-{}", unsafe { libc::geteuid() }))
+            };
+            ensure_private_dir(&dir);
+            dir.join("run.lock")
         }
     }
 
@@ -116,6 +132,15 @@ impl LockFile {
 
     pub fn remove() {
         let _ = fs::remove_file(Self::path());
+    }
+}
+
+#[cfg(unix)]
+fn ensure_private_dir(path: &std::path::Path) {
+    use std::os::unix::fs::PermissionsExt;
+
+    if fs::create_dir_all(path).is_ok() {
+        let _ = fs::set_permissions(path, fs::Permissions::from_mode(0o700));
     }
 }
 
