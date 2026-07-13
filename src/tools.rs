@@ -233,104 +233,176 @@ fn schema(required: &[&str], props: &[(&str, &str, &str)]) -> Value {
 
 /// Dispatch a tool call. Returns the MCP result `content` value (an array)
 /// and the isError flag. Errors are tool-level (isError=true), not RPC-level.
+/// A registered tool handler. The bridge `op` name equals the tool `name`;
+/// `build_payload` maps the (schema-shaped) MCP args into the op's argument
+/// object. Responses are formatted centrally in [`dispatch`]. `HANDLERS` is the
+/// single dispatch registry — `registry_covers_catalogue` (tests) asserts it
+/// stays in lockstep with [`all`], so a new tool can't be added to the
+/// catalogue without a handler (or vice versa).
+struct Handler {
+    name: &'static str,
+    build_payload: fn(&Value) -> Value,
+}
+
+const HANDLERS: &[Handler] = &[
+    Handler {
+        name: "tab_list",
+        build_payload: build_empty,
+    },
+    Handler {
+        name: "tab_focus",
+        build_payload: build_tab_focus,
+    },
+    Handler {
+        name: "tab_open",
+        build_payload: build_tab_open,
+    },
+    Handler {
+        name: "tab_close",
+        build_payload: build_tab_close,
+    },
+    Handler {
+        name: "page_snapshot",
+        build_payload: build_empty,
+    },
+    Handler {
+        name: "page_click",
+        build_payload: ref_or_selector,
+    },
+    Handler {
+        name: "page_fill",
+        build_payload: build_page_fill,
+    },
+    Handler {
+        name: "page_text",
+        build_payload: build_empty,
+    },
+    Handler {
+        name: "page_screenshot",
+        build_payload: build_empty,
+    },
+    Handler {
+        name: "page_scroll",
+        build_payload: build_page_scroll,
+    },
+    Handler {
+        name: "page_wait_for",
+        build_payload: build_page_wait_for,
+    },
+    Handler {
+        name: "page_eval",
+        build_payload: build_page_eval,
+    },
+    Handler {
+        name: "page_snapshot_precise",
+        build_payload: build_page_snapshot_precise,
+    },
+    Handler {
+        name: "cookie_get",
+        build_payload: build_cookie_get,
+    },
+    Handler {
+        name: "storage_get",
+        build_payload: build_storage_get,
+    },
+];
+
+fn build_empty(_args: &Value) -> Value {
+    json!({})
+}
+
+fn build_tab_focus(args: &Value) -> Value {
+    json!({ "tabId": iarg(args, "tabId") })
+}
+
+fn build_tab_open(args: &Value) -> Value {
+    json!({ "url": sarg(args, "url") })
+}
+
+fn build_tab_close(args: &Value) -> Value {
+    json!({ "tabId": iarg(args, "tabId") })
+}
+
+fn build_page_eval(args: &Value) -> Value {
+    json!({ "code": sarg(args, "code") })
+}
+
+fn build_page_fill(args: &Value) -> Value {
+    let value = sarg(args, "value");
+    let mut payload = ref_or_selector(args);
+    payload["value"] = json!(value);
+    payload
+}
+
+fn build_page_scroll(args: &Value) -> Value {
+    let mut payload = serde_json::Map::new();
+    if let Some(d) = args.get("direction").and_then(|v| v.as_str()) {
+        payload.insert("direction".into(), json!(d));
+    }
+    if let Some(p) = args.get("pixels").and_then(|v| v.as_i64()) {
+        payload.insert("pixels".into(), json!(p));
+    }
+    Value::Object(payload)
+}
+
+fn build_page_wait_for(args: &Value) -> Value {
+    let mut payload = serde_json::Map::new();
+    if let Some(s) = args.get("selector").and_then(|v| v.as_str()) {
+        payload.insert("selector".into(), json!(s));
+    }
+    if let Some(t) = args.get("text").and_then(|v| v.as_str()) {
+        payload.insert("text".into(), json!(t));
+    }
+    if let Some(n) = args.get("nav").and_then(|v| v.as_bool()) {
+        payload.insert("nav".into(), json!(n));
+    }
+    payload.insert(
+        "timeoutMs".into(),
+        json!(args
+            .get("timeoutMs")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(30000)),
+    );
+    Value::Object(payload)
+}
+
+fn build_page_snapshot_precise(args: &Value) -> Value {
+    let mut payload = serde_json::Map::new();
+    if let Some(f) = args.get("frameId").and_then(|v| v.as_str()) {
+        payload.insert("frameId".into(), json!(f));
+    }
+    Value::Object(payload)
+}
+
+fn build_cookie_get(args: &Value) -> Value {
+    let mut payload = serde_json::Map::new();
+    if let Some(u) = args.get("url").and_then(|v| v.as_str()) {
+        payload.insert("url".into(), json!(u));
+    }
+    if let Some(d) = args.get("domain").and_then(|v| v.as_str()) {
+        payload.insert("domain".into(), json!(d));
+    }
+    if let Some(n) = args.get("name").and_then(|v| v.as_str()) {
+        payload.insert("name".into(), json!(n));
+    }
+    Value::Object(payload)
+}
+
+fn build_storage_get(args: &Value) -> Value {
+    let mut payload = serde_json::Map::new();
+    if let Some(t) = args.get("type").and_then(|v| v.as_str()) {
+        payload.insert("type".into(), json!(t));
+    }
+    if let Some(k) = args.get("key").and_then(|v| v.as_str()) {
+        payload.insert("key".into(), json!(k));
+    }
+    Value::Object(payload)
+}
+
 pub fn dispatch(session: &Session, name: &str, args: &Value) -> (Value, bool) {
-    let result = match name {
-        "tab_list" => call(session, "tab_list", None, json!({})),
-        "tab_focus" => {
-            let tab_id = iarg(args, "tabId");
-            call(session, "tab_focus", None, json!({ "tabId": tab_id }))
-        }
-        "tab_open" => {
-            let url = sarg(args, "url");
-            call(session, "tab_open", None, json!({ "url": url }))
-        }
-        "tab_close" => {
-            let tab_id = iarg(args, "tabId");
-            call(session, "tab_close", None, json!({ "tabId": tab_id }))
-        }
-        "page_snapshot" => call(session, "page_snapshot", None, json!({})),
-        "page_click" => {
-            let payload = ref_or_selector(args);
-            call(session, "page_click", None, payload)
-        }
-        "page_fill" => {
-            let value = sarg(args, "value");
-            let mut payload = ref_or_selector(args);
-            payload["value"] = json!(value);
-            call(session, "page_fill", None, payload)
-        }
-        "page_text" => call(session, "page_text", None, json!({})),
-        "page_screenshot" => call(session, "page_screenshot", None, json!({})),
-        "page_scroll" => {
-            let mut payload = serde_json::Map::new();
-            if let Some(d) = args.get("direction").and_then(|v| v.as_str()) {
-                payload.insert("direction".into(), json!(d));
-            }
-            if let Some(p) = args.get("pixels").and_then(|v| v.as_i64()) {
-                payload.insert("pixels".into(), json!(p));
-            }
-            call(session, "page_scroll", None, Value::Object(payload))
-        }
-        "page_wait_for" => {
-            let mut payload = serde_json::Map::new();
-            if let Some(s) = args.get("selector").and_then(|v| v.as_str()) {
-                payload.insert("selector".into(), json!(s));
-            }
-            if let Some(t) = args.get("text").and_then(|v| v.as_str()) {
-                payload.insert("text".into(), json!(t));
-            }
-            if let Some(n) = args.get("nav").and_then(|v| v.as_bool()) {
-                payload.insert("nav".into(), json!(n));
-            }
-            payload.insert(
-                "timeoutMs".into(),
-                json!(args
-                    .get("timeoutMs")
-                    .and_then(|v| v.as_i64())
-                    .unwrap_or(30000)),
-            );
-            call(session, "page_wait_for", None, Value::Object(payload))
-        }
-        "page_eval" => {
-            let code = sarg(args, "code");
-            call(session, "page_eval", None, json!({ "code": code }))
-        }
-        "page_snapshot_precise" => {
-            let mut payload = serde_json::Map::new();
-            if let Some(f) = args.get("frameId").and_then(|v| v.as_str()) {
-                payload.insert("frameId".into(), json!(f));
-            }
-            call(
-                session,
-                "page_snapshot_precise",
-                None,
-                Value::Object(payload),
-            )
-        }
-        "cookie_get" => {
-            let mut payload = serde_json::Map::new();
-            if let Some(u) = args.get("url").and_then(|v| v.as_str()) {
-                payload.insert("url".into(), json!(u));
-            }
-            if let Some(d) = args.get("domain").and_then(|v| v.as_str()) {
-                payload.insert("domain".into(), json!(d));
-            }
-            if let Some(n) = args.get("name").and_then(|v| v.as_str()) {
-                payload.insert("name".into(), json!(n));
-            }
-            call(session, "cookie_get", None, Value::Object(payload))
-        }
-        "storage_get" => {
-            let mut payload = serde_json::Map::new();
-            if let Some(t) = args.get("type").and_then(|v| v.as_str()) {
-                payload.insert("type".into(), json!(t));
-            }
-            if let Some(k) = args.get("key").and_then(|v| v.as_str()) {
-                payload.insert("key".into(), json!(k));
-            }
-            call(session, "storage_get", None, Value::Object(payload))
-        }
-        unknown => Err(CallError::UnknownTool(unknown.to_string())),
+    let result = match HANDLERS.iter().find(|h| h.name == name) {
+        Some(h) => call(session, name, None, (h.build_payload)(args)),
+        None => Err(CallError::UnknownTool(name.to_string())),
     };
 
     match result {
@@ -405,6 +477,53 @@ mod tests {
     fn tool_count_is_pinned() {
         // Bump deliberately when adding/removing a tool (keeps docs honest).
         assert_eq!(all().len(), 15);
+    }
+
+    // The dispatch registry must stay in lockstep with the catalogue: every
+    // tool has exactly one handler and every handler names a real tool. This
+    // closes the only drift the catalogue tests can't see.
+    #[test]
+    fn registry_covers_catalogue() {
+        use std::collections::BTreeSet;
+        let catalogue: BTreeSet<&str> = all().iter().map(|t| t.name).collect();
+        let registry: BTreeSet<&str> = HANDLERS.iter().map(|h| h.name).collect();
+        assert_eq!(
+            catalogue, registry,
+            "every tool needs exactly one dispatch handler (and vice versa)"
+        );
+        assert_eq!(HANDLERS.len(), catalogue.len(), "duplicate handler name");
+    }
+
+    // Arg-shaping is pure, so verify the non-trivial builders here rather than
+    // relying solely on the browser e2e (which the catalogue tests never cover).
+    #[test]
+    fn build_payload_shapes() {
+        let build = |name: &str, args: Value| -> Value {
+            let h = HANDLERS.iter().find(|h| h.name == name).unwrap();
+            (h.build_payload)(&args)
+        };
+        // page_fill merges ref/selector with the value.
+        assert_eq!(
+            build("page_fill", json!({ "ref": "e5", "value": "hi" })),
+            json!({ "ref": "e5", "value": "hi" })
+        );
+        // page_wait_for defaults timeoutMs and passes selector through.
+        assert_eq!(
+            build("page_wait_for", json!({ "selector": "#x" })),
+            json!({ "selector": "#x", "timeoutMs": 30000 })
+        );
+        // tab_focus coerces tabId.
+        assert_eq!(
+            build("tab_focus", json!({ "tabId": 7 })),
+            json!({ "tabId": 7 })
+        );
+        // Optional fields are omitted when absent.
+        assert_eq!(
+            build("cookie_get", json!({ "domain": "example.com" })),
+            json!({ "domain": "example.com" })
+        );
+        // Empty builder ignores extraneous args.
+        assert_eq!(build("page_snapshot", json!({ "junk": 1 })), json!({}));
     }
 
     // contracts/tools.json is the single source of truth for the catalogue.
