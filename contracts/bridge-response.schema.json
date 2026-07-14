@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/whg517/browser-bridge/contracts/bridge-response.schema.json",
+  "$comment": "SINGLE SOURCE OF TRUTH for the internal bridge RESPONSE envelope shape (BridgeResp). Mirrors extension/src/shared/types.ts:BridgeResp; keep the two in sync (types.ts is not generated from this yet). `error` here is the extension-side free-text string per types.ts; the cross-process stable error CODES live in contracts/errors.json and are applied on the Rust side (see docs/architecture.md §11.1).",
+  "title": "BridgeResp",
+  "description": "The response posted back from the extension to the native host over the Port. Shape: { id, ok, data?, error? }.",
+  "type": "object",
+  "required": ["id", "ok"],
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": ["integer", "string"],
+      "description": "Correlation id, echoed from the matching BridgeReq."
+    },
+    "ok": {
+      "type": "boolean",
+      "description": "Whether the op succeeded. When false, `error` carries a human-readable reason."
+    },
+    "data": {
+      "description": "The op's payload on success. Shape varies per op; intentionally unconstrained (`unknown` in types.ts)."
+    },
+    "error": {
+      "type": "string",
+      "description": "Human-readable failure reason when ok is false. The stable programmatic code is assigned from contracts/errors.json on the Rust side."
+    }
+  }
+}

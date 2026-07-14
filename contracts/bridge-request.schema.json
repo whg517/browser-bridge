@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/whg517/browser-bridge/contracts/bridge-request.schema.json",
+  "$comment": "SINGLE SOURCE OF TRUTH for the internal bridge REQUEST envelope shape (BridgeReq). Mirrors extension/src/shared/types.ts:BridgeReq / OpArgs; keep the two in sync (types.ts is not generated from this yet). This describes the CURRENT wide envelope: `op` is a plain string and `args` is a flat bag of optional fields shared across all ops. The typed / discriminated-union form (one args shape per op) is a planned follow-up (roadmap P1#3) and is NOT reflected here.",
+  "title": "BridgeReq",
+  "description": "A request from the MCP server, forwarded through the native host to the extension. Shape: { id, op, tabId?, args }.",
+  "type": "object",
+  "required": ["id", "op", "args"],
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": ["integer", "string"],
+      "description": "Correlation id echoed back on the matching BridgeResp. Monotonic integer in practice; string is accepted for forward-compatibility."
+    },
+    "op": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The operation name (a tool's underlying op). Enumerated by contracts/tools.json; kept as a plain string here until the discriminated-union lands."
+    },
+    "tabId": {
+      "type": "integer",
+      "description": "Optional target tab. When omitted, the handler resolves the active tab."
+    },
+    "args": {
+      "$ref": "#/$defs/OpArgs"
+    }
+  },
+  "$defs": {
+    "OpArgs": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Arguments an op may carry. Every field is optional — each handler reads the ones it needs and validates them at runtime; the Rust side enforces the required ones per each tool's inputSchema in tools.json.",
+      "properties": {
+        "ref": { "type": "string" },
+        "selector": { "type": "string" },
+        "value": { "type": "string" },
+        "code": { "type": "string" },
+        "direction": { "type": "string" },
+        "pixels": { "type": "number" },
+        "timeoutMs": { "type": "number" },
+        "text": { "type": "string" },
+        "nav": { "type": "boolean" },
+        "type": { "type": "string" },
+        "key": { "type": "string" },
+        "message": { "type": "string" },
+        "tabId": { "type": "integer" },
+        "url": { "type": "string" },
+        "domain": { "type": "string" },
+        "name": { "type": "string" },
+        "frameId": { "type": "string" }
+      }
+    }
+  }
+}
