@@ -1278,26 +1278,30 @@ v0.2.0
 检查版本一致性
   → 完整 CI
   → macOS arm64 build
-  → macOS x64 build
+  → Linux x64 build
+  → Windows x64 build
   → Extension build
   → Extension zip
-  → 生成 SHA256SUMS
-  → 生成 SBOM
-  → 生成 provenance
+  → 生成每文件 .sha256
+  → 生成 SBOM(CycloneDX)
+  → 生成 provenance(SLSA attestation)
   → 创建 GitHub Release
   → 发布 release notes
 ```
 
+> 说明:macOS **x64(Intel)已明确不再构建**,也不会再加回——Apple Silicon 为受支持的
+> macOS 目标,Intel 用户可用 Rosetta 2 运行 arm64 二进制或从源码构建。
+
 Release 内容：
 
 ```text
-browser-bridge-v0.2.0-darwin-arm64.tar.gz
-browser-bridge-v0.2.0-darwin-x64.tar.gz
-browser-bridge-extension-v0.2.0.zip
-install.sh
-uninstall.sh
-SHA256SUMS
-sbom.spdx.json
+browser-bridge-v0.2.0-macos-arm64.tar.gz      (+ .sha256)
+browser-bridge-v0.2.0-linux-x64.tar.gz        (+ .sha256)
+browser-bridge-v0.2.0-windows-x64.zip         (+ .sha256;内含 .exe + install.ps1)
+browser-bridge-extension-v0.2.0.zip           (+ .sha256)
+browser-bridge.cdx.json                       (CycloneDX SBOM,由 sbom.yml 附加)
+# 安装脚本 install.sh / install.ps1 随各归档分发(暂无独立 install.sh/uninstall.sh 资产)
+# macOS x64 已明确不再构建
 ```
 
 ## 3. SemVer 规则

@@ -23,8 +23,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Intel macOS remains intentionally omitted because the hosted
-          # runner is scarce; revisit if there is demand.
+          # Intel (x64) macOS is intentionally NOT built and will not be
+          # re-added: Apple Silicon is the supported macOS target, and Intel
+          # users can run the arm64 binary under Rosetta 2 or build from source.
           - os: macos-14
             platform: macos
             arch: arm64
