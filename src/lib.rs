@@ -10,12 +10,6 @@
 //! (`src/main.rs`). The library exposes every module so the modules are
 //! reachable from integration tests and future consumers.
 
-// Exporting the modules as public API surfaces `clippy::new_without_default`
-// on constructors like `Session::new()` that were previously crate-internal
-// to the binary. This is a purely structural side effect of the lib/bin split
-// (no behavior changed), so allow it crate-wide rather than touch module code.
-#![allow(clippy::new_without_default)]
-
 #[macro_use]
 pub mod log;
 pub mod cli;
