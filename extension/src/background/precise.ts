@@ -150,7 +150,8 @@ export async function snapshotPrecise(maybeTabId: number | undefined, _args: OpA
     const msg = String((e as Error).message || e);
     if (/another debugger/i.test(msg)) {
       throw new Error(
-        "该标签页已打开 DevTools,page_snapshot_precise 无法附加。请关闭 DevTools 后重试。"
+        "该标签页已打开 DevTools,page_snapshot_precise 无法附加。请关闭 DevTools 后重试。",
+        { cause: e }
       );
     }
     throw e;

@@ -49,7 +49,9 @@ export async function tabList() {
 }
 
 export async function tabFocus(tabId: number) {
+  // @types/chrome >=0.1 types tabs.update as `Tab | undefined` (no tab for the id).
   const t = await chrome.tabs.update(tabId, { active: true });
+  if (!t) throw new Error(`tab ${tabId} not found`);
   await chrome.windows.update(t.windowId, { focused: true });
   return { focused: tabId };
 }

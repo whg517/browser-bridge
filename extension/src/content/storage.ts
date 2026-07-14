@@ -14,7 +14,7 @@ export function storageGet(args: OpArgs) {
   try {
     store = type === "session" ? window.sessionStorage : window.localStorage;
   } catch (e: any) {
-    throw new Error(`storage unavailable: ${e.message}`);
+    throw new Error(`storage unavailable: ${e.message}`, { cause: e });
   }
   if (key !== undefined && key !== null && key !== "") {
     const raw = store.getItem(key);
