@@ -1,7 +1,11 @@
 >《browser-bridge 工程治理分析与实施方案》——本轮治理的分析与路线图来源。
 >
->**执行状态**:P0 治理底座(供应链/可复现、安全治理、协作规范)已完成;
->P1(契约单源、连接状态机等)进行中。逐项状态见提交历史与 `GOVERNANCE.md`。
+>**执行状态**:P0 治理底座已完成;P1(契约单源、错误码、Tool Registry、Policy 层、
+>连接 generation 绑定)大部分已落地,少量待办(BridgeReq 判别联合、握手 wiring、
+>完整状态机、集成测试);P2(tag 驱动发布、预编译产物、SBOM、`doctor`/`status`、
+>结构化日志/审计、nightly)大部分已落地。逐项状态见 §12 的标注、提交历史与 `GOVERNANCE.md`。
+>
+>**状态图例**:✅ 已落地 / ⚠ 部分 / ⬜ 未做。
 
 ---
 
@@ -788,9 +792,9 @@ PR 模板中必须出现：
 建议增加：
 
 * Dependabot 或 Renovate — ✅ 已落地(`.github/dependabot.yml`)
-* `cargo audit`
+* `cargo audit` — ✅ 已落地(`.github/workflows/security.yml`)
 * `cargo deny` — ✅ 已落地(`deny.toml` + CI)
-* npm dependency audit
+* npm dependency audit — ✅ 已落地(`security.yml` 的 `npm audit --audit-level=high`)
 * license allowlist — ✅ 由 `cargo deny` 的 licenses 段覆盖
 * SBOM — ✅ 已落地:`.github/workflows/sbom.yml` 在 release 发布后,由 syft 从提交的
   锁文件(`Cargo.lock` + `extension/package-lock.json`)生成 CycloneDX JSON
@@ -798,7 +802,7 @@ PR 模板中必须出现：
   解耦(触发于 `release: published`),因此 SBOM 工具异常不会阻塞二进制发布。
 * GitHub Actions 固定到 commit SHA — ✅ 已落地(所有 Action 固定到 SHA)
 * release artifact checksum — ✅ 已落地(`.tar.gz.sha256`)
-* release provenance/attestation
+* release provenance/attestation — ⬜ 未做(路线图 P2#3 待办)
 
 治理后 Actions 已固定到 commit SHA(见各 workflow),Dependabot 负责自动更新这些 SHA。
 
@@ -1373,18 +1377,18 @@ sbom.spdx.json
 
 ### 任务
 
-1. 暂缓新增底层工具。
-2. 建立 `GOVERNANCE.md`。
-3. 建立 `SECURITY.md` 和 Threat Model。
-4. 增加 PR 模板、Issue 模板和标签体系。
-5. 保护 `main` 分支并设置 required checks。
-6. 增加 `rust-toolchain.toml`。
-7. 增加 Dependabot/Renovate。
-8. 增加 `cargo audit`、`cargo deny`。
-9. GitHub Actions 固定 SHA。
-10. 清理过期注释和贡献文档。
-11. 定义工具风险矩阵。
-12. 给现有 15 个工具补齐风险、权限、敏感数据属性。
+1. ✅ 已落地 暂缓新增底层工具(本轮无新增底层工具)。
+2. ✅ 已落地 建立 `GOVERNANCE.md`。
+3. ✅ 已落地 建立 `SECURITY.md` 和 Threat Model(`docs/security/threat-model.md`)。
+4. ✅ 已落地 增加 PR 模板、Issue 模板和标签体系(`.github/pull_request_template.md`、`.github/ISSUE_TEMPLATE/`)。
+5. ✅ 已落地 保护 `main` 分支并设置 required checks(现已生效)。
+6. ✅ 已落地 增加 `rust-toolchain.toml`。
+7. ✅ 已落地 增加 Dependabot(`.github/dependabot.yml`)。
+8. ✅ 已落地 增加 `cargo audit`、`cargo deny`(`.github/workflows/security.yml` + `deny.toml`)。
+9. ✅ 已落地 GitHub Actions 固定 SHA(所有 Action 固定到 commit SHA)。
+10. ✅ 已落地 清理过期注释和贡献文档(配置改为 `settings.ts` 单源,DEFAULTS 同步描述已订正)。
+11. ✅ 已落地 定义工具风险矩阵(`docs/security/tool-risk-matrix.md`)。
+12. ✅ 已落地 给现有 15 个工具补齐风险、权限、敏感数据属性(`tools.json` 的 `risk`/`scope`/`permission`)。
 
 ### 验收标准
 
@@ -1401,18 +1405,18 @@ sbom.spdx.json
 
 ### 任务
 
-1. 建立 `contracts/`。
-2. 从契约生成 Rust/TS 工具名称和类型。
-3. `BridgeReq` 改为 typed/discriminated union。
-4. 统一跨进程错误码。
-5. 增加协议和能力版本握手。
-6. Rust 新增 `lib.rs`。
-7. 拆分 `tools.rs`。
-8. 建立 Tool Registry。
-9. 将 Session 改为显式连接状态机。
-10. Pending request 绑定 connection generation。
-11. 增加重连、超时和迟到响应测试。
-12. Policy 层统一处理权限和确认。
+1. ✅ 已落地 建立 `contracts/`(`tools.json`/`errors.json`/`capabilities.json`/`protocol-version.json` + 本轮新增两份 envelope schema)。
+2. ✅ 已落地 从契约生成 Rust/TS 工具名称和类型(`scripts/gen-ops.mjs` → `ops.ts`;Rust `matches_contract` 校验)。
+3. ⬜ 未做 `BridgeReq` 改为 typed/discriminated union(仍是宽 `op:string` + 扁平 `args`;本轮 schema 描述的是现状)。
+4. ✅ 已落地 统一跨进程错误码(`errors.json` + `CallError.code`,`cargo test` 校验映射)。
+5. ⚠ 部分 增加协议和能力版本握手(`protocol-version.json` + `capabilities.json` 契约已定义,代码侧 wiring 待接线,见 [compatibility.md](./compatibility.md))。
+6. ✅ 已落地 Rust 新增 `lib.rs`(本轮 `src/lib.rs` 拆分)。
+7. ⚠ 部分 拆分 `tools.rs`(Tool Registry 已落地;进一步的文件级拆分仍待办)。
+8. ✅ 已落地 建立 Tool Registry(`tools.rs` 的 `HANDLERS`,见 [RFC-0002](./rfc/0002-tool-registry.md))。
+9. ⚠ 部分 将 Session 改为显式连接状态机(仅 RFC-0001 首阶段的 generation-guard;完整 5 态机待办)。
+10. ✅ 已落地 Pending request 绑定 connection generation(generation-guarded 重连,RFC-0001 首阶段)。
+11. ⬜ 未做 增加重连、超时和迟到响应**集成**测试(需真实浏览器,browser-gated;单元层已有 generation 相关覆盖)。
+12. ✅ 已落地 Policy 层统一处理权限和确认(`policy.ts`,已接入 dispatch)。
 
 ### 验收标准
 
@@ -1429,16 +1433,16 @@ sbom.spdx.json
 
 ### 任务
 
-1. Tag 驱动 Release workflow。
-2. 生成预编译二进制和 Extension zip。
-3. 生成 checksum、SBOM 和 provenance。
-4. 实现 install、upgrade、uninstall。
-5. 实现 `doctor` 和 `status`。
-6. 增加结构化日志。
-7. 增加 request ID 和 connection ID。
-8. 增加脱敏审计事件。
-9. macOS 真实集成测试进入 release gate。
-10. 增加 Chrome stable/beta nightly 测试。
+1. ✅ 已落地 Tag 驱动 Release workflow(`release.yml`,见 [release.md](./release.md))。
+2. ⚠ 部分 生成预编译二进制和 Extension zip(预编译 tarball 内含二进制 + `extension/dist`;未单独产出扩展 zip)。
+3. ⚠ 部分 生成 checksum、SBOM 和 provenance(checksum ✅ `.tar.gz.sha256`;SBOM ✅ `sbom.yml`/CycloneDX;provenance/attestation ⬜)。
+4. ⚠ 部分 实现 install、upgrade、uninstall(install ✅ 双模式 `install.sh`;uninstall ✅ 本轮新增;upgrade ⬜)。
+5. ✅ 已落地 实现 `doctor` 和 `status`(见 [cli.md](./cli.md)、[operations.md](./operations.md))。
+6. ✅ 已落地 增加结构化日志(`BB_LOG_FORMAT=json`,见 [ADR-0014](./adr/0014-leveled-logging.md))。
+7. ⚠ 部分 增加 request ID 和 connection ID(每次调用 request id ✅;日志中的 connection id ⬜)。
+8. ✅ 已落地 增加脱敏审计事件(`tools/call` 审计行,见 [operations.md](./operations.md))。
+9. ⬜ 未做 macOS 真实集成测试进入 release gate(需真实浏览器,browser-gated)。
+10. ✅ 已落地 增加 Chrome stable/beta nightly 测试(本轮新增 `nightly.yml`)。
 
 ### 验收标准
 
@@ -1454,16 +1458,16 @@ sbom.spdx.json
 
 只有在出现明确需求后再进行：
 
-* 多 MCP 客户端 Broker
-* 多 Agent 并发和 tab lease
-* 企业集中策略
-* 扩展自有高风险确认窗口
-* 组织级 allowlist
-* 集中审计
-* Edge 支持
-* Windows 支持
-* Skill 层
-* 操作录制与回放
+* ⬜ 未做 多 MCP 客户端 Broker
+* ⬜ 未做 多 Agent 并发和 tab lease
+* ⬜ 未做 企业集中策略
+* ⬜ 未做 扩展自有高风险确认窗口
+* ⬜ 未做 组织级 allowlist
+* ⬜ 未做 集中审计
+* ⬜ 未做 Edge 支持
+* ✅ 已落地 Windows 支持(见 [ADR-0015](./adr/0015-windows-support.md);另有 Linux/WSL,[ADR-0016](./adr/0016-linux-wsl-support.md))
+* ⬜ 未做 Skill 层
+* ⬜ 未做 操作录制与回放
 
 不要在 P0/P1 阶段提前引入这些复杂度。
 
@@ -1471,39 +1475,43 @@ sbom.spdx.json
 
 # 十三、建议建立的治理文件
 
+状态图例:✅ 已落地 / ⚠ 部分 / ⬜ 未做(「本轮」= 本次治理迭代新增)。
+
 ```text
 browser-bridge/
-├── GOVERNANCE.md
-├── SECURITY.md
-├── rust-toolchain.toml
-├── deny.toml
+├── GOVERNANCE.md                          # ✅
+├── SECURITY.md                            # ✅
+├── rust-toolchain.toml                    # ✅
+├── deny.toml                              # ✅
 ├── contracts/
-│   ├── tools.json
-│   ├── bridge-request.schema.json
-│   ├── bridge-response.schema.json
-│   └── errors.json
+│   ├── tools.json                         # ✅
+│   ├── bridge-request.schema.json         # ✅ 本轮
+│   ├── bridge-response.schema.json        # ✅ 本轮
+│   ├── capabilities.json                  # ✅(此列表原稿未列出)
+│   ├── protocol-version.json              # ✅(此列表原稿未列出)
+│   └── errors.json                        # ✅
 ├── docs/
-│   ├── compatibility.md
-│   ├── release.md
-│   ├── operations.md
+│   ├── compatibility.md                   # ✅ 本轮
+│   ├── release.md                         # ✅ 本轮
+│   ├── operations.md                      # ✅ 本轮
 │   └── security/
-│       ├── threat-model.md
-│       ├── trust-boundaries.md
-│       ├── tool-risk-matrix.md
-│       └── incident-response.md
+│       ├── threat-model.md                # ✅
+│       ├── trust-boundaries.md            # ✅
+│       ├── tool-risk-matrix.md            # ✅
+│       └── incident-response.md           # ✅ 本轮
 └── .github/
-    ├── CODEOWNERS
-    ├── dependabot.yml
-    ├── pull_request_template.md
+    ├── CODEOWNERS                         # ✅
+    ├── dependabot.yml                     # ✅
+    ├── pull_request_template.md           # ✅
     ├── ISSUE_TEMPLATE/
-    │   ├── bug.yml
-    │   ├── feature.yml
-    │   └── security-change.yml
+    │   ├── bug.yml                         # ✅
+    │   ├── feature.yml                     # ✅
+    │   └── security-change.yml             # ✅
     └── workflows/
-        ├── ci.yml
-        ├── security.yml
-        ├── nightly.yml
-        └── release.yml
+        ├── ci.yml                          # ✅
+        ├── security.yml                    # ✅
+        ├── nightly.yml                     # ✅ 本轮
+        └── release.yml                     # ✅
 ```
 
 ---

@@ -50,6 +50,20 @@ intended compatibility handshake: exchange version + capabilities on connect and
 fail fast (`PROTOCOL_MISMATCH`) on incompatibility, rather than a late
 "unknown op". See [RFC-0001](../docs/rfc/0001-connection-state-machine.md).
 
+## `bridge-request.schema.json` / `bridge-response.schema.json`
+
+JSON Schema (draft 2020-12) for the internal bridge **envelope** — the
+`BridgeReq { id, op, tabId?, args }` request and `BridgeResp { id, ok, data?, error? }`
+response that cross MCP server ↔ native host ↔ extension. They are the source of
+truth for the envelope *shape* and mirror the interfaces in
+[`extension/src/shared/types.ts`](../extension/src/shared/types.ts) (kept in sync
+by hand — `types.ts` is not generated from them yet). They describe the current
+wide form (`op` a plain string, `args` a flat bag of optional fields); the typed
+/ discriminated-union form is a planned follow-up (see
+[docs/governance-roadmap.md](../docs/governance-roadmap.md) P1#3). The `data`
+payload is intentionally unconstrained, and stable error **codes** live in
+`errors.json`, not in the response schema.
+
 ## Adding / changing a tool
 
 1. Edit `tools.json`.

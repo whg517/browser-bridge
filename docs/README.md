@@ -10,6 +10,10 @@
 | [requirements.md](./requirements.md) | 需求:目标、用户故事、功能/非功能需求、范围边界、阶段划分 | 所有人(先读这个) |
 | [architecture.md](./architecture.md) | 架构:组件、数据流、协议、安全模型、关键约束、技术选型 | 实现者、评审者 |
 | [cli.md](./cli.md) | CLI 子命令与故障排查:`doctor`/`status` 只读自检、"server not reachable" 解读 | 使用者、排查者 |
+| [operations.md](./operations.md) | 运维:两种二进制模式、`doctor`/`status`、`BB_LOG`/审计、锁文件、native host 重连 | 使用者、运维者 |
+| [compatibility.md](./compatibility.md) | 兼容性:三种版本、内部协议版本、能力/版本握手(契约现状) | 实现者、评审者 |
+| [release.md](./release.md) | 发布:tag 驱动流水线、预编译 tarball + 校验和、双模式 `install.sh`、SBOM | 发布者、评审者 |
+| [security/incident-response.md](./security/incident-response.md) | 安全事件响应 Runbook:报告、分级、缓解(禁用工具/收回白名单/总开关)、披露 | 维护者、报告者 |
 | [adr/](./adr/) | 架构决策记录(ADR):每一个"为什么这么选"的可追溯记录 | 评审者、未来改动者 |
 | [rfc/](./rfc/) | 设计提案(RFC):演进设计,先评审再落地(状态见下方 RFC 索引) | 评审者、未来改动者 |
 
