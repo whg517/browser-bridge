@@ -4,6 +4,8 @@
 // with `import type` by background/content/options/popup. esbuild erases those
 // type-only imports entirely, so the emitted bundles are unaffected.
 
+import type { BridgeCommand } from "./ops";
+
 // The configurable settings persisted in chrome.storage.local. The DEFAULTS
 // objects in background.ts, options.ts (full) and content.ts (a subset, via
 // Pick) must stay in sync with these keys.
@@ -20,13 +22,12 @@ export interface Settings {
 }
 
 // A request from the native host, forwarded to the right tab's content script.
-// Shape: { id, op, tabId?, args }.
-export interface BridgeReq {
-  id: number | string;
-  op: string;
-  tabId?: number;
-  args: OpArgs;
-}
+// Shape on the wire: { id, op, tabId?, args }. `op` + `args` come from the
+// generated BridgeCommand union (one arm per tool, args typed to that tool's
+// inputSchema), intersected with the request envelope so consumers can narrow
+// on `op` and get exactly the args that tool accepts. The intersection
+// distributes over the union, so BridgeReq stays a discriminated union.
+export type BridgeReq = BridgeCommand & { id: number | string; tabId?: number };
 
 // The response posted back to the native host over the Port.
 export interface BridgeResp {
@@ -36,10 +37,13 @@ export interface BridgeResp {
   error?: string;
 }
 
-// Arguments an op may carry. Every field is optional — each handler reads the
-// ones it needs (and validates them at runtime; the Rust side enforces the
-// required ones per each tool's JSON schema). Covers both content-script ops
-// and the tab-level / cookie ops handled in the service worker.
+// The loose args bag carried across the service-worker → content-script
+// boundary (ContentMsg). Every field is optional — each handler reads the ones
+// it needs (and validates them at runtime; the Rust side enforces the required
+// ones per each tool's JSON schema). BridgeReq itself is now precisely typed via
+// the generated BridgeCommand union; this stays wide because ContentMsg also
+// carries internal ops (ping / _confirm_toast / _info_toast) not in the
+// contract, and the content handlers read fields generically.
 export interface OpArgs {
   ref?: string;
   selector?: string;
