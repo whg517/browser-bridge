@@ -2,7 +2,8 @@
 // Edit the contract, then run `make gen` (or `node scripts/gen-ops.mjs`).
 //
 // The tool catalogue, JS side: op names + Chinese UI labels for the options
-// page, plus policy metadata (risk / scope / permission / confirmation).
+// page, policy metadata (risk / scope / permission / confirmation), and the
+// per-tool request shapes (BridgeCommand, derived from each inputSchema).
 // tools.rs is verified against the same contract in `cargo test`.
 
 export interface ToolInfo {
@@ -137,3 +138,29 @@ export const TOOL_META: Record<string, ToolMeta> = {
     confirmation: "none",
   },
 };
+
+// Per-tool request shapes, derived from each tool's inputSchema. Discriminated
+// on `op`, so consumers (background/dispatch.ts) narrow the args to exactly the
+// fields that tool accepts. shared/types.ts intersects this with the request
+// envelope ({ id, tabId? }) to form BridgeReq. Required schema props map to
+// required fields; the rest are optional. JSON-Schema string→string,
+// integer/number→number, boolean→boolean.
+export type BridgeCommand =
+  | { op: "tab_list"; args: Record<string, never> }
+  | { op: "tab_focus"; args: { tabId: number } }
+  | { op: "tab_open"; args: { url: string } }
+  | { op: "tab_close"; args: { tabId: number } }
+  | { op: "page_snapshot"; args: Record<string, never> }
+  | { op: "page_click"; args: { ref?: string; selector?: string } }
+  | { op: "page_fill"; args: { ref?: string; selector?: string; value: string } }
+  | { op: "page_text"; args: Record<string, never> }
+  | { op: "page_screenshot"; args: Record<string, never> }
+  | { op: "page_scroll"; args: { direction?: string; pixels?: number } }
+  | {
+      op: "page_wait_for";
+      args: { nav?: boolean; selector?: string; text?: string; timeoutMs?: number };
+    }
+  | { op: "page_eval"; args: { code: string } }
+  | { op: "page_snapshot_precise"; args: { frameId?: string } }
+  | { op: "cookie_get"; args: { domain?: string; name?: string; url?: string } }
+  | { op: "storage_get"; args: { key?: string; type?: string } };

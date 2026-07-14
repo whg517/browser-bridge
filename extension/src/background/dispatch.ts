@@ -31,7 +31,7 @@ export function assertNotDisabled(op: string | undefined, disabledTools: string[
 }
 
 export async function dispatch(req: BridgeReq): Promise<unknown> {
-  const { op, args } = req;
+  const { op } = req;
 
   // Tool enable/disable gate: if the op is in the user's disabledTools list,
   // reject before doing anything. The op strings here mirror the tool names in
@@ -39,23 +39,24 @@ export async function dispatch(req: BridgeReq): Promise<unknown> {
   const disabled = await getSetting("disabledTools");
   assertNotDisabled(op, Array.isArray(disabled) ? disabled : []);
 
-  // Tab-level ops handled directly here (no content script needed). The `!`
-  // assertions reflect the Rust side's JSON-schema validation of required args.
-  switch (op) {
+  // Tab-level ops handled directly here (no content script needed). Switching on
+  // `req.op` narrows `req.args` to that tool's schema (BridgeCommand), so the
+  // required args (e.g. tabId, url) are typed non-optional — no `!` needed.
+  switch (req.op) {
     case "tab_list":
       return await tabList();
     case "tab_focus":
-      return await tabFocus(args.tabId!);
+      return await tabFocus(req.args.tabId);
     case "tab_open":
-      return await tabOpen(args.url!);
+      return await tabOpen(req.args.url);
     case "tab_close":
-      return await tabClose(args.tabId!);
+      return await tabClose(req.args.tabId);
     case "page_snapshot_precise":
       // Handled in SW via chrome.debugger; does NOT go through content.js.
-      return await snapshotPrecise(req.tabId, args);
+      return await snapshotPrecise(req.tabId, req.args);
     case "cookie_get":
       // chrome.cookies API is only available in SW context.
-      return await cookieGet(req.tabId, args);
+      return await cookieGet(req.tabId, req.args);
   }
 
   // Page-level ops need a content script in the target tab.
@@ -65,7 +66,7 @@ export async function dispatch(req: BridgeReq): Promise<unknown> {
   // content.js listens for these and replies.
   const resp = (await chrome.tabs.sendMessage(tab.id!, {
     op,
-    args,
+    args: req.args,
     tabId: tab.id,
   })) as PageResponse;
   if (resp && resp.__error) throw new Error(resp.__error);

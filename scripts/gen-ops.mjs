@@ -43,11 +43,64 @@ const meta = contract.tools
   )
   .join("\n");
 
+// Discriminated union of every tool's request shape, derived from each tool's
+// inputSchema. Required props → required fields; the rest → optional. This is
+// the compile-time contract the extension narrows on (see shared/types.ts's
+// BridgeReq). Emitted already Prettier-formatted (printWidth 100) so the raw
+// generator output stays diff-clean without a post-format step.
+const PRINT_WIDTH = 100;
+
+const jsonTypeToTs = (jsonType) => {
+  switch (jsonType) {
+    case "string":
+      return "string";
+    case "integer":
+    case "number":
+      return "number";
+    case "boolean":
+      return "boolean";
+    default:
+      throw new Error(`gen-ops: unsupported JSON Schema type ${JSON.stringify(jsonType)}`);
+  }
+};
+
+const commandArm = (t) => {
+  const schema = t.inputSchema ?? {};
+  const props = schema.properties ?? {};
+  const required = new Set(schema.required ?? []);
+  const fields = Object.keys(props).map(
+    (k) => `${k}${required.has(k) ? "" : "?"}: ${jsonTypeToTs(props[k].type)}`
+  );
+  const opLit = JSON.stringify(t.name);
+  // A tool with no inputSchema props gets a strict empty-object type. `{}` would
+  // trip @typescript-eslint/no-empty-object-type (and it wrongly allows any
+  // non-nullish value); Record<string, never> is the precise "no fields" type
+  // an empty object literal still satisfies.
+  const argsInline = fields.length ? `{ ${fields.join("; ")} }` : "Record<string, never>";
+
+  // Mirror Prettier's line-breaking: keep the arm on one line when it fits;
+  // otherwise break the outer object, and break the args object too if its
+  // line still overflows.
+  const single = `  | { op: ${opLit}; args: ${argsInline} }`;
+  if (single.length <= PRINT_WIDTH) return single;
+
+  const argsLine = `      args: ${argsInline};`;
+  if (argsLine.length <= PRINT_WIDTH) {
+    return `  | {\n      op: ${opLit};\n${argsLine}\n    }`;
+  }
+
+  const argsBlock = fields.map((f) => `        ${f};`).join("\n");
+  return `  | {\n      op: ${opLit};\n      args: {\n${argsBlock}\n      };\n    }`;
+};
+
+const commands = contract.tools.map(commandArm).join("\n");
+
 const out = `// GENERATED from contracts/tools.json by scripts/gen-ops.mjs — DO NOT EDIT.
 // Edit the contract, then run \`make gen\` (or \`node scripts/gen-ops.mjs\`).
 //
 // The tool catalogue, JS side: op names + Chinese UI labels for the options
-// page, plus policy metadata (risk / scope / permission / confirmation).
+// page, policy metadata (risk / scope / permission / confirmation), and the
+// per-tool request shapes (BridgeCommand, derived from each inputSchema).
 // tools.rs is verified against the same contract in \`cargo test\`.
 
 export interface ToolInfo {
@@ -79,6 +132,15 @@ export interface ToolMeta {
 export const TOOL_META: Record<string, ToolMeta> = {
 ${meta}
 };
+
+// Per-tool request shapes, derived from each tool's inputSchema. Discriminated
+// on \`op\`, so consumers (background/dispatch.ts) narrow the args to exactly the
+// fields that tool accepts. shared/types.ts intersects this with the request
+// envelope ({ id, tabId? }) to form BridgeReq. Required schema props map to
+// required fields; the rest are optional. JSON-Schema string→string,
+// integer/number→number, boolean→boolean.
+export type BridgeCommand =
+${commands};
 `;
 
 writeFileSync(join(root, "extension/src/shared/ops.ts"), out);
