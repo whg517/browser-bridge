@@ -12,6 +12,10 @@
 #   ./install.sh --skip-extension-build Reuse an existing extension/dist. Useful
 #                                       in WSL when only the Rust toolchain is
 #                                       installed in Linux.
+#   ./install.sh --uninstall            Remove what this installer placed (binary,
+#                                       run-host wrapper, native-host manifest,
+#                                       run.lock). Leaves Chrome and the loaded
+#                                       extension untouched.
 #
 # Two modes, auto-detected:
 #   - source checkout (Cargo.toml present): builds the binary (Rust) + the
@@ -36,6 +40,7 @@ PINNED_EXTENSION_ID="mkjjlmjbcljpcfkfadfmhblmmddkdihf"
 EXTENSION_ID="$PINNED_EXTENSION_ID"
 BROWSER="auto"
 SKIP_EXTENSION_BUILD="${BB_SKIP_EXTENSION_BUILD:-0}"
+UNINSTALL=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -51,6 +56,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --skip-extension-build)
       SKIP_EXTENSION_BUILD=1
+      shift
+      ;;
+    --uninstall)
+      UNINSTALL=1
       shift
       ;;
     -h|--help)
@@ -71,19 +80,33 @@ done
 
 OS="$(uname -s)"
 declare -a NM_DIRS=()
+# Candidate per-user runtime/data dirs where the MCP server may have written its
+# run.lock (mirrors LockFile::path() in src/ipc.rs). Only used by --uninstall,
+# and only the exact file "run.lock" is ever removed from them.
+declare -a LOCK_DIRS=()
 case "$OS" in
   Darwin)
     INSTALL_DIR="${BB_INSTALL_DIR:-$HOME/.browser-bridge}"
     NM_DIRS+=("${BB_NM_DIR:-$HOME/Library/Application Support/Google/Chrome/NativeMessagingHosts}")
+    [[ -n "${XDG_RUNTIME_DIR:-}" ]] && LOCK_DIRS+=("$XDG_RUNTIME_DIR/browser-bridge")
+    LOCK_DIRS+=("$HOME/Library/Application Support/browser-bridge")
     ;;
   Linux)
     INSTALL_DIR="${BB_INSTALL_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/browser-bridge}"
     CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
+    [[ -n "${XDG_RUNTIME_DIR:-}" ]] && LOCK_DIRS+=("$XDG_RUNTIME_DIR/browser-bridge")
+    [[ -n "${XDG_CACHE_HOME:-}" ]] && LOCK_DIRS+=("$XDG_CACHE_HOME/browser-bridge")
+    LOCK_DIRS+=("$HOME/.cache/browser-bridge")
     if [[ -n "${BB_NM_DIR:-}" ]]; then
       NM_DIRS+=("$BB_NM_DIR")
     else
       if [[ "$BROWSER" == "auto" ]]; then
-        if command -v google-chrome >/dev/null 2>&1 || command -v google-chrome-stable >/dev/null 2>&1 || [[ -d "$CONFIG_HOME/google-chrome" ]]; then
+        if [[ "$UNINSTALL" == "1" ]]; then
+          # We cannot know which browser was targeted at install time, so clean
+          # the manifest from both candidate locations (the file is uniquely
+          # named for this project, so this is safe).
+          BROWSER="both"
+        elif command -v google-chrome >/dev/null 2>&1 || command -v google-chrome-stable >/dev/null 2>&1 || [[ -d "$CONFIG_HOME/google-chrome" ]]; then
           BROWSER="chrome"
         elif command -v chromium >/dev/null 2>&1 || command -v chromium-browser >/dev/null 2>&1 || [[ -d "$CONFIG_HOME/chromium" ]]; then
           BROWSER="chromium"
@@ -108,6 +131,71 @@ case "$OS" in
     exit 1
     ;;
 esac
+
+# ---- uninstall ------------------------------------------------------------
+# Reverses exactly what the install path above lays down: the binary and
+# run-host wrapper in INSTALL_DIR, the native-host manifest in each NM_DIR, and
+# the run.lock the server writes. Idempotent, prints every removal, never uses
+# wildcards, never touches a process or the browser, and never removes anything
+# this project did not create.
+
+if [[ "$UNINSTALL" == "1" ]]; then
+  echo "[uninstall] removing browser-bridge artifacts on $OS"
+  removed=0
+
+  # Native-host manifest(s) — the file we wrote, named uniquely for this project.
+  for NM_DIR in "${NM_DIRS[@]}"; do
+    MANIFEST="$NM_DIR/$HOST_NAME.json"
+    if [[ -f "$MANIFEST" ]]; then
+      rm -f "$MANIFEST"
+      echo "[uninstall] removed host manifest: $MANIFEST"
+      removed=1
+    else
+      echo "[uninstall] not present: $MANIFEST"
+    fi
+  done
+
+  # Binary + native-host wrapper we placed in INSTALL_DIR.
+  for artifact in "$INSTALL_DIR/$BINARY_NAME" "$INSTALL_DIR/run-host.sh"; do
+    if [[ -e "$artifact" ]]; then
+      rm -f "$artifact"
+      echo "[uninstall] removed: $artifact"
+      removed=1
+    else
+      echo "[uninstall] not present: $artifact"
+    fi
+  done
+  # INSTALL_DIR is created by this installer; drop it only when now empty. rmdir
+  # (never rm -r) guarantees we never delete unrelated files a user may have put
+  # there.
+  if [[ -d "$INSTALL_DIR" ]]; then
+    if rmdir "$INSTALL_DIR" 2>/dev/null; then
+      echo "[uninstall] removed empty dir: $INSTALL_DIR"
+    fi
+  fi
+
+  # Runtime lock file the MCP server writes. Remove the exact file "run.lock"
+  # from each candidate dir (no globbing), then drop the dir if it is now empty.
+  for LOCK_DIR in "${LOCK_DIRS[@]}"; do
+    LOCK="$LOCK_DIR/run.lock"
+    if [[ -f "$LOCK" ]]; then
+      rm -f "$LOCK"
+      echo "[uninstall] removed lock file: $LOCK"
+      removed=1
+    fi
+    if [[ -d "$LOCK_DIR" ]]; then
+      rmdir "$LOCK_DIR" 2>/dev/null || true
+    fi
+  done
+
+  if [[ "$removed" == "0" ]]; then
+    echo "[uninstall] nothing to remove — already clean"
+  fi
+  echo "[uninstall] done. Chrome and the loaded extension were left untouched;"
+  echo "[uninstall] if you loaded the unpacked extension, remove it yourself via"
+  echo "[uninstall] chrome://extensions."
+  exit 0
+fi
 
 # ---- source vs prebuilt ---------------------------------------------------
 # Source checkout (Cargo.toml present) → build the binary + extension.
