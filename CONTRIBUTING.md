@@ -13,15 +13,68 @@ for preserving the safety model.
 
 ## Workflow
 
-1. Branch off `main`.
-2. Make your change with a matching test where practical.
-3. Run the full gate locally (`make help` lists all targets):
+`main` is protected — you cannot push to it directly, and development **never**
+happens on `main`. Every change lives on a branch in its own git worktree, and
+lands via a squash-merged PR whose gates are green.
+
+1. **Sync + branch in a worktree.** Each change gets its own git worktree under
+   `.worktree/` (gitignored), on a branch named `type/branch-name` — `type` is a
+   commit type (see [Commit convention](#commit-convention)) and `branch-name`
+   is kebab-case and descriptive (e.g. `feat/capability-handshake`,
+   `fix/reconnect-writer-clobber`). Always branch from the latest `origin/main`:
    ```sh
-   make ci            # rust fmt/clippy/test + extension typecheck/lint/format/build + protocol e2e
-   make test-browser  # DOM + smoke tests (needs bun + Chrome)
+   git fetch origin
+   git worktree add .worktree/feat/my-change -b feat/my-change origin/main
+   cd .worktree/feat/my-change
    ```
-4. Keep commits focused; write a clear message explaining the *why*.
-5. Open a PR. CI (`.github/workflows/ci.yml`) must be green.
+2. Make the change with a matching test where practical.
+3. **Stay synced.** Before committing, and again before merging, rebase onto the
+   latest main so history stays linear (no merge commits):
+   ```sh
+   git pull --rebase origin main
+   ```
+4. **Gate locally — everything must pass** (`make help` lists all targets):
+   ```sh
+   make ci            # rust fmt/clippy/test + extension typecheck/lint/format + protocol e2e + version/gen consistency
+   ```
+   Browser tests (`make test-browser`) run **only** against an isolated Chrome
+   for Testing via `CHROME_BIN`, never your daily Chrome (see Safety below and
+   [tests/README.md](./tests/README.md)). They are not in the required gate;
+   runtime-behavior changes (reconnect, handshake, service worker) must be
+   verified there manually.
+5. **Open a PR and squash-merge.** Push the branch, open a PR against `main`,
+   wait for **all required checks green**, then **squash-merge** (one change =
+   one commit on `main`):
+   ```sh
+   git push -u origin feat/my-change
+   gh pr create --base main
+   gh pr merge --squash        # after review + green checks
+   ```
+   Humans review, approve, and merge — automation never self-approves or
+   self-merges.
+6. Clean up: `git worktree remove .worktree/feat/my-change && git branch -d feat/my-change`.
+
+## Commit convention
+
+Commits follow [Conventional Commits](https://www.conventionalcommits.org):
+`type(scope): subject`.
+
+- Allowed `type`: `feat` `fix` `docs` `refactor` `perf` `test` `ci` `build`
+  `style` `revert`. **`chore` is not allowed** — every change maps to a more
+  precise type (dependency bumps → `build`/`ci`, misc scripts → `build`,
+  documentation → `docs`).
+- `scope` is optional (`session`, `tools`, `error`, `ci`, `ext`, …).
+- `subject` is imperative, present tense, lower-case, no trailing period; explain
+  the *why* in the body. One logical change per commit.
+
+## Safety (non-negotiable)
+
+This project drives a real logged-in browser, and a past incident nearly took
+down a machine. Never run `pkill` / `killall` / any pattern process-kill — only
+`kill` a specific PID you started and verified. Never point browser tests at a
+browser that could capture your real session — use an isolated Chrome for
+Testing / Chromium via `CHROME_BIN`. Anything that would affect a process or
+window you didn't start yourself: stop and ask first.
 
 ## Code style
 
@@ -44,9 +97,10 @@ A new tool touches both sides (see architecture.md §10):
    source for the catalogue (name, description, uiLabel, risk, scope,
    permission, confirmation, inputSchema). Run `make gen` to regenerate
    `extension/src/shared/ops.ts`, and bump the count in `tool_count_is_pinned`.
-2. Add the matching `Tool` definition + `dispatch` arm in `src/tools.rs`. The
-   `matches_contract` test (`cargo test`) enforces name/description/schema parity
-   with the contract.
+2. Add the matching `Tool` definition (`src/tools/catalogue.rs`) and a `HANDLERS`
+   registry entry + `build_*` payload fn (`src/tools/handlers.rs`). The
+   `matches_contract` and `registry_covers_catalogue` tests (`cargo test`)
+   enforce parity with the contract.
 3. Handle the `op` in `extension/src/background.ts` (and `content.ts` if it's a
    page-level DOM op).
 4. Give it a risk row in the [tool risk matrix](docs/security/tool-risk-matrix.md).

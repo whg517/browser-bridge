@@ -1,8 +1,10 @@
 # Development guide
 
 This document covers the local dev loop, the build/test toolchain, and the
-release process. For *why* the project is structured the way it is, see
-[architecture.md](./architecture.md) and the [ADRs](./adr/).
+release process. For the **branch / commit / sync / merge workflow** (worktrees,
+Conventional Commits, rebase, squash-merge, gates), see
+[`../CONTRIBUTING.md`](../CONTRIBUTING.md). For *why* the project is structured
+the way it is, see [architecture.md](./architecture.md) and the [ADRs](./adr/).
 
 ## Prerequisites
 

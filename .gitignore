@@ -26,6 +26,9 @@ tests/node_modules/
 # ZCode working area (plans, session state)
 /.zcode/
 
+# Development worktrees (see CONTRIBUTING.md — one per branch, never committed)
+/.worktree/
+
 # Extension build output + deps
 /extension/dist/
 /extension/node_modules/

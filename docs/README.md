@@ -20,6 +20,9 @@
 > 跨进程契约(工具目录、错误分类、能力、协议版本)的单一信源在
 > [`contracts/`](../contracts/README.md)。
 
+> **开发流程**(分支/提交/同步/合并规范)见根目录 [`CONTRIBUTING.md`](../CONTRIBUTING.md);
+> 智能体速查入口见 [`AGENTS.md`](../AGENTS.md)。构建/测试工具链见 [development.md](./development.md)。
+
 ## RFC 索引
 
 RFC(Request For Comments)是先评审再落地的设计提案,与 ADR(已定决策)区分。
