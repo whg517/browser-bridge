@@ -206,6 +206,17 @@ impl Session {
         Ok(())
     }
 
+    /// The generation id of the currently-attached connection, if any.
+    ///
+    /// Returns `Some(generation)` while a native host is connected, or `None`
+    /// when the slot is empty (never connected, or between reconnects). Used by
+    /// the MCP server to tag audit lines so operators can correlate a tool call
+    /// with the specific connection it ran over, across reconnects. Just a lock
+    /// and a map — non-blocking and cheap.
+    pub fn current_generation(&self) -> Option<u64> {
+        self.conn.lock().unwrap().as_ref().map(|c| c.generation)
+    }
+
     /// Send a request to the extension and wait for the correlated response.
     /// Returns the response data on success, or a typed [`CallError`].
     pub fn call(&self, op: &str, tab_id: Option<i64>, args: Value) -> Result<Value, CallError> {
@@ -298,6 +309,17 @@ impl Session {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fresh_session_reports_no_generation() {
+        // A brand-new session has no attached connection, so there is no
+        // generation to report. (Attaching a real connection needs a socket,
+        // which is intentionally out of scope for this unit test.)
+        let session = Session::new();
+        assert_eq!(session.current_generation(), None);
+        // Same via Default, which just forwards to `new`.
+        assert_eq!(Session::default().current_generation(), None);
+    }
 
     #[test]
     fn generations_are_monotonic() {

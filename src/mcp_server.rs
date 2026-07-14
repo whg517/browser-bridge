@@ -174,6 +174,11 @@ fn handle(session: &Session, msg: &JsonRpc) -> Option<JsonRpc> {
             // structured audit event (tool, outcome, taxonomy code, duration).
             let req_id = next_request_id();
             let started = std::time::Instant::now();
+            // Capture the connection generation this call will run over, so the
+            // audit line can be correlated with a specific native-host
+            // connection across reconnects. `"-"` when no host is attached.
+            let conn_gen = session.current_generation();
+            let conn_s = conn_gen.map_or_else(|| "-".to_string(), |g| g.to_string());
             // Tool errors are returned as a *successful* RPC with isError=true
             // in the result (per MCP spec); only protocol errors use the
             // error field.
@@ -182,6 +187,7 @@ fn handle(session: &Session, msg: &JsonRpc) -> Option<JsonRpc> {
             let dur_s = started.elapsed().as_millis().to_string();
             crate::log::audit(&[
                 ("req", req_s.as_str()),
+                ("conn", conn_s.as_str()),
                 ("tool", name),
                 ("outcome", if out.is_error { "error" } else { "ok" }),
                 ("code", out.error_code.unwrap_or("-")),
