@@ -1,9 +1,10 @@
 >《browser-bridge 工程治理分析与实施方案》——本轮治理的分析与路线图来源。
 >
->**执行状态**:P0 治理底座已完成;P1(契约单源、错误码、Tool Registry、Policy 层、
->连接 generation 绑定)大部分已落地,少量待办(BridgeReq 判别联合、握手 wiring、
->完整状态机、集成测试);P2(tag 驱动发布、预编译产物、SBOM、`doctor`/`status`、
->结构化日志/审计、nightly)大部分已落地。逐项状态见 §12 的标注、提交历史与 `GOVERNANCE.md`。
+>**执行状态**:P0 治理底座已完成;P1(契约单源、错误码、Tool Registry + `tools.rs` 目录拆分、
+>Policy 层、连接 generation 绑定)大部分已落地,少量待办(BridgeReq 判别联合、握手 wiring、
+>完整状态机、集成测试);P2(tag 驱动发布、SBOM、provenance、`doctor`/`status`、
+>结构化日志/审计与 request/connection id、nightly)大部分已落地,少量待办(扩展 zip、`upgrade`、
+>macOS release gate)。逐项状态见 §12 的标注、提交历史与 `GOVERNANCE.md`。
 >
 >**状态图例**:✅ 已落地 / ⚠ 部分 / ⬜ 未做。
 
@@ -802,7 +803,8 @@ PR 模板中必须出现：
   解耦(触发于 `release: published`),因此 SBOM 工具异常不会阻塞二进制发布。
 * GitHub Actions 固定到 commit SHA — ✅ 已落地(所有 Action 固定到 SHA)
 * release artifact checksum — ✅ 已落地(`.tar.gz.sha256`)
-* release provenance/attestation — ⬜ 未做(路线图 P2#3 待办)
+* release provenance/attestation — ✅ 已落地(`release.yml` 的 `actions/attest-build-provenance`
+  步骤,已 SHA 固定);至此 checksum + SBOM + provenance 三项发布产物完备
 
 治理后 Actions 已固定到 commit SHA(见各 workflow),Dependabot 负责自动更新这些 SHA。
 
@@ -1411,8 +1413,8 @@ sbom.spdx.json
 4. ✅ 已落地 统一跨进程错误码(`errors.json` + `CallError.code`,`cargo test` 校验映射)。
 5. ⚠ 部分 增加协议和能力版本握手(`protocol-version.json` + `capabilities.json` 契约已定义,代码侧 wiring 待接线,见 [compatibility.md](./compatibility.md))。
 6. ✅ 已落地 Rust 新增 `lib.rs`(本轮 `src/lib.rs` 拆分)。
-7. ⚠ 部分 拆分 `tools.rs`(Tool Registry 已落地;进一步的文件级拆分仍待办)。
-8. ✅ 已落地 建立 Tool Registry(`tools.rs` 的 `HANDLERS`,见 [RFC-0002](./rfc/0002-tool-registry.md))。
+7. ✅ 已落地 拆分 `tools.rs`(Tool Registry + 目录模块拆分:`src/tools/mod.rs` / `catalogue.rs` / `handlers.rs`)。
+8. ✅ 已落地 建立 Tool Registry(`src/tools/mod.rs` 的 `HANDLERS`,见 [RFC-0002](./rfc/0002-tool-registry.md))。
 9. ⚠ 部分 将 Session 改为显式连接状态机(仅 RFC-0001 首阶段的 generation-guard;完整 5 态机待办)。
 10. ✅ 已落地 Pending request 绑定 connection generation(generation-guarded 重连,RFC-0001 首阶段)。
 11. ⬜ 未做 增加重连、超时和迟到响应**集成**测试(需真实浏览器,browser-gated;单元层已有 generation 相关覆盖)。
@@ -1435,11 +1437,11 @@ sbom.spdx.json
 
 1. ✅ 已落地 Tag 驱动 Release workflow(`release.yml`,见 [release.md](./release.md))。
 2. ⚠ 部分 生成预编译二进制和 Extension zip(预编译 tarball 内含二进制 + `extension/dist`;未单独产出扩展 zip)。
-3. ⚠ 部分 生成 checksum、SBOM 和 provenance(checksum ✅ `.tar.gz.sha256`;SBOM ✅ `sbom.yml`/CycloneDX;provenance/attestation ⬜)。
+3. ✅ 已落地 生成 checksum、SBOM 和 provenance(checksum ✅ `.tar.gz.sha256`;SBOM ✅ `sbom.yml`/CycloneDX;provenance ✅ `release.yml` 的 `attest-build-provenance`,已 SHA 固定)。
 4. ⚠ 部分 实现 install、upgrade、uninstall(install ✅ 双模式 `install.sh`;uninstall ✅ 本轮新增;upgrade ⬜)。
 5. ✅ 已落地 实现 `doctor` 和 `status`(见 [cli.md](./cli.md)、[operations.md](./operations.md))。
 6. ✅ 已落地 增加结构化日志(`BB_LOG_FORMAT=json`,见 [ADR-0014](./adr/0014-leveled-logging.md))。
-7. ⚠ 部分 增加 request ID 和 connection ID(每次调用 request id ✅;日志中的 connection id ⬜)。
+7. ✅ 已落地 增加 request ID 和 connection ID(request id ✅;日志/审计行的 connection id ✅,`mcp_server.rs` 的 `conn` 字段,由 `Session::current_generation()` 提供)。
 8. ✅ 已落地 增加脱敏审计事件(`tools/call` 审计行,见 [operations.md](./operations.md))。
 9. ⬜ 未做 macOS 真实集成测试进入 release gate(需真实浏览器,browser-gated)。
 10. ✅ 已落地 增加 Chrome stable/beta nightly 测试(本轮新增 `nightly.yml`)。
