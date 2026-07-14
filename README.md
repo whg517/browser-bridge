@@ -1,46 +1,202 @@
 # browser-bridge
 
-Let any **MCP client** — Claude Code, Codex, or anything that speaks the Model
-Context Protocol — operate **your real Chrome**: your tabs, your login
-sessions, your bookmarks, through a Chrome extension + native messaging host.
-No separate browser instance, no CDP debug port, no `--remote-debugging`
-startup flag.
+Let any **MCP client** — Claude Code, Claude Desktop, Codex, or anything that
+speaks the Model Context Protocol — drive **your real Chrome**: your tabs, your
+logged-in sessions, your cookies, through a Chrome extension + a native
+messaging host. No second browser, no CDP debug port, no `--remote-debugging`
+flag.
 
-You stay in control: every new site needs explicit approval, and high-risk
-actions (form submit, link navigation) pop a confirmation toast you must
-approve.
+Because it operates the browser you're already signed into, an agent can do
+things that a fresh headless browser can't: read a page behind your auth,
+click through an app you're logged into, pull a token your framework stashed in
+`localStorage`. That power is also the risk — see **Security** below before you
+install.
 
-## 📚 文档
+---
 
-完整设计文档在 [`docs/`](./docs/):
+## 🔒 Security first — read this
 
-- [需求文档](./docs/requirements.md) — 目标、用户故事、功能/非功能需求、范围边界
-- [架构文档](./docs/architecture.md) — 组件、数据流、协议、安全模型、关键约束
-- [WSL 使用指南](./docs/wsl.md) — Windows Chrome interop 与 WSLg 原生 Linux 两种模式
-- [架构决策记录 (ADR)](./docs/adr/) — 每一个"为什么这么选"的可追溯记录:
-  - [0001 用 Rust 单二进制](./docs/adr/0001-use-rust-single-binary.md)
-  - [0002 三进程架构 + localhost TCP](./docs/adr/0002-three-process-architecture-localhost-tcp.md)
-  - [0003 snapshot 走 content script 而非 chrome.debugger](./docs/adr/0003-content-script-snapshot-vs-chrome-debugger.md)
-  - [0004 白名单 + optional host permissions](./docs/adr/0004-allowlist-with-optional-host-permissions.md)
-  - [0005 page_eval 默认禁用](./docs/adr/0005-page-eval-disabled-by-default.md)(已被 0008 取代)
-  - [0006 高危动作用 Toast 确认](./docs/adr/0006-toast-confirmation-for-high-risk.md)
-  - [0007 锁定 MCP 协议版本 2025-06-18](./docs/adr/0007-mcp-protocol-version-2025-06-18.md)
-  - [0008 page_eval 高危确认通道](./docs/adr/0008-page-eval-confirmation-channel.md)
-  - [0009 page_snapshot_precise 用 chrome.debugger](./docs/adr/0009-page-snapshot-precise-debugger.md)
-  - [0010 Cookie/Storage 只读访问](./docs/adr/0010-cookie-storage-readonly.md)
-  - [0011 配置通过独立 Options 页管理](./docs/adr/0011-options-page-for-settings.md)
-  - [0012 扩展改用 TypeScript + esbuild 构建](./docs/adr/0012-typescript-esbuild-extension-build.md)
-  - [0013 CI 与工具链](./docs/adr/0013-ci-and-toolchain.md)
-  - [0014 分级日志与类型化错误](./docs/adr/0014-leveled-logging.md)
-  - [0015 Windows 本地运行与安装](./docs/adr/0015-windows-support.md)
-  - [0016 Linux 与 WSL 双运行模式](./docs/adr/0016-linux-wsl-support.md)
+browser-bridge drives a **real, authenticated Chrome**. It can read page
+content, cookies (including `httpOnly`), and web storage, and can run
+JavaScript in your pages. The guardrails that keep that safe:
 
-开发与贡献:[开发指南](./docs/development.md) · [贡献指南](./CONTRIBUTING.md)
+- **Approve every site.** A new origin triggers a popup prompt; nothing runs on
+  a site you haven't approved (which also grants the host permission the content
+  script needs).
+- **Confirm high-risk actions.** Submit-button clicks, link navigations, tab
+  close, and **every `page_eval`** pop an on-page confirmation you must approve
+  (with a short same-origin grace window).
+- **Read-only credentials.** Cookies and storage can be *read* (always masked —
+  JWTs, long hex, long digit runs), never written. There is no `cookie_set` /
+  `storage_set` by design.
+- **Authenticated bridge.** The localhost TCP socket authenticates each
+  connection with a per-run secret in a `0600` lock file; the native-host
+  manifest pins the extension ID.
+
+Full details: **[SECURITY.md](./SECURITY.md)** ·
+[threat model](./docs/security/threat-model.md) ·
+[trust boundaries](./docs/security/trust-boundaries.md) ·
+[per-tool risk matrix](./docs/security/tool-risk-matrix.md).
+
+---
+
+## Quickstart (≈60 seconds)
+
+**Prereqs:** Google Chrome (or Chromium on Linux). The **prebuilt** path below
+needs *no Rust and no Node.js*.
+
+### 1. Get the binary + extension
+
+Download the archive for your platform from the
+**[latest release](https://github.com/whg517/browser-bridge/releases/latest)**,
+then run the bundled installer. `install.sh` auto-detects the prebuilt tarball
+and installs the shipped binary + extension directly.
+
+<details open>
+<summary><b>macOS (Apple Silicon) / Linux x64</b></summary>
+
+```sh
+tar xzf browser-bridge-*-macos-arm64.tar.gz   # or -linux-x64
+cd browser-bridge-*-macos-arm64
+./install.sh
+```
+
+Installs the binary to `~/.browser-bridge/` (macOS) or
+`~/.local/share/browser-bridge/` (Linux) and writes the native-messaging host
+manifest with the pinned extension ID already trusted.
+
+> **macOS Gatekeeper:** the prebuilt binary is not yet notarized, so a
+> browser-downloaded archive may be quarantined ("cannot be verified"). Clear it
+> once after extracting — `xattr -dr com.apple.quarantine .` inside the
+> extracted folder — then re-run `./install.sh`.
+</details>
+
+<details>
+<summary><b>Windows x64</b></summary>
+
+```powershell
+Expand-Archive browser-bridge-*-windows-x64.zip -DestinationPath .
+cd browser-bridge-*-windows-x64
+powershell -ExecutionPolicy Bypass -File .\install.ps1
+```
+
+Installs `browser-bridge.exe` to `%LOCALAPPDATA%\browser-bridge\` and registers
+the host under your user's Chrome Native Messaging registry key. No admin rights
+needed.
+
+> **SmartScreen:** the prebuilt exe is unsigned, so SmartScreen may warn on first
+> run — choose **More info → Run anyway**.
+</details>
+
+<details>
+<summary><b>Build from source (needs Rust + Node.js/npm)</b></summary>
+
+```sh
+git clone https://github.com/whg517/browser-bridge && cd browser-bridge
+./install.sh                    # Linux: --browser chrome|chromium|both
+```
+
+`install.sh` builds the Rust binary and the extension bundle, then installs both.
+See [docs/development.md](./docs/development.md) for the full build/test loop.
+</details>
+
+> Only need the extension (binary already installed)? Grab
+> `browser-bridge-extension-<tag>.zip` from the same release and unzip it — it
+> contains a top-level `dist/` you can load directly.
+
+### 2. Load the extension
+
+`chrome://extensions` → enable **Developer mode** → **Load unpacked** → select
+the **`extension/dist/`** directory (the build output, *not* `extension/`).
+
+The extension ID is **pinned** to `mkjjlmjbcljpcfkfadfmhblmmddkdihf` (via the
+manifest `key`), which the installer already trusted — **nothing to copy, nothing
+to patch.**
+
+### 3. Register the MCP server
+
+Point your client at the installed binary (run with no args — it speaks MCP over
+stdio). Use an **absolute path**; most clients don't expand `~`.
+
+- **Claude Code (CLI):**
+  ```sh
+  claude mcp add browser-bridge -- "$HOME/.browser-bridge/browser-bridge"
+  ```
+- **Claude Desktop / generic (`mcpServers` JSON):** copy the `browser-bridge`
+  entry from [`mcp-config.example.json`](./mcp-config.example.json).
+- **Codex (`~/.codex/config.toml`):**
+  ```toml
+  [mcp_servers.browser-bridge]
+  command = "/absolute/path/to/browser-bridge"
+  args = []
+  ```
+
+### 4. Restart Chrome & try it
+
+Restart Chrome so it loads the native-host manifest, then reconnect your MCP
+client and ask: **"list my browser tabs."** The first time you target a new
+site, click the Browser Bridge toolbar icon and approve it.
+
+> On **WSL**: if your everyday browser is Windows Chrome, install on Windows and
+> point the WSL client at the `.exe` via `/mnt/c` — don't install a Linux host.
+> If Chrome runs under WSLg, install natively in Linux. See the
+> [WSL guide](./docs/wsl.md).
+
+---
+
+## What you can do — 15 tools
+
+Grouped from the single source of truth,
+[`contracts/tools.json`](./contracts/tools.json):
+
+### Tabs
+| Tool | Does | Risk |
+|------|------|------|
+| `tab_list` | List open tabs (id, title, url, active) | low |
+| `tab_focus` | Bring a tab to the foreground | low |
+| `tab_open` | Open a URL in a new tab (host must be allowlisted) | medium |
+| `tab_close` | Close a tab (on-page confirmation) | high |
+
+### Inspect a page
+| Tool | Does | Risk |
+|------|------|------|
+| `page_snapshot` | Accessibility-style tree of interactive elements, each with a stable `ref` | low |
+| `page_snapshot_precise` | Authoritative a11y tree via `chrome.debugger` (shadow DOM / complex ARIA); refs use a `p` prefix | medium |
+| `page_text` | Visible page text (passwords & card-like numbers masked) | medium |
+| `page_screenshot` | Visible viewport as a PNG | medium |
+
+### Drive a page
+| Tool | Does | Risk |
+|------|------|------|
+| `page_click` | Click by `ref` or `selector`; submit/link clicks require confirmation | high |
+| `page_fill` | Type into a field (native setter, so React/Vue detect it) | high |
+| `page_scroll` | Up / down / top / bottom / N pixels | low |
+| `page_wait_for` | Wait for a selector, text, or navigation | low |
+
+### Run code (highest risk)
+| Tool | Does | Risk |
+|------|------|------|
+| `page_eval` | ⚠ Execute arbitrary JS. **Every call** shows the full code in a confirmation prompt; return value masked by default. Prefer the tools above. | critical |
+
+### Read credentials (read-only, always masked)
+| Tool | Does | Risk |
+|------|------|------|
+| `cookie_get` | Read cookies for the active tab, incl. `httpOnly`; allowlisted hosts only | high |
+| `storage_get` | Read the page's `localStorage` / `sessionStorage` (same-origin) | high |
+
+*No write tools by design — cookie/storage writes are out of scope
+([ADR-0010](./docs/adr/0010-cookie-storage-readonly.md)).*
+
+---
+
+## How it works
+
+One Rust binary, two modes, joined by a localhost socket:
 
 ```
 MCP client ──stdio MCP──▶ browser-bridge (MCP server, Rust)
 (Claude Code,             │
- Codex, …)                │ localhost TCP (NDJSON)
+ Codex, …)                │ localhost TCP (NDJSON, per-run secret auth)
                           ▼
                    browser-bridge --native-host  ◀── spawned by Chrome
                           │
@@ -49,279 +205,114 @@ MCP client ──stdio MCP──▶ browser-bridge (MCP server, Rust)
                    Browser Bridge extension (MV3) ──▶ your page
 ```
 
-## How it works
+- **MCP server (default mode)** — launched by your MCP client over stdio.
+  Speaks JSON-RPC 2.0 (MCP protocol `2025-06-18`). Owns session state and the
+  TCP socket, published via a lock file.
+- **`--native-host`** — launched *by Chrome* via the host manifest. A thin
+  bridge translating Chrome's native-messaging frames (4-byte LE length + JSON)
+  to NDJSON on the socket.
 
-One Rust binary, two modes:
+Why two processes? Chrome spawns the native host; the MCP client spawns the
+server — they aren't parent/child, so they need an IPC. The native host stays
+dumb so that MV3 service-worker recycling (~every 5 min) and host restarts don't
+lose session state.
 
-- **Default (MCP server)** — launched by your MCP client as a stdio MCP server.
-  Speaks JSON-RPC 2.0 over stdio (MCP, protocol version `2025-06-18`). Owns
-  session state and a localhost TCP socket published via a lock file.
-- **`--native-host`** — launched by Chrome via the native messaging host
-  manifest. A thin bridge that translates Chrome's native-messaging frames
-  (4-byte LE length prefix + JSON) to NDJSON lines on the TCP socket.
+Deep dive: [docs/architecture.md](./docs/architecture.md) ·
+[ADR-0002](./docs/adr/0002-three-process-architecture-localhost-tcp.md).
 
-Why two processes and a socket? Chrome spawns the native host itself; the MCP
-server is spawned by the MCP client. They aren't parent/child, so they need an
-IPC.
-The native host is intentionally dumb — all real logic lives in the MCP
-server, which means the MV3 service worker recycling (Chrome kills SWs every
-~5 min) and host restarts don't lose session state.
+---
 
-## Tools (v0.1)
+## Compatibility
 
-| Tool | What it does |
-|------|--------------|
-| `tab_list` / `tab_focus` / `tab_open` / `tab_close` | Tab management |
-| `page_snapshot` | Accessibility-style tree of interactive elements (each with a stable `ref`) |
-| `page_click` | Click by `ref` or `selector`; submit/link clicks require confirmation |
-| `page_fill` | Type into a field (native setter, so React/Vue detect it) |
-| `page_text` | Visible page text (passwords & card-like numbers masked) |
-| `page_screenshot` | Visible viewport as PNG |
-| `page_scroll` | Up / down / top / bottom / N pixels |
-| `page_wait_for` | Wait for selector / text / navigation |
-| `page_eval` | ⚠ HIGH RISK — execute arbitrary JS. Every call shows the full code in a confirmation prompt; return value masked by default. |
-| `page_snapshot_precise` | Authoritative a11y tree via chrome.debugger (shadow DOM, complex ARIA). Briefly shows a 'debugging' banner; user is warned first. Refs use `p` prefix. |
-| `cookie_get` | Read cookies for the active tab (incl. httpOnly). Scoped to allowlisted hosts. Read-only; values masked. |
-| `storage_get` | Read the page's localStorage / sessionStorage (where frameworks keep tokens). Same-origin only. Always masked. |
+| | Supported |
+|---|---|
+| **macOS** | Apple Silicon (arm64) prebuilt. Intel via Rosetta 2 or from source. |
+| **Linux** | x64 prebuilt; Google Chrome or Chromium. |
+| **Windows** | x64 prebuilt (native, no admin). |
+| **Browser** | Chrome / Chromium, Manifest V3 |
+| **MCP protocol** | `2025-06-18` ([ADR-0007](./docs/adr/0007-mcp-protocol-version-2025-06-18.md)) |
+| **Internal bridge protocol** | `1` (see [contracts/protocol-version.json](./contracts/protocol-version.json)) |
 
-Not implemented by design: cookie/storage *writes* (read-only by design — see
-[ADR-0010](./docs/adr/0010-cookie-storage-readonly.md)). IndexedDB reads and a
-skill layer for common workflows are still future work.
+Prebuilt targets come from the tag-driven [release workflow](./.github/workflows/release.yml);
+see [docs/compatibility.md](./docs/compatibility.md).
 
-## Install
+## Configuration
 
-Google Chrome on macOS, Windows, or Linux. Chromium is also supported on
-Linux.
+Environment variables read at launch (source: `src/log.rs`, [docs/cli.md](./docs/cli.md)):
 
-### Windows
+| Var | Values | Default | Effect |
+|-----|--------|---------|--------|
+| `BB_LOG` | `error` \| `warn` \| `info` \| `debug` | `info` | stderr log / audit threshold. `warn`/`error` silences audit lines. |
+| `BB_LOG_FORMAT` | `text` \| `json` | `text` | Audit-line format; `json` emits one object per line for machine collection. |
 
-Prerequisites: Rust and Node.js. Run from PowerShell:
+## Troubleshooting
 
-```powershell
-powershell -ExecutionPolicy Bypass -File .\install.ps1
-```
-
-The installer builds both components, installs the executable to
-`%LOCALAPPDATA%\browser-bridge\browser-bridge.exe`, writes the native-host
-manifest, and registers it under the current user's Chrome Native Messaging
-registry key. Administrator privileges are not required.
-
-For Codex, the corresponding configuration is:
-
-```toml
-[mcp_servers.browser-bridge]
-command = "C:\\Users\\YOUR_NAME\\AppData\\Local\\browser-bridge\\browser-bridge.exe"
-args = []
-```
-
-A prebuilt Windows archive can use the same command when it contains
-`browser-bridge.exe` and `extension\dist`; source files being absent makes the
-installer skip Rust and Node.js automatically.
-
-### Linux / WSL
-
-WSL has two supported topologies. If your everyday browser is **Windows
-Chrome**, install on Windows and configure the WSL MCP client to launch the
-Windows `.exe` through `/mnt/c`; do not install a Linux native host. If Chrome
-or Chromium itself runs under **WSLg**, install everything natively in WSL.
-See the [WSL usage guide](./docs/wsl.md) for complete configuration examples
-and the OS-boundary rules.
-
-For native Linux/WSLg, download the `…-linux-x64` archive from the
-[latest release](https://github.com/whg517/browser-bridge/releases/latest), or
-build from source with Rust, Node.js, and npm installed:
+Run the built-in read-only self-check first:
 
 ```sh
-./install.sh                    # auto-detect Chrome or Chromium
-./install.sh --browser chrome   # Google Chrome only
-./install.sh --browser chromium # Chromium only
-./install.sh --browser both     # register both browsers
+browser-bridge doctor    # or: browser-bridge status
 ```
 
-The Linux installer puts the binary at
-`~/.local/share/browser-bridge/browser-bridge` by default and follows
-`XDG_DATA_HOME` / `XDG_CONFIG_HOME` when set.
+It reports whether the server is reachable, the lock-file port/pid, and common
+misconfigurations. Then check your MCP client's server UI (reconnect via `/mcp`
+in Claude Code) and the extension's Service Worker console at
+`chrome://extensions` (look for `[bb]` logs). Full runbook:
+[docs/cli.md](./docs/cli.md) · [docs/operations.md](./docs/operations.md).
 
-### macOS
+---
 
-### Prebuilt (no Rust/Node) — recommended
+## Docs map
 
-Download the `…-macos-arm64` tarball (Apple Silicon) from the
-[latest release](https://github.com/whg517/browser-bridge/releases/latest),
-then:
+| Doc | What's in it |
+|-----|--------------|
+| [docs/requirements.md](./docs/requirements.md) | 目标、用户故事、功能/非功能需求、范围边界 |
+| [docs/architecture.md](./docs/architecture.md) | 组件、数据流、协议、安全模型、关键约束 |
+| [docs/security/](./docs/security/) | 威胁模型、信任边界、工具风险矩阵、事件响应 |
+| [docs/cli.md](./docs/cli.md) | `doctor`/`status` 自检、故障排查 |
+| [docs/operations.md](./docs/operations.md) | 两种二进制模式、日志/审计、锁文件、重连 |
+| [docs/compatibility.md](./docs/compatibility.md) | 版本纪律与能力/协议握手 |
+| [docs/release.md](./docs/release.md) | tag 驱动发布、预编译 tarball + 校验和、SBOM |
+| [docs/wsl.md](./docs/wsl.md) | Windows Chrome interop 与 WSLg 两种模式 |
+| [docs/adr/](./docs/adr/) | 架构决策记录 (ADR) — 每个"为什么这么选" |
+| [contracts/](./contracts/README.md) | 工具目录、错误码、能力、协议版本(跨进程契约信源) |
 
-```sh
-tar xzf browser-bridge-*-macos-*.tar.gz
-cd browser-bridge-*-macos-*
-./install.sh
-```
+<details>
+<summary>Testing & project layout</summary>
 
-`install.sh` auto-detects the prebuilt tarball and installs the shipped binary +
-extension directly — no toolchain needed.
+Independent suites across two languages, run together with
+`./tests/run_all.sh`:
 
-### From source
+- **Protocol layer** — `tests/e2e.py` drives the real binary (MCP over stdio,
+  `--native-host` framing, mock extension over the TCP bridge).
+- **DOM layer** — `tests/dom_test.ts` injects the real content script into
+  headless Chrome via CDP and exercises every op against a real DOM.
+- **Smoke** — `tests/ext_test.ts` boots real Chrome with `extension/dist/`.
+- **Real integration** (opt-in) — `tests/integration_e2e.ts`; run with
+  `BB_REAL_E2E=1`. Needs Chrome for Testing / Chromium.
 
-Prereqs: Rust toolchain (`install.sh` finds cargo on PATH or at
-`/opt/homebrew/bin/cargo`) and Node.js + npm.
+See [tests/README.md](./tests/README.md). Rough source layout: `src/` (Rust:
+`main.rs` mode dispatch, `protocol.rs`, `ipc.rs`, `native_host.rs`,
+`mcp_server.rs`, `tools/`, `session.rs`), `extension/src/` (TypeScript →
+`dist/` via esbuild), `contracts/` (cross-process contracts), `docs/`.
+</details>
 
-```sh
-./install.sh
-```
+---
 
-On macOS, `install.sh` installs the binary to `~/.browser-bridge/`. On Linux it
-uses `~/.local/share/browser-bridge/` by default. In both cases it writes the
-native messaging host manifest (`com.browser_bridge.host.json`) with the
-**pinned extension ID** already trusted.
+## Project status
 
-Then:
+**v0.1.0** ([Cargo.toml](./Cargo.toml)) plus phase-two/three tools. Protocol
+layers (NM framing, MCP JSON-RPC, TCP bridge) are covered by end-to-end tests.
+The default snapshot is a content-script approximation of the a11y tree;
+`page_snapshot_precise` is the debugger-based fallback for complex ARIA/shadow
+DOM. Cookie/storage access is read-only and masked. See
+[CHANGELOG.md](./CHANGELOG.md).
 
-1. **Load the extension.** `chrome://extensions` → enable Developer mode →
-   "Load unpacked" → select the **`extension/dist/`** directory (the build
-   output, not `extension/` itself). The extension ID is **pinned** (via the
-   `key` in the manifest) to `mkjjlmjbcljpcfkfadfmhblmmddkdihf`, which
-   `install.sh` already trusted — **no ID to copy, nothing to patch.** To
-   rebuild after editing the TypeScript sources: `cd extension && npm run build`
-   (or `npm run watch`).
+## Contributing & governance
 
-2. **Register the MCP server with your MCP client.** The server is the
-   installed binary (`~/.browser-bridge/browser-bridge` on macOS,
-   `~/.local/share/browser-bridge/browser-bridge` on Linux, or
-   `%LOCALAPPDATA%\browser-bridge\browser-bridge.exe` on Windows) run with no arguments;
-   it speaks MCP over stdio. Use an **absolute path** — most clients don't
-   expand `~`. `mcp-config.example.json` has a ready-to-copy JSON snippet.
-
-   - **Claude Code** (CLI):
-     ```sh
-     claude mcp add browser-bridge -- "/absolute/path/to/browser-bridge"
-     ```
-   - **Codex** (`~/.codex/config.toml`):
-     ```toml
-     [mcp_servers.browser-bridge]
-     command = "/absolute/path/to/.browser-bridge/browser-bridge"
-     args = []
-     ```
-   - **Generic MCP client** (`mcpServers` JSON — Claude Desktop, etc.): copy the
-     `browser-bridge` entry from [`mcp-config.example.json`](./mcp-config.example.json)
-     into your client's config.
-
-   Then restart (or reconnect) your MCP client session.
-
-3. **Restart Chrome** so it picks up the native messaging host manifest.
-
-4. In your MCP client, try: *"list my browser tabs."* The first time you target
-   a new site, the extension toolbar icon shows a badge — click it and approve.
-
-## Security model
-
-| Boundary | How it's enforced |
-|----------|-------------------|
-| Site allowlist | Stored in `chrome.storage.local`. A new origin triggers a popup prompt; approving it also calls `chrome.permissions.request` for that host (required for the content script to inject). |
-| High-risk actions | Submit-button clicks and link navigations inject a confirmation toast in the page; 30 s auto-deny, 60 s grace window after approval for the same kind of action on the same origin. |
-| `page_eval` | High-risk channel: enlarged confirmation toast per call, same-origin 60s grace window, return value masked (JWT/hex/numbers/secrets) by default. See [ADR-0008](./docs/adr/0008-page-eval-confirmation-channel.md). |
-| Sensitive data | `page_text` masks `<input type=password>` and long digit runs. `page_fill` on a password field masks the value in the args echo. |
-| Host impersonation | The host manifest's `allowed_origins` pins the extension ID. The bridge socket authenticates each inbound connection with a per-run secret written to a per-user lock file (mode 0600 on Unix). |
-| Protocol safety | Native-messaging frames cap at 1 MB outbound (Chrome's hard limit). All stdout writes are single-threaded and flushed per frame. A stderr panic hook prevents panic messages from corrupting the binary stream. |
-
-## Debugging
-
-- **Your MCP client's server/connection UI** — check the server connects;
-  disconnect/reconnect (e.g. `/mcp` in Claude Code).
-- **Extension DevTools** — `chrome://extensions` → Browser Bridge → "Service
-  Worker" link opens the SW console. Look for `[bb]` logs and disconnect/
-  reconnect events.
-- **Native host stderr** — captured into Chrome's internal log. Launch Chrome
-  from a terminal (`/Applications/Google Chrome.app/Contents/MacOS/Google
-  Chrome`) to see `[native-host]` / `[mcp]` stderr live.
-- **Lock file** — `~/Library/Application Support/browser-bridge/run.lock` on
-  macOS, `%LOCALAPPDATA%\browser-bridge\run.lock` on Windows, or
-  `$XDG_RUNTIME_DIR/browser-bridge/run.lock` on Linux (with an XDG cache
-  fallback)
-  shows the current MCP server's port + pid. If it's stale (server crashed),
-  the native host removes it on next failed connect.
-
-## Testing
-
-Independent suites across two languages (see [tests/README.md](./tests/README.md)
-for why), run together with `./tests/run_all.sh`:
-
-**Protocol layer** — `tests/e2e.py` (49 assertions). Drives the real release
-binary as subprocesses: MCP server over JSON-RPC/stdio, `--native-host` mode
-with real Native-Messaging framing, and a mock extension over the localhost
-TCP bridge. Verifies the wire protocols (NM framing, MCP handshake, tools/list,
-every tool's request/response round-trip, error codes).
-
-**DOM layer** — `tests/dom_test.ts`. **Injects the real
-`extension/content.js` into a headless Chrome page** via the DevTools
-Protocol and exercises every content-script op against a real DOM: snapshot
-(refs/roles/names/visibility), click (verifies real onclick fires), fill
-(native setter + framework change events), eval (masking + serialization +
-error handling), storage_get (JWT masking), page_wait_for navigation waits,
-the high-risk Toast flow, plus
-shadow-DOM/iframe limitations and dynamic-insertion + re-snapshot ref
-stability (SPA case). This suite has caught two real bugs in content.js:
-`isVisible` missing aria-hidden ancestors, and `assignRef` reusing refs that
-collided with newly-inserted elements' refs on re-snapshot.
-
-**Smoke** — `tests/ext_test.ts` (bun + puppeteer). Launches real Chrome with
-`extension/dist/` loaded and checks the MV3 service worker boots.
-
-**Real integration** (opt-in) — `tests/integration_e2e.ts`. Closes the seam the
-others mock: the real MCP server ↔ real extension round-trip over native
-messaging (MCP client → binary → native host → extension → `chrome.tabs` →
-back). Run with `BB_REAL_E2E=1 bun tests/integration_e2e.ts` (or, on Windows
-with Node 22.12+, `$env:BB_REAL_E2E=1; node tests/integration_e2e.ts`). Chrome
-for Testing or Chromium is required because official Chrome 137+ ignores
-`--load-extension`. See
-[tests/README.md](./tests/README.md) for the language split and details.
-
-Requirements: Rust (cargo) for the build, Python 3, and (for the browser
-suites) bun + Chrome. `run_all.sh` skips browser tests gracefully if bun/Chrome
-are missing.
-
-## Project layout
-
-```
-browser-bridge/
-├── Cargo.toml
-├── src/
-│   ├── main.rs          # mode dispatch (default = MCP server, --native-host)
-│   ├── protocol.rs      # NM framing, MCP JSON-RPC, bridge envelope
-│   ├── ipc.rs           # localhost TCP + lock file + hello auth
-│   ├── native_host.rs   # stdin/stdout NM <-> TCP bridge
-│   ├── mcp_server.rs    # JSON-RPC main loop + tools dispatch
-│   ├── tools.rs         # tool schemas + handlers
-│   └── session.rs       # connection + request/response correlation
-├── extension/
-│   ├── src/             # TypeScript sources (bundled by esbuild)
-│   │   ├── background.ts # MV3 SW: native port + dispatch + allowlist
-│   │   ├── content.ts    # snapshot / click / fill / scroll / wait / toast
-│   │   ├── options.ts / popup.ts
-│   ├── manifest.json    # copied into dist/ at build time
-│   ├── toast.css / popup.html / options.html / icons/
-│   ├── build.mjs        # esbuild driver (src/ → dist/)
-│   ├── tsconfig.json / package.json
-│   └── dist/            # build output — the load-unpacked target (gitignored)
-├── tests/
-│   ├── e2e.py            # protocol-layer tests (real subprocesses)
-│   ├── dom_test.ts       # DOM-layer tests (bun + headless Chrome CDP)
-│   ├── fixtures/page.html
-│   └── run_all.sh        # runs both suites
-├── install.sh / install.ps1
-└── mcp-config.example.json
-```
-
-## Status
-
-v0.1 + phase-two/three tools — the protocol layers (NM framing, MCP JSON-RPC,
-TCP bridge) are covered by end-to-end tests. The default DOM-side snapshot uses
-a content-script approximation of the accessibility tree; `page_snapshot_precise`
-is available as an explicit debugger-based fallback for complex ARIA/shadow DOM
-cases. Cookie/storage access is read-only and masked.
-
-## Contributing
-
-See [CONTRIBUTING.md](./CONTRIBUTING.md) for the workflow and
-[docs/development.md](./docs/development.md) for the build/test/release loop.
+[CONTRIBUTING.md](./CONTRIBUTING.md) (workflow) ·
+[GOVERNANCE.md](./GOVERNANCE.md) (how changes get made) ·
+[SECURITY.md](./SECURITY.md) (reporting + review bar) ·
+[docs/development.md](./docs/development.md) (build/test/release loop).
 
 ## License
 
