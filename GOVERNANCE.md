@@ -74,9 +74,6 @@ priority:P0  priority:P1  priority:P2  priority:P3
 A tech-debt issue states: the problem, the risk, the current workaround, the
 target state, and what should trigger addressing it.
 
-The full engineering-governance analysis and phased roadmap (P0–P3) lives in
-[docs/governance-roadmap.md](docs/governance-roadmap.md).
-
 ## Versioning & release
 
 `Cargo.toml` is the single source of truth; `make sync-version` propagates it.

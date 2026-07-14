@@ -10,7 +10,7 @@
 //! tool call blocks/retries until a fresh host connects back. The extension
 //! is responsible for re-calling `connectNative` on its own.
 //!
-//! ## Generation-guarded connection (RFC-0001)
+//! ## Generation-guarded connection
 //!
 //! Each accepted connection is stamped with a monotonic `generation` id. The
 //! live writer is stored together with the generation that owns it ([`Conn`]),
@@ -339,7 +339,7 @@ mod tests {
         // Slot still holds my generation -> I own it, so I must clear it.
         assert!(should_clear_conn(Some(7), 7));
         // A newer connection replaced the slot -> leave it untouched (this is
-        // the clobber the RFC fixes).
+        // the clobber the generation guard fixes).
         assert!(!should_clear_conn(Some(8), 7));
         // An older generation must never clear a newer live slot.
         assert!(!should_clear_conn(Some(2), 5));

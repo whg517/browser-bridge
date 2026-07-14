@@ -15,23 +15,12 @@
 | [release.md](./release.md) | 发布:tag 驱动流水线、预编译 tarball + 校验和、双模式 `install.sh`、SBOM | 发布者、评审者 |
 | [security/incident-response.md](./security/incident-response.md) | 安全事件响应 Runbook:报告、分级、缓解(禁用工具/收回白名单/总开关)、披露 | 维护者、报告者 |
 | [adr/](./adr/) | 架构决策记录(ADR):每一个"为什么这么选"的可追溯记录 | 评审者、未来改动者 |
-| [rfc/](./rfc/) | 设计提案(RFC):演进设计,先评审再落地(状态见下方 RFC 索引) | 评审者、未来改动者 |
 
 > 跨进程契约(工具目录、错误分类、能力、协议版本)的单一信源在
 > [`contracts/`](../contracts/README.md)。
 
 > **开发流程**(分支/提交/同步/合并规范)见根目录 [`CONTRIBUTING.md`](../CONTRIBUTING.md);
 > 智能体速查入口见 [`AGENTS.md`](../AGENTS.md)。构建/测试工具链见 [development.md](./development.md)。
-
-## RFC 索引
-
-RFC(Request For Comments)是先评审再落地的设计提案,与 ADR(已定决策)区分。
-落地后不删除,改状态为 `Implemented` 并在文内补 "Implementation notes" 记录实际范围。
-
-| # | 标题 | 状态 |
-|---|------|------|
-| [0001](./rfc/0001-connection-state-machine.md) | 显式化连接状态机 | Implemented(首阶段) |
-| [0002](./rfc/0002-tool-registry.md) | 工具注册表 / Command 模式 | Implemented |
 
 ## 怎么读
 

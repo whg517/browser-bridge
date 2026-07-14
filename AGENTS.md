@@ -60,7 +60,6 @@ Browser suites (`make test-browser`) need `CHROME_BIN` → isolated Chrome and a
 | Build & test toolchain | [`docs/development.md`](./docs/development.md) | prerequisites, `make` targets, releasing |
 | Architecture | [`docs/architecture.md`](./docs/architecture.md) | components, protocols, security model |
 | Cross-process contracts | [`contracts/`](./contracts/README.md) | tools, error codes, capabilities, protocol version, envelopes — single source of truth |
-| Governance status | [`docs/governance-roadmap.md`](./docs/governance-roadmap.md) | roadmap with ✅/⚠/⬜ status |
 | Operations / CLI | [`docs/operations.md`](./docs/operations.md), [`docs/cli.md`](./docs/cli.md) | `doctor`/`status`, `BB_LOG`/audit |
 | Tests & browser safety | [`tests/README.md`](./tests/README.md) | suites + the `CHROME_BIN` isolation rule |
 

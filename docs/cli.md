@@ -73,6 +73,5 @@
 
 ## 相关
 
-- 连接生命周期与断线/重连语义:[architecture.md §5.2](./architecture.md#52-native-host-重连流程) 与
-  [RFC-0001](./rfc/0001-connection-state-machine.md)。
+- 连接生命周期与断线/重连语义:[architecture.md §5.2](./architecture.md#52-native-host-重连流程)。
 - 错误分类(`NOT_CONNECTED` / 断开类):[architecture.md §11.1](./architecture.md#111-错误分类errorsjson)。

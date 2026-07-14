@@ -41,17 +41,16 @@ minor 上,见 [release.md](./release.md#semver-规则)。
 3. 某工具所需能力未被 advertise → 前置拒绝该工具调用,而非派发一个扩展处理不了的 op。
 
 **诚实说明现状**:上面这套"版本 + 能力握手"目前**只定义在契约里**(`protocol-version.json`
-+ `capabilities.json` + [RFC-0001](./rfc/0001-connection-state-machine.md)),
-代码侧的握手 **wiring 尚未接线**——这是路线图 P1#5 的待办
-(见 [governance-roadmap.md](./governance-roadmap.md#p1协议和代码结构治理))。当前已落地的是
-RFC-0001 的**首阶段**:pending 请求与 connection generation 绑定、generation-guarded 重连,
-让旧连接无法影响新连接(见 [architecture.md §5.2](./architecture.md#52-native-host-重连流程))。
++ `capabilities.json`),代码侧的握手 **wiring 尚未接线**——已有意延后,触发条件是二进制与
+扩展可独立升级(如上架 Web Store 或分离发布节奏)时再接。当前已落地的是**首阶段**:
+pending 请求与 connection generation 绑定、generation-guarded 重连,让旧连接无法影响新连接
+(见 [architecture.md §5.2](./architecture.md#52-native-host-重连流程))。
 `PROTOCOL_MISMATCH` 错误码已在契约中就位,等 wiring 落地即可启用。
 
 ## 相关
 
 - 错误分类与 `PROTOCOL_MISMATCH`:[architecture.md §11.1](./architecture.md#111-错误分类errorsjson)、
   [`contracts/errors.json`](../contracts/errors.json)。
-- 连接状态机与重连语义:[RFC-0001](./rfc/0001-connection-state-machine.md)、
-  [operations.md](./operations.md#native-host-重连)。
+- 连接与重连语义:[architecture.md §5.2](./architecture.md#52-native-host-重连流程)、
+  [operations.md](./operations.md)。
 - 发布与 SemVer 纪律:[release.md](./release.md)。

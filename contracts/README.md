@@ -48,7 +48,7 @@ JSON-RPC version (`2025-06-18`, see
 extension release version (Cargo is the version source). It also documents the
 intended compatibility handshake: exchange version + capabilities on connect and
 fail fast (`PROTOCOL_MISMATCH`) on incompatibility, rather than a late
-"unknown op". See [RFC-0001](../docs/rfc/0001-connection-state-machine.md).
+"unknown op".
 
 ## `bridge-request.schema.json` / `bridge-response.schema.json`
 
@@ -58,11 +58,11 @@ response that cross MCP server ↔ native host ↔ extension. They are the sourc
 truth for the envelope *shape* and mirror the interfaces in
 [`extension/src/shared/types.ts`](../extension/src/shared/types.ts) (kept in sync
 by hand — `types.ts` is not generated from them yet). They describe the current
-wide form (`op` a plain string, `args` a flat bag of optional fields); the typed
-/ discriminated-union form is a planned follow-up (see
-[docs/governance-roadmap.md](../docs/governance-roadmap.md) P1#3). The `data`
-payload is intentionally unconstrained, and stable error **codes** live in
-`errors.json`, not in the response schema.
+wide form (`op` a plain string, `args` a flat bag of optional fields). The
+extension narrows this into a generated discriminated union (`BridgeCommand` in
+`extension/src/shared/ops.ts`). The `data` payload is intentionally
+unconstrained, and stable error **codes** live in `errors.json`, not in the
+response schema.
 
 ## Adding / changing a tool
 

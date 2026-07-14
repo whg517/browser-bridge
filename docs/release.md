@@ -31,8 +31,7 @@ release.yml 在矩阵上构建(当前 `macos-14/arm64` 与 `ubuntu-22.04/x64`;In
 5. 用 `softprops/action-gh-release` 创建 GitHub Release,附上 tarball + `.sha256`,
    并自动生成 release notes。
 
-用户因此**不需要 Rust/Node 工具链**即可安装。所有第三方 Action 都固定到 commit SHA
-(供应链治理,见 [governance-roadmap.md §4](./governance-roadmap.md))。
+用户因此**不需要 Rust/Node 工具链**即可安装。所有第三方 Action 都固定到 commit SHA(供应链治理)。
 
 ## 双模式 install.sh
 
@@ -69,9 +68,7 @@ release.yml 在矩阵上构建(当前 `macos-14/arm64` 与 `ubuntu-22.04/x64`;In
 
 ## 尚未落地(诚实说明)
 
-- **provenance / attestation**:发布产物的来源证明尚未接入(路线图 P2#3)。
-- macOS **真实集成测试进入 release gate**、Chrome stable/beta nightly:见
-  [governance-roadmap.md §12 P2](./governance-roadmap.md#p2发布与运维治理) 的状态标注。
+- macOS **真实集成测试进入 release gate**:需真实浏览器,尚未纳入发布门禁。
 
 ## 相关
 

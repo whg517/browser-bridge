@@ -39,8 +39,8 @@ native host manifest 是否就位)。它**不做修复**——不杀进程、不
 审计行**不记录**敏感内容(页面全文、cookie/storage value、eval 完整返回、表单填写值)——
 脱敏在扩展侧完成(见 [threat-model.md](./security/threat-model.md))。
 
-> 现状:审计已带**每次调用的 request id**;跨连接的 **connection id** 尚未进入日志字段
-> (路线图 P2#7,见 [governance-roadmap.md](./governance-roadmap.md))。
+> 审计行同时带**每次调用的 request id** 与跨连接的 **connection id**(`conn` 字段,
+> 由 `Session::current_generation()` 提供),便于跨重连关联到具体连接。
 
 ## 锁文件
 
@@ -70,7 +70,7 @@ MCP server validate_hello → session.attach_connection(替换旧连接)
 会话状态(当前 tab、ref map)放在 MCP server 进程而非 SW,因此 SW 重启不丢会话;
 ref 标记打在 DOM 属性上,content script 可在重启后重建 refMap。pending 请求与
 **connection generation** 绑定,generation-guarded 重连保证旧连接无法影响新连接
-(RFC-0001 首阶段,见 [compatibility.md](./compatibility.md#握手与快速失败契约已定义wiring-待接线))。
+(见 [compatibility.md](./compatibility.md))。
 
 ## 相关
 
