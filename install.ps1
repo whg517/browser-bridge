@@ -4,7 +4,10 @@
 [CmdletBinding()]
 param(
     [ValidatePattern('^[a-p]{32}$')]
-    [string]$ExtensionId = 'mkjjlmjbcljpcfkfadfmhblmmddkdihf'
+    [string]$ExtensionId = 'mkjjlmjbcljpcfkfadfmhblmmddkdihf',
+    # Remove exactly what this installer places (binary, native-host manifest,
+    # HKCU registry key, run.lock) and leave Chrome and the extension untouched.
+    [switch]$Uninstall
 )
 
 $ErrorActionPreference = 'Stop'
@@ -14,6 +17,47 @@ $Here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $HostName = 'com.browser_bridge.host'
 $InstallDir = Join-Path $env:LOCALAPPDATA 'browser-bridge'
 $BinaryName = 'browser-bridge.exe'
+
+if ($Uninstall) {
+    Write-Host '[uninstall] removing browser-bridge artifacts'
+
+    # Registry key this installer created (mirrors the Set-Item below).
+    $registryPath = "HKCU:\Software\Google\Chrome\NativeMessagingHosts\$HostName"
+    if (Test-Path -LiteralPath $registryPath) {
+        Remove-Item -LiteralPath $registryPath -Force
+        Write-Host "[uninstall] removed registry key: $registryPath"
+    } else {
+        Write-Host "[uninstall] not present: $registryPath"
+    }
+
+    # Files placed under $InstallDir: the manifest, the binary, and the run.lock
+    # the server writes there (LockFile::path() uses LOCALAPPDATA on Windows).
+    # Exact paths only — no wildcards, no recursive delete.
+    $targets = @(
+        (Join-Path $InstallDir "$HostName.json"),
+        (Join-Path $InstallDir $BinaryName),
+        (Join-Path $InstallDir 'run.lock')
+    )
+    foreach ($target in $targets) {
+        if (Test-Path -LiteralPath $target) {
+            Remove-Item -LiteralPath $target -Force
+            Write-Host "[uninstall] removed: $target"
+        } else {
+            Write-Host "[uninstall] not present: $target"
+        }
+    }
+
+    # Drop $InstallDir only when it is now empty (never recursive).
+    if ((Test-Path -LiteralPath $InstallDir) -and
+        -not (Get-ChildItem -LiteralPath $InstallDir -Force)) {
+        Remove-Item -LiteralPath $InstallDir -Force
+        Write-Host "[uninstall] removed empty dir: $InstallDir"
+    }
+
+    Write-Host '[uninstall] done. Chrome and the loaded extension were left untouched;'
+    Write-Host '[uninstall] remove the unpacked extension yourself via chrome://extensions if desired.'
+    return
+}
 
 function Find-Cargo {
     $command = Get-Command cargo.exe -ErrorAction SilentlyContinue

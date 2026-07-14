@@ -1,0 +1,58 @@
+name: Nightly browser tests
+
+# Runs the browser DOM + smoke tests against a freshly installed, CI-isolated
+# Chrome on a schedule so we catch Chrome-version regressions without gating
+# PRs. This mirrors the `browser` job in ci.yml (same pinned action SHAs, same
+# steps) but is triggered by cron / manual dispatch instead of on push/PR.
+#
+# It uses browser-actions/setup-chrome to install an isolated Chrome into the
+# runner and points CHROME_BIN at it — it never touches a developer's own
+# browser or any machine outside the ephemeral CI runner.
+
+on:
+  schedule:
+    # 05:17 UTC daily (off the top of the hour to avoid the scheduler rush).
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+
+# Never run two nightly passes at once; a newer run supersedes an in-flight one.
+concurrency:
+  group: nightly-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  browser:
+    name: DOM + smoke (Chrome, scheduled)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 20
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+      - uses: browser-actions/setup-chrome@2e1d749697dd1612b833dba4a722266286fbefcd # v2.1.2
+        id: chrome
+        with:
+          chrome-version: stable
+      - run: npm ci
+        working-directory: extension
+      - run: npm run build
+        working-directory: extension
+      - run: npm ci
+        working-directory: tests
+      - name: Typecheck tests
+        run: npm run typecheck
+        working-directory: tests
+      - name: DOM-layer tests
+        env:
+          CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}
+        run: bun tests/dom_test.ts
+      - name: Extension smoke test
+        env:
+          CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}
+        # The smoke test needs a non-headless browser (MV3 SW reliability), so
+        # give it a virtual display. xvfb ships on GitHub's ubuntu runners.
+        run: xvfb-run -a bun tests/ext_test.ts
