@@ -32,6 +32,9 @@ jobs:
           - os: ubuntu-22.04
             platform: linux
             arch: x64
+          - os: windows-2022
+            platform: windows
+            arch: x64
     runs-on: ${{ matrix.os }}
     env:
       ARCH: ${{ matrix.arch }}
@@ -46,6 +49,7 @@ jobs:
           node-version: 20
 
       - name: Verify tag matches Cargo version
+        shell: bash
         run: |
           TAG="${{ github.event.inputs.tag || github.ref_name }}"
           VER="${TAG#v}"          # strip leading v
@@ -63,22 +67,35 @@ jobs:
           npm run build
         working-directory: extension
 
-      - name: Package tarball
+      - name: Package release archive
         id: pkg
+        shell: bash
         run: |
           TAG="${{ github.event.inputs.tag || github.ref_name }}"
           NAME="browser-bridge-${TAG}-${PLATFORM}-${ARCH}"
           mkdir -p "$NAME/extension"
-          cp target/release/browser-bridge "$NAME/"
           cp -r extension/dist "$NAME/extension/dist"
-          cp install.sh mcp-config.example.json LICENSE README.md "$NAME/"
-          tar czf "$NAME.tar.gz" "$NAME"
-          if command -v shasum >/dev/null 2>&1; then
-            shasum -a 256 "$NAME.tar.gz" > "$NAME.tar.gz.sha256"
+          cp mcp-config.example.json LICENSE README.md "$NAME/"
+          if [ "$PLATFORM" = "windows" ]; then
+            cp target/release/browser-bridge.exe "$NAME/"
+            cp install.ps1 "$NAME/"
+            7z a -tzip "$NAME.zip" "$NAME" > /dev/null
+            sha256sum "$NAME.zip" > "$NAME.zip.sha256"
+            ARCHIVE="$NAME.zip"
           else
-            sha256sum "$NAME.tar.gz" > "$NAME.tar.gz.sha256"
+            cp target/release/browser-bridge "$NAME/"
+            cp install.sh "$NAME/"
+            tar czf "$NAME.tar.gz" "$NAME"
+            if command -v shasum >/dev/null 2>&1; then
+              shasum -a 256 "$NAME.tar.gz" > "$NAME.tar.gz.sha256"
+            else
+              sha256sum "$NAME.tar.gz" > "$NAME.tar.gz.sha256"
+            fi
+            ARCHIVE="$NAME.tar.gz"
           fi
           echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "archive=$ARCHIVE" >> "$GITHUB_OUTPUT"
+          echo "sha256file=$ARCHIVE.sha256" >> "$GITHUB_OUTPUT"
 
       # The built extension bundle is platform-independent, so we emit the
       # standalone zip on ONLY the macos/arm64 leg to avoid uploading duplicate
@@ -110,7 +127,7 @@ jobs:
       - name: Attest build provenance
         uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
-          subject-path: ${{ steps.pkg.outputs.name }}.tar.gz
+          subject-path: ${{ steps.pkg.outputs.archive }}
 
       # Attest the standalone extension zip on the same (macos) leg that built it.
       - name: Attest extension zip provenance
@@ -124,8 +141,8 @@ jobs:
         with:
           tag_name: ${{ github.event.inputs.tag || github.ref_name }}
           files: |
-            ${{ steps.pkg.outputs.name }}.tar.gz
-            ${{ steps.pkg.outputs.name }}.tar.gz.sha256
+            ${{ steps.pkg.outputs.archive }}
+            ${{ steps.pkg.outputs.sha256file }}
             ${{ steps.extzip.outputs.assets }}
           fail_on_unmatched_files: true
           generate_release_notes: true
