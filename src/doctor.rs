@@ -159,6 +159,18 @@ fn render(r: &Report) -> String {
         if r.manifest_present { "yes" } else { "no" }
     ));
 
+    // These probes only cover the MCP-server/bridge side. doctor cannot observe
+    // whether the Chrome extension is loaded and connected without speaking the
+    // native-host hello protocol on the bridge port, which would clobber the
+    // live connection via the generation guard — so we tell the user how to
+    // check it themselves instead of probing.
+    out.push_str(
+        "\nnote: the checks above cover the MCP server + native-host bridge only.\n\
+         They do NOT confirm the Chrome extension is loaded and connected. Verify\n\
+         that via the Browser Bridge toolbar icon (approve the target site) and\n\
+         the extension's Service Worker console at chrome://extensions.\n",
+    );
+
     out.push_str(&format!("\n{}\n", summary(r)));
     out
 }
@@ -228,6 +240,8 @@ mod tests {
         // The real secret value must never appear.
         assert!(!text.contains("deadbeef"));
         assert!(text.contains("reachable (127.0.0.1 connect OK)"));
+        // Honest note: green checks still don't prove the extension connected.
+        assert!(text.contains("do NOT confirm the Chrome extension"));
         assert!(text.trim_end().ends_with("OK"));
         assert_eq!(exit_code(&r), 0);
     }
