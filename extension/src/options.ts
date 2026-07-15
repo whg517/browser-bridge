@@ -216,7 +216,8 @@ function escapeAttr(s: string) {
 (async function init() {
   const s = await loadSettings();
 
-  // Boolean toggles.
+  // Boolean toggles. These are all PROTECTIONS: safe when on, warned when off,
+  // so the warning/danger styling shows while UNCHECKED.
   for (const key of [
     "pageEvalEnabled",
     "evalMask",
@@ -230,6 +231,25 @@ function escapeAttr(s: string) {
     const card = $(`card-${key}`);
     if (card && warn) card.classList.toggle("danger", !input.checked);
     renderBool(key);
+  }
+
+  // cdpMode is the inverse: DANGEROUS when ON (persistent debugger attach, CSP
+  // bypassed), so its warning/danger styling shows while CHECKED. Default off.
+  {
+    const input = $<HTMLInputElement>("cdpMode");
+    const warn = $("cdpMode-warn");
+    const card = $("card-cdpMode");
+    const sync = (on: boolean) => {
+      if (warn) warn.style.display = on ? "block" : "none";
+      if (card) card.classList.toggle("danger", on);
+    };
+    input.checked = s.cdpMode === true;
+    sync(input.checked);
+    input.addEventListener("change", (e: Event) => {
+      const on = (e.target as HTMLInputElement).checked;
+      sync(on);
+      saveSetting("cdpMode", on);
+    });
   }
 
   // "Allow all sites" toggle — special wiring (permission request on enable).

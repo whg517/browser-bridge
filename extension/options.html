@@ -89,6 +89,17 @@
     </div>
   </div>
 
+  <!-- ===== 执行模式 ===== -->
+  <h2>执行模式</h2>
+  <div class="card" id="card-cdpMode">
+    <input type="checkbox" id="cdpMode" />
+    <div class="body">
+      <div class="title">全部页面操作走 CDP(chrome.debugger)</div>
+      <div class="desc">开启后所有页面操作改用 CDP(chrome.debugger),不再注入内容脚本;可在严格 CSP 站点(如 Bing)执行 page_eval。默认关闭(ADR-0017)。</div>
+      <div class="warn" id="cdpMode-warn">⚠ 开启后 Chrome 顶部会持续显示「正在调试此浏览器」横幅(调试器全程附加),且访问面更大。仅在需要绕过 CSP 或统一深控时开启。</div>
+    </div>
+  </div>
+
   <!-- ===== 确认超时与宽限期 ===== -->
   <h2>确认超时与宽限期</h2>
   <div class="row">

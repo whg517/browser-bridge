@@ -6,6 +6,7 @@ describe("DEFAULTS", () => {
     expect(Object.keys(DEFAULTS).sort()).toEqual(
       [
         "allowAllSites",
+        "cdpMode",
         "clickToastTimeoutMs",
         "confirmGraceMs",
         "confirmHighRiskClick",
@@ -20,6 +21,7 @@ describe("DEFAULTS", () => {
     expect(DEFAULTS.confirmGraceMs).toBe(60000);
     expect(DEFAULTS.disabledTools).toEqual([]);
     expect(DEFAULTS.allowAllSites).toBe(false);
+    expect(DEFAULTS.cdpMode).toBe(false);
   });
 });
 

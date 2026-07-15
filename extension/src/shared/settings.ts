@@ -16,6 +16,7 @@ export const DEFAULTS: Settings = {
   evalToastTimeoutMs: 45000,
   disabledTools: [], // string[] of tool/op names that are blocked
   allowAllSites: false,
+  cdpMode: false, // route ALL page ops through chrome.debugger (CDP). See ADR-0017.
 };
 
 // Read one setting from chrome.storage.local, falling back to its default.

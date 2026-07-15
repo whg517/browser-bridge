@@ -9,6 +9,11 @@ import type { OpArgs, PageResponse } from "../shared/types";
 import { getSetting } from "../shared/settings";
 import { ensureAllowed } from "./allowlist-store";
 import { resolveTargetTab, injectIfNeeded } from "./tabs";
+// The chrome.debugger primitives + the non-debuggable URL filter now live in
+// the CdpSession facade (ADR-0017); precise.ts reuses them rather than keeping
+// its own private copies.
+import { dbgAttach, dbgDetach, dbgSend, isDebuggable } from "./cdp/session";
+import { cdpRegistry } from "./cdp/registry";
 
 // The subset of the CDP payloads we actually read (not the full protocol).
 interface AXValueLike {
@@ -34,51 +39,6 @@ interface NodeDescriptor {
 }
 interface CallFunctionResult {
   result?: { value?: NodeDescriptor };
-}
-
-// URLs the debugger cannot attach to. Filter before calling attach.
-const NON_DEBUGGABLE = [
-  /^chrome:\/\//i,
-  /^chrome-extension:\/\//i,
-  /^https:\/\/chrome\.google\.com\/webstore/i,
-  /^view-source:/i,
-  /^about:/i,
-  /^edge:\/\//i,
-];
-
-function isDebuggable(url: string | undefined) {
-  if (!url) return false;
-  return !NON_DEBUGGABLE.some((re) => re.test(url));
-}
-
-// Promisified chrome.debugger primitives.
-function dbgAttach(tabId: number) {
-  return new Promise<void>((resolve, reject) => {
-    chrome.debugger.attach({ tabId }, "1.3", () => {
-      const err = chrome.runtime.lastError;
-      if (err) reject(new Error(err.message));
-      else resolve();
-    });
-  });
-}
-function dbgDetach(tabId: number) {
-  return new Promise<void>((resolve) => {
-    // detach must never throw — used in finally. Swallow errors.
-    chrome.debugger.detach({ tabId }, () => resolve());
-  });
-}
-function dbgSend<T = unknown>(
-  tabId: number,
-  method: string,
-  params: Record<string, unknown> = {}
-): Promise<T> {
-  return new Promise((resolve, reject) => {
-    chrome.debugger.sendCommand({ tabId }, method, params, (result) => {
-      const err = chrome.runtime.lastError;
-      if (err) reject(new Error(err.message));
-      else resolve(result as T);
-    });
-  });
 }
 
 // AXNode roles worth exposing (mirror of content.js INTERACTIVE set, plus
@@ -143,21 +103,32 @@ export async function snapshotPrecise(maybeTabId: number | undefined, _args: OpA
     console.warn("[bb] info toast failed:", (proceed as PageResponse).__error);
   }
 
+  // In CDP mode (ADR-0017) the registry may already hold a persistent debugger
+  // attach on this tab. A second attach from the same extension would fail, so
+  // reuse the existing one and do NOT detach it here (that would tear down the
+  // persistent session). When CDP mode is off the registry is always empty, so
+  // this branch is never taken and the attach/detach path below is byte-for-byte
+  // the original behavior.
+  const reusingAttach = cdpRegistry.hasSession(tab.id!);
+
   // Attach. On "another debugger attached" we surface a helpful error.
-  try {
-    await dbgAttach(tab.id!);
-  } catch (e) {
-    const msg = String((e as Error).message || e);
-    if (/another debugger/i.test(msg)) {
-      throw new Error(
-        "该标签页已打开 DevTools,page_snapshot_precise 无法附加。请关闭 DevTools 后重试。",
-        { cause: e }
-      );
+  if (!reusingAttach) {
+    try {
+      await dbgAttach(tab.id!);
+    } catch (e) {
+      const msg = String((e as Error).message || e);
+      if (/another debugger/i.test(msg)) {
+        throw new Error(
+          "该标签页已打开 DevTools,page_snapshot_precise 无法附加。请关闭 DevTools 后重试。",
+          { cause: e }
+        );
+      }
+      throw e;
     }
-    throw e;
   }
 
-  // From here on we MUST detach on every exit path.
+  // From here on we MUST detach on every exit path (unless we're reusing the
+  // registry's persistent attach).
   try {
     const tree = await dbgSend<AXTreeResult>(tab.id!, "Accessibility.getFullAXTree", {});
     const nodes = tree.nodes ?? [];
@@ -225,7 +196,7 @@ export async function snapshotPrecise(maybeTabId: number | undefined, _args: OpA
       precise: true,
     };
   } finally {
-    await dbgDetach(tab.id!);
+    if (!reusingAttach) await dbgDetach(tab.id!);
   }
 }
 

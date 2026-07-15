@@ -19,6 +19,7 @@ export interface Settings {
   evalToastTimeoutMs: number;
   disabledTools: string[];
   allowAllSites: boolean;
+  cdpMode: boolean;
 }
 
 // A request from the native host, forwarded to the right tab's content script.
