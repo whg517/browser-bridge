@@ -81,6 +81,24 @@
     </div>
   </div>
 
+  <div class="card" id="card-confirmPageEval">
+    <input type="checkbox" id="confirmPageEval" />
+    <div class="body">
+      <div class="title">page_eval 二次确认(执行任意 JS)</div>
+      <div class="desc">每次 page_eval 弹出确认 Toast 并展示完整代码,需用户批准(ADR-0008)。page_eval 能执行任意 JavaScript,是风险最高的操作。</div>
+      <div class="warn" id="confirmPageEval-warn" style="display:none">⚠ 关闭后,AI 将无提示直接执行任意 JS,请仅在完全信任 AI 且需要全自动时关闭。</div>
+    </div>
+  </div>
+
+  <div class="card" id="card-confirmTabClose">
+    <input type="checkbox" id="confirmTabClose" />
+    <div class="body">
+      <div class="title">tab_close 二次确认(关闭标签页)</div>
+      <div class="desc">关闭标签页前在页面内弹出「Close tab?」确认,需用户批准。</div>
+      <div class="warn" id="confirmTabClose-warn" style="display:none">⚠ 关闭后,AI 将无提示直接关闭标签页。</div>
+    </div>
+  </div>
+
   <div class="card" id="card-warnPreciseSnapshot">
     <input type="checkbox" id="warnPreciseSnapshot" />
     <div class="body">

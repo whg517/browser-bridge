@@ -13,6 +13,8 @@ export interface Settings {
   pageEvalEnabled: boolean;
   evalMask: boolean;
   confirmHighRiskClick: boolean;
+  confirmPageEval: boolean;
+  confirmTabClose: boolean;
   warnPreciseSnapshot: boolean;
   confirmGraceMs: number;
   clickToastTimeoutMs: number;

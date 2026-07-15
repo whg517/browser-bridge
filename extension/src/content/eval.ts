@@ -19,11 +19,14 @@ export async function runEval(args: OpArgs) {
   if (evalEnabled === false) {
     throw new Error("page_eval disabled in settings");
   }
-  // Confirm with the user via an enlarged Toast showing the full code.
-  // Reuses lastConfirmed so same-origin eval within 60s of a prior approval
-  // does not re-prompt. NOTE: this grace window is riskier for eval than for
-  // click (see ADR-0008) — two evals can be totally unrelated code.
-  await confirmWithEvalToast(code);
+  // Confirm with the user via an enlarged Toast showing the full code, unless
+  // the user turned the eval confirmation off (confirmPageEval=false) for
+  // hands-off automation. Reuses lastConfirmed so same-origin eval within 60s of
+  // a prior approval does not re-prompt. NOTE: this confirmation is ADR-0008's
+  // guardrail — disabling it means arbitrary JS runs with no prompt.
+  if ((await getSetting("confirmPageEval")) !== false) {
+    await confirmWithEvalToast(code);
+  }
   // Execute. Wrap as an async IIFE in the global scope so the code can use
   // await/return and see page globals. `new Function` (not eval) gives us
   // global scope regardless of the strict-mode closure this file runs in.

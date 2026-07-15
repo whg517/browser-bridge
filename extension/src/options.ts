@@ -222,6 +222,8 @@ function escapeAttr(s: string) {
     "pageEvalEnabled",
     "evalMask",
     "confirmHighRiskClick",
+    "confirmPageEval",
+    "confirmTabClose",
     "warnPreciseSnapshot",
   ] as (keyof Settings)[]) {
     const input = $<HTMLInputElement>(key);

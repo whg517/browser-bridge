@@ -82,6 +82,23 @@ eval 可能返回任意类型,需要 `serializeResult` 安全处理:
 
 这个风险会在工具描述里向 AI 说明,也在 README 的安全模型表里标注。
 
+## 更新(2026-07-15):新增可关闭开关 `confirmPageEval`(默认开)
+
+本 ADR 原先在"方案 C"里**排除**了"预授权后静默 eval"。实践中,browser-bridge 的核心场景就是**让 AI 全自动驱动浏览器**,每次 `page_eval` 都要人工点"允许执行"会打断自动化(`tab_close` 同理)。因此新增两个设置(均默认 **true**,保持原有"每次确认"行为):
+
+| 设置 | 关闭后 | 默认 |
+|------|--------|------|
+| `confirmPageEval` | `page_eval` 不再弹确认,直接执行任意 JS | 开 |
+| `confirmTabClose` | `tab_close` 不再弹「Close tab?」 | 开 |
+
+与当初排除的"方案 C"的区别,也是接受它的理由:
+1. **默认开**——不改变任何现有用户的安全姿态;必须用户**主动**关闭。
+2. **Options 页醒目警告**——关 `confirmPageEval` 的卡片明确写"AI 将无提示直接执行任意 JS";这是**知情**选择。
+3. **一致性**——高危三类(点击 / eval / 关标签)现在都有各自的确认开关(`confirmHighRiskClick` / `confirmPageEval` / `confirmTabClose`),语义统一,不再是"点击可关、eval 关不掉"的割裂。
+4. 白名单(站点级)与 `pageEvalEnabled`(总开关)两道闸不受影响。
+
+关掉 `confirmPageEval` 等于回到"任意 JS 无提示执行"的攻击面——这一点在开关警告与本节均已标注,由用户自行权衡。
+
 ## 后果
 
 ### 正面

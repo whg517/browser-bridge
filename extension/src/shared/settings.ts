@@ -10,6 +10,8 @@ export const DEFAULTS: Settings = {
   pageEvalEnabled: true,
   evalMask: true,
   confirmHighRiskClick: true,
+  confirmPageEval: true, // confirm every page_eval (ADR-0008). Off = run unprompted.
+  confirmTabClose: true, // confirm every tab_close. Off = close unprompted.
   warnPreciseSnapshot: true,
   confirmGraceMs: 60000,
   clickToastTimeoutMs: 30000,

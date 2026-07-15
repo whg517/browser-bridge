@@ -2,6 +2,7 @@
 // (tab_list / tab_focus / tab_open / tab_close).
 
 import type { PageResponse } from "../shared/types";
+import { getSetting } from "../shared/settings";
 import { ensureAllowed } from "./allowlist-store";
 
 export async function resolveTargetTab(maybeTabId: number | undefined): Promise<chrome.tabs.Tab> {
@@ -64,7 +65,11 @@ export async function tabOpen(url: string) {
 
 export async function tabClose(tabId: number) {
   const tab = await chrome.tabs.get(tabId);
-  await confirmTabClose(tab);
+  // The "Close tab?" confirmation can be turned off (confirmTabClose=false) for
+  // hands-off automation; on by default.
+  if ((await getSetting("confirmTabClose")) !== false) {
+    await confirmTabClose(tab);
+  }
   await chrome.tabs.remove(tabId);
   return { closed: tabId };
 }

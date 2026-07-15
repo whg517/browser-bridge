@@ -10,6 +10,8 @@ describe("DEFAULTS", () => {
         "clickToastTimeoutMs",
         "confirmGraceMs",
         "confirmHighRiskClick",
+        "confirmPageEval",
+        "confirmTabClose",
         "disabledTools",
         "evalMask",
         "evalToastTimeoutMs",
