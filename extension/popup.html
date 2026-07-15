@@ -4,51 +4,79 @@
   <meta charset="utf-8" />
   <title>Browser Bridge</title>
   <style>
-    :root { font-family: -apple-system, system-ui, sans-serif; color: #1a1a1a; }
-    body { width: 320px; margin: 0; padding: 12px; font-size: 13px; }
-    h1 { font-size: 14px; margin: 0 0 8px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-    .status { display: flex; align-items: center; gap: 6px; margin-bottom: 10px;
-              padding: 6px 8px; border-radius: 6px; background: #f4f4f4; }
-    .dot { width: 8px; height: 8px; border-radius: 50%; }
-    .dot.ok { background: #2e8b57; }
-    .dot.bad { background: #d9534f; }
-    .pending { background: #fff8e1; border: 1px solid #f0c674; padding: 8px;
-               border-radius: 6px; margin-bottom: 10px; }
-    .pending .glob { font-family: ui-monospace, monospace; word-break: break-all; }
-    .row { display: flex; gap: 6px; }
-    button { flex: 1; padding: 6px 8px; border: 1px solid #ccc; border-radius: 6px;
-             background: #fff; cursor: pointer; font-size: 12px; }
-    button.primary { background: #2e8b57; color: #fff; border-color: #2e8b57; }
-    button.danger { color: #d9534f; border-color: #d9534f; }
-    .list { max-height: 200px; overflow-y: auto; margin-top: 6px; }
-    .item { display: flex; align-items: center; justify-content: space-between;
-            padding: 4px 6px; border-bottom: 1px solid #eee; }
-    .item code { font-size: 11px; }
-    .muted { color: #888; font-size: 11px; }
-    .empty { color: #888; padding: 6px 0; }
-    .section-title { font-size: 12px; font-weight: 600; color: #555; }
-    .toggle { display: flex; align-items: center; gap: 6px; font-size: 12px;
-              margin: 4px 0 2px; cursor: pointer; }
-    .toggle input { margin: 0; }
+    :root {
+      --fg: #111827; --muted: #6b7280; --faint: #9ca3af;
+      --line: #e5e7eb; --line-soft: #f3f4f6; --bg-soft: #f9fafb;
+      --brand: #2e8b57; --brand-dark: #276b46;
+      --danger: #dc2626;
+      --ok: #2e8b57; --bad: #dc2626;
+      --warn-border: #f0c674; --warn-bg: #fff8e1;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      color: var(--fg);
+    }
+    * { box-sizing: border-box; }
+    body { width: 320px; margin: 0; padding: 14px; font-size: 13px; }
+
+    h1 { font-size: 14px; margin: 0 0 12px; display: flex; align-items: center;
+         justify-content: space-between; gap: 8px; }
+    #open-settings { flex: none; width: auto; padding: 5px 10px; border: 1px solid var(--line);
+                     border-radius: 8px; background: #fff; cursor: pointer; font-size: 12px;
+                     font-weight: 600; color: var(--fg); }
+    #open-settings:hover { background: var(--bg-soft); }
+
+    .status { display: flex; align-items: center; gap: 8px; margin-bottom: 12px;
+              padding: 9px 11px; border-radius: 10px; background: var(--bg-soft);
+              border: 1px solid var(--line); font-weight: 500; }
+    .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; box-shadow: 0 0 0 3px rgba(0,0,0,0.04); }
+    .dot.ok { background: var(--ok); box-shadow: 0 0 0 3px rgba(46,139,87,0.15); }
+    .dot.bad { background: var(--bad); box-shadow: 0 0 0 3px rgba(220,38,38,0.15); }
+
+    .pending { background: var(--warn-bg); border: 1px solid var(--warn-border); padding: 10px;
+               border-radius: 10px; margin-bottom: 12px; }
+    .pending .lead { font-weight: 600; margin-bottom: 4px; }
+    .pending .glob { font-family: ui-monospace, monospace; word-break: break-all; font-size: 12px;
+                     color: var(--fg); }
+    .row { display: flex; gap: 8px; }
+    .pending .row button { flex: 1; padding: 7px 8px; border-radius: 8px; border: 1px solid var(--line);
+                           background: #fff; cursor: pointer; font-size: 12px; font-weight: 600; }
+    .pending .row button.primary { background: var(--brand); color: #fff; border-color: var(--brand); }
+    .pending .row button.primary:hover { background: var(--brand-dark); }
+    .pending .row button.danger { color: var(--danger); border-color: var(--line); }
+    .pending .row button.danger:hover { background: #fef2f2; }
+
+    .section-title { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em;
+                     font-weight: 700; color: var(--muted); margin: 4px 2px 6px; }
+    .list { max-height: 220px; overflow-y: auto; border: 1px solid var(--line); border-radius: 10px; }
+    .list:empty { display: none; }
+    .item { display: flex; align-items: center; justify-content: space-between; gap: 8px;
+            padding: 7px 10px; border-bottom: 1px solid var(--line-soft); }
+    .item:last-child { border-bottom: none; }
+    .item code { font-size: 11px; font-family: ui-monospace, monospace; word-break: break-all; }
+    .item button.danger { flex: none; padding: 4px 9px; border: none; background: transparent;
+                          color: var(--danger); cursor: pointer; font-size: 12px; font-weight: 600;
+                          border-radius: 6px; }
+    .item button.danger:hover { background: #fef2f2; }
+    .empty { color: var(--faint); padding: 14px; text-align: center; font-size: 12px;
+             border: 1px dashed var(--line); border-radius: 10px; }
   </style>
 </head>
 <body>
-  <h1>Browser Bridge <button id="open-settings" style="flex:none;width:auto">⚙ 设置</button></h1>
+  <h1>Browser Bridge <button id="open-settings">⚙ 设置</button></h1>
   <div class="status">
     <span id="dot" class="dot bad"></span>
     <span id="status-text">checking…</span>
   </div>
 
   <div id="pending" class="pending" style="display:none">
-    <div>A new site wants access:</div>
+    <div class="lead">A new site wants access:</div>
     <div class="glob" id="pending-glob"></div>
-    <div class="row" style="margin-top:6px">
+    <div class="row" style="margin-top:8px">
       <button id="deny" class="danger">Deny</button>
       <button id="allow" class="primary">Allow</button>
     </div>
   </div>
 
-  <div>Allowed sites</div>
+  <div class="section-title">Allowed sites</div>
   <div id="list" class="list"></div>
   <div id="empty" class="empty">No sites allowed yet.</div>
 

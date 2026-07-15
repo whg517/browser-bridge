@@ -54,9 +54,9 @@ function showToast(question: string) {
   return new Promise((resolve) => {
     const host = ensureToastHost();
     const card = document.createElement("div");
-    card.className = "zcb-toast-card";
+    card.className = "zcb-toast-card zcb-danger";
     card.innerHTML = `
-        <div class="zcb-toast-title">Browser Bridge</div>
+        <div class="zcb-toast-title">⚠ Browser Bridge</div>
         <div class="zcb-toast-q"></div>
         <div class="zcb-toast-actions">
           <button class="zcb-toast-deny">Deny</button>
@@ -88,9 +88,9 @@ function showEvalToast(code: string, url: string, tabTitle: string) {
   return new Promise((resolve) => {
     const host = ensureToastHost();
     const card = document.createElement("div");
-    card.className = "zcb-toast-card zcb-eval-card";
+    card.className = "zcb-toast-card zcb-danger zcb-eval-card";
     card.innerHTML = `
-        <div class="zcb-eval-title">⚠ Browser Bridge: 执行确认</div>
+        <div class="zcb-toast-title">⚠ Browser Bridge: 执行确认</div>
         <div class="zcb-eval-meta"></div>
         <pre class="zcb-eval-code"></pre>
         <div class="zcb-eval-warn">上面的代码将在该页面以你的身份运行,可能读取 token / Cookie / 发起请求。</div>

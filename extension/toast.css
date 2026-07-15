@@ -1,139 +1,153 @@
-/* Styles for the high-risk confirmation toast injected by content.js.
-   Critical layout is also inlined in ensureToastHost(); this file polishes
-   the look and is best-effort (some pages may block extension CSS). */
+/* Styles for the confirmation toasts injected by content.js.
+   Critical layout is also inlined in ensureToastHost(); this file polishes the
+   look and is best-effort (some pages may block extension CSS).
+
+   Design: every toast shares one geometry (same 360px width, padding, radius,
+   shadow) so sizes are consistent. Theme conveys risk:
+     - .zcb-danger  → RED (high-risk confirmations: click/submit/nav, tab_close, page_eval)
+     - .zcb-info-card → BLUE (informational notices, not a risk gate) */
 
 .zcb-toast-card {
   pointer-events: auto;
+  box-sizing: border-box;
+  width: 360px;
   background: #ffffff;
-  color: #1a1a1a;
-  border: 1px solid #d0d0d0;
-  border-radius: 10px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
-  padding: 12px 14px;
-  width: 280px;
+  color: #1f2937;
+  border: 1.5px solid #e5e7eb;
+  border-left-width: 4px;
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.16);
+  padding: 14px 16px;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   font-size: 13px;
-  animation: zcb-slide-in 0.12s ease-out;
+  line-height: 1.5;
+  animation: zcb-slide-in 0.14s ease-out;
   transition: opacity 0.15s ease-out, transform 0.15s ease-out;
 }
 .zcb-toast-card.zcb-toast-out {
   opacity: 0;
   transform: translateY(-8px);
 }
+
 .zcb-toast-title {
-  font-weight: 600;
-  margin-bottom: 4px;
-  color: #2e8b57;
+  font-weight: 700;
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 .zcb-toast-q {
-  margin-bottom: 10px;
+  margin-bottom: 12px;
   word-break: break-word;
+  color: #374151;
 }
+
 .zcb-toast-actions {
   display: flex;
   gap: 8px;
   justify-content: flex-end;
 }
 .zcb-toast-actions button {
-  padding: 5px 12px;
-  border-radius: 6px;
-  border: 1px solid #ccc;
+  padding: 6px 14px;
+  border-radius: 8px;
+  border: 1px solid #d1d5db;
   background: #fff;
+  color: #374151;
   cursor: pointer;
   font-size: 12px;
+  font-weight: 600;
 }
-.zcb-toast-actions .zcb-toast-allow {
-  background: #2e8b57;
-  color: #fff;
-  border-color: #2e8b57;
-}
-.zcb-toast-actions .zcb-toast-deny {
-  color: #d9534f;
-  border-color: #d9534f;
-}
-@keyframes zcb-slide-in {
-  from { opacity: 0; transform: translateY(-6px); }
-  to   { opacity: 1; transform: translateY(0); }
+.zcb-toast-actions button:hover {
+  background: #f9fafb;
 }
 
-/* ---- page_eval confirmation (enlarged, warning-styled) ---- */
-.zcb-eval-card {
-  min-width: 380px;
-  max-width: 480px;
-  border-color: #d97706;          /* amber, distinct from normal green */
-  border-width: 2px;
-  box-shadow: 0 8px 28px rgba(217, 119, 6, 0.25);
+/* ---- DANGER theme (red): every high-risk confirmation ---- */
+.zcb-toast-card.zcb-danger {
+  border-color: #dc2626;
+  border-left-color: #dc2626;
+  background: #fffbfb;
 }
-.zcb-eval-title {
-  font-weight: 600;
-  color: #b45309;                  /* amber-700 */
-  margin-bottom: 6px;
+.zcb-danger .zcb-toast-title {
+  color: #b91c1c;
 }
+/* Allow = the risky action → red-filled; Deny = neutral (the safe default). */
+.zcb-danger .zcb-toast-allow {
+  background: #dc2626;
+  color: #fff;
+  border-color: #dc2626;
+}
+.zcb-danger .zcb-toast-allow:hover {
+  background: #b91c1c;
+}
+
+/* ---- page_eval extends danger: adds meta line + code block + warning ---- */
 .zcb-eval-meta {
   font-size: 11px;
-  color: #666;
+  color: #6b7280;
   margin-bottom: 8px;
   font-family: ui-monospace, monospace;
   word-break: break-all;
 }
 .zcb-eval-code {
-  margin: 0 0 8px 0;
+  margin: 0 0 10px 0;
   padding: 8px 10px;
   max-height: 200px;
   overflow: auto;
-  background: #f5f5f5;
-  border: 1px solid #e0e0e0;
-  border-radius: 6px;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
   font-size: 12px;
   line-height: 1.45;
   white-space: pre;
-  color: #1a1a1a;
+  color: #111827;
 }
 .zcb-eval-warn {
   font-size: 11px;
-  color: #b45309;
-  margin-bottom: 10px;
+  color: #b91c1c;
+  margin-bottom: 12px;
   line-height: 1.4;
 }
-/* Make the eval allow button visually heavier (it's a bigger commitment). */
-.zcb-eval-card .zcb-toast-allow {
-  background: #b45309;
-  border-color: #b45309;
-}
-.zcb-eval-card .zcb-toast-deny {
-  color: #b45309;
-  border-color: #b45309;
-}
 
-/* ---- informational toast (blue, for debugger-attach notices etc.) ---- */
-.zcb-info-card {
-  min-width: 320px;
-  max-width: 420px;
-  border-color: #2563eb;          /* blue, distinct from green/amber */
-  border-width: 2px;
+/* ---- INFO theme (blue): non-high-risk notices, e.g. debugger-attach ---- */
+.zcb-toast-card.zcb-info-card {
+  border-color: #2563eb;
+  border-left-color: #2563eb;
+  background: #fbfdff;
 }
 .zcb-info-title {
-  font-weight: 600;
-  color: #1d4ed8;                  /* blue-700 */
+  font-weight: 700;
+  color: #1d4ed8;
   margin-bottom: 6px;
 }
 .zcb-info-text {
   font-size: 12px;
-  line-height: 1.45;
-  margin-bottom: 10px;
-  color: #1a1a1a;
+  line-height: 1.5;
+  margin-bottom: 12px;
+  color: #374151;
 }
 .zcb-info-actions {
   display: flex;
   justify-content: flex-end;
 }
 .zcb-info-cancel {
-  padding: 5px 12px;
-  border-radius: 6px;
-  border: 1px solid #ccc;
+  padding: 6px 14px;
+  border-radius: 8px;
+  border: 1px solid #d1d5db;
   background: #fff;
   cursor: pointer;
   font-size: 12px;
-  color: #666;
+  font-weight: 600;
+  color: #374151;
+}
+
+@keyframes zcb-slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
