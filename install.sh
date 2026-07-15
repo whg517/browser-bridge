@@ -245,6 +245,20 @@ chmod 0755 "$TMP_BIN"
 mv -f "$TMP_BIN" "$INSTALL_DIR/$BINARY_NAME"
 echo "[install] binary installed at $INSTALL_DIR/$BINARY_NAME"
 
+# macOS: a browser-downloaded prebuilt binary carries the com.apple.quarantine
+# xattr, which the copy above inherits. Chrome spawns this binary via the native
+# messaging host, and Gatekeeper can then silently block the (unsigned,
+# not-yet-notarized) launch. Clear the attribute on the installed copy so the
+# host starts. Best-effort: the source-built binary has no such attribute, and
+# `xattr` may be absent, so never fail the install on this. This is a stopgap
+# until the release binary is notarized.
+if [[ "$OS" == "Darwin" ]] && command -v xattr >/dev/null 2>&1; then
+  if xattr -p com.apple.quarantine "$INSTALL_DIR/$BINARY_NAME" >/dev/null 2>&1; then
+    xattr -d com.apple.quarantine "$INSTALL_DIR/$BINARY_NAME" 2>/dev/null \
+      && echo "[install] cleared com.apple.quarantine (Gatekeeper) on the binary"
+  fi
+fi
+
 # ---- host manifest --------------------------------------------------------
 
 # Chrome native-messaging manifests have no `args` field, so Unix installs use
