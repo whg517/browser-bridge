@@ -83,3 +83,11 @@ against. Pairs with [trust-boundaries.md](trust-boundaries.md) and the
 - Masking is heuristic — it can miss a novel secret format or over-mask benign
   data.
 - `page_snapshot_precise` briefly attaches the debugger (infobar flash).
+- **CDP mode** (`cdpMode`, opt-in, off by default — see
+  [ADR-0017](../adr/0017-cdp-mode-all-ops.md)) routes all page ops through
+  `chrome.debugger`. When enabled it **bypasses page CSP** (letting `page_eval`
+  run on strict-CSP sites) and holds a **persistent debugger attach** for the
+  tab (the "Started debugging this browser" banner stays up). The allowlist,
+  per-action confirmation toasts, and masking are unchanged; the residual risk
+  is the wider surface and the removed CSP defense-in-depth layer, accepted as
+  the explicit price of the opt-in.

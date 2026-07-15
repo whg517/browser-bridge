@@ -42,6 +42,14 @@ submit button or a navigating link (those trigger the confirmation toast).
   riskier (unrelated code can run) — see [ADR-0008](../adr/0008-page-eval-confirmation-channel.md).
 - **Read-only by design**: no `cookie_set` / `storage_set` (writing httpOnly
   cookies is a session-fixation risk — see [ADR-0010](../adr/0010-cookie-storage-readonly.md)).
+- **CDP mode (opt-in, off by default)**: the `cdpMode` setting reroutes **every**
+  page-level op through `chrome.debugger` (CDP) in the page's MAIN world instead
+  of a content script (see [ADR-0017](../adr/0017-cdp-mode-all-ops.md)). It does
+  **not** change any tool's contract, permission, confirmation, or masking — the
+  same allowlist / confirm-toast / mask protections above still apply. Its two
+  security tradeoffs: it **bypasses page CSP** (so `page_eval` runs on strict-CSP
+  sites like Bing), and it holds a **persistent debugger attach** for the tab, so
+  the "Started debugging this browser" banner stays up the whole time it's on.
 
 ## When you add or change a tool
 

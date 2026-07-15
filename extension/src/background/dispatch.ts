@@ -2,14 +2,14 @@
 // run here in the SW; page-level ops are forwarded to the target tab's content
 // script (injecting it first).
 
-import type { BridgeReq, PageResponse } from "../shared/types";
+import type { BridgeReq } from "../shared/types";
 import { getSetting } from "../shared/settings";
 import { TOOL_META } from "../shared/ops";
 import { decide } from "./policy";
-import { ensureAllowed } from "./allowlist-store";
-import { resolveTargetTab, injectIfNeeded, tabList, tabFocus, tabOpen, tabClose } from "./tabs";
+import { resolveTargetTab, tabList, tabFocus, tabOpen, tabClose } from "./tabs";
 import { snapshotPrecise } from "./precise";
 import { cookieGet } from "./cookies";
+import { selectBackend } from "./page-backend";
 
 /**
  * The disable gate, factored out for testability. Routes through the pure
@@ -59,16 +59,13 @@ export async function dispatch(req: BridgeReq): Promise<unknown> {
       return await cookieGet(req.tabId, req.args);
   }
 
-  // Page-level ops need a content script in the target tab.
+  // Page-level ops. Resolve the target tab, then run through the selected
+  // backend: the content script (default) or CDP / chrome.debugger when the
+  // user turned cdpMode on (ADR-0017). The backend owns ensureAllowed +
+  // injection/attach, so dispatch's ordering (resolve tab → ensureAllowed →
+  // run) is preserved either way.
   const tab = await resolveTargetTab(req.tabId);
-  await ensureAllowed(tab.url);
-  await injectIfNeeded(tab.id!);
-  // content.js listens for these and replies.
-  const resp = (await chrome.tabs.sendMessage(tab.id!, {
-    op,
-    args: req.args,
-    tabId: tab.id,
-  })) as PageResponse;
-  if (resp && resp.__error) throw new Error(resp.__error);
-  return resp;
+  const cdpMode = (await getSetting("cdpMode")) === true;
+  const backend = selectBackend(cdpMode);
+  return await backend.run(op, req.args, tab);
 }

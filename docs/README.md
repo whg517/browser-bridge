@@ -47,6 +47,7 @@ ADR(Architecture Decision Record)记录的是**有多个合理选项、最终选
 | [0009](./adr/0009-page-snapshot-precise-debugger.md) | page_snapshot_precise 用 chrome.debugger 取权威 a11y 树 | Accepted |
 | [0010](./adr/0010-cookie-storage-readonly.md) | Cookie/Storage 只读访问 | Accepted |
 | [0011](./adr/0011-options-page-for-settings.md) | 配置通过独立 Options 页管理 | Accepted |
+| [0017](./adr/0017-cdp-mode-all-ops.md) | CDP 模式:所有页面操作可选走 chrome.debugger | Accepted |
 
 ## ADR 写作约定
 

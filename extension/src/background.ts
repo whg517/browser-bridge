@@ -11,6 +11,12 @@
 
 import "./background/messages"; // registers the runtime.onMessage router
 import { connectNative } from "./background/port";
+import { installCdpLifecycleListeners } from "./background/cdp/registry";
+
+// CDP mode (ADR-0017): tear down debugger sessions when a tab closes, when
+// Chrome detaches us, or when the user turns cdpMode off. Registered once here
+// (not at module load) so the registry stays import-side-effect-free elsewhere.
+installCdpLifecycleListeners();
 
 chrome.runtime.onStartup.addListener(connectNative);
 chrome.runtime.onInstalled.addListener(connectNative);
