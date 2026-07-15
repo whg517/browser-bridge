@@ -85,6 +85,27 @@
              font-size: 13px; font-weight: 600; opacity: 0; transition: opacity 0.2s, transform 0.2s;
              pointer-events: none; box-shadow: 0 8px 24px rgba(0,0,0,0.2); }
     .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    /* ---- Dark mode: flip the tokens + the few hardcoded surfaces ---- */
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --fg: #e6e8eb; --muted: #9aa3af; --faint: #6b7280;
+        --line: #333a44; --line-soft: #262b32; --bg-soft: #20242a;
+        --brand: #3fa76a; --brand-dark: #348a58;
+        --danger: #f87171; --danger-dark: #fca5a5;
+        --warn-border: #6b5a1e; --warn-bg: #2b2718; --warn-fg: #e8c66a;
+      }
+      body { background: #15181c; }
+      .card, button, .panel, .list, .tool,
+      .row input[type=number], .add-row input { background: #1e2228; }
+      .card:hover { box-shadow: 0 1px 3px rgba(0,0,0,0.4); }
+      button:hover { background: #262b32; }
+      button.primary { background: var(--brand); }
+      button.primary:hover { background: var(--brand-dark); }
+      button.danger { background: transparent; }
+      button.danger:hover { background: #3a1f1f; }
+      .toast { background: #0b0d10; }
+    }
   </style>
 </head>
 <body>

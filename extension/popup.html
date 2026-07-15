@@ -58,6 +58,25 @@
     .item button.danger:hover { background: #fef2f2; }
     .empty { color: var(--faint); padding: 14px; text-align: center; font-size: 12px;
              border: 1px dashed var(--line); border-radius: 10px; }
+
+    /* ---- Dark mode: flip the tokens + the few hardcoded surfaces ---- */
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --fg: #e6e8eb; --muted: #9aa3af; --faint: #6b7280;
+        --line: #333a44; --line-soft: #262b32; --bg-soft: #20242a;
+        --brand: #3fa76a; --brand-dark: #348a58;
+        --danger: #f87171;
+        --warn-border: #6b5a1e; --warn-bg: #2b2718;
+      }
+      body { background: #15181c; }
+      #open-settings, .pending .row button, .list { background: #1e2228; }
+      #open-settings:hover { background: #262b32; }
+      .pending .row button.primary { background: var(--brand); }
+      .pending .row button.primary:hover { background: var(--brand-dark); }
+      .pending .row button.danger { background: #1e2228; }
+      .pending .row button.danger:hover,
+      .item button.danger:hover { background: #3a1f1f; }
+    }
   </style>
 </head>
 <body>
