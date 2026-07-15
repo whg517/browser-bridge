@@ -82,16 +82,16 @@ jobs:
           NAME="browser-bridge-${TAG}-${PLATFORM}-${ARCH}"
           mkdir -p "$NAME/extension"
           cp -r extension/dist "$NAME/extension/dist"
-          cp mcp-config.example.json LICENSE README.md "$NAME/"
+          cp install/mcp-config.example.json LICENSE README.md "$NAME/"
           if [ "$PLATFORM" = "windows" ]; then
             cp target/release/browser-bridge.exe "$NAME/"
-            cp install.ps1 "$NAME/"
+            cp install/install.ps1 "$NAME/"
             7z a -tzip "$NAME.zip" "$NAME" > /dev/null
             sha256sum "$NAME.zip" > "$NAME.zip.sha256"
             ARCHIVE="$NAME.zip"
           else
             cp target/release/browser-bridge "$NAME/"
-            cp install.sh "$NAME/"
+            cp install/install.sh "$NAME/"
             tar czf "$NAME.tar.gz" "$NAME"
             if command -v shasum >/dev/null 2>&1; then
               shasum -a 256 "$NAME.tar.gz" > "$NAME.tar.gz.sha256"

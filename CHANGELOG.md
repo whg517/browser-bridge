@@ -31,6 +31,12 @@ tools themselves; the extension now ships from a build step).
   Rust/Node toolchain.
 
 ### Changed
+- **Installers moved to `install/`** (`install/install.sh`, `install/install.ps1`,
+  `install/mcp-config.example.json`) to slim the repository root. Release archives
+  are unchanged — they still ship the installer flat at the archive root, so the
+  extract-and-run flow (`./install.sh`) is the same. From a source checkout, run
+  `./install/install.sh`. Each installer auto-detects whether it sits beside
+  `extension/` (release archive) or one level up (source tree).
 - **Extension ID is now pinned** via a public `key` in the manifest
   (`mkjjlmjbcljpcfkfadfmhblmmddkdihf`), so it's the same for everyone
   regardless of load path. `install.sh` writes the host manifest with that ID

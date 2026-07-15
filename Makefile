@@ -27,7 +27,7 @@ lint: ## Lint Rust, denying all warnings (CI gate)
 	cargo clippy --all-targets -- -D warnings
 
 lint-scripts: ## Lint shell scripts (needs shellcheck)
-	shellcheck install.sh scripts/*.sh tests/run_all.sh
+	shellcheck install/install.sh scripts/*.sh tests/run_all.sh
 
 audit: ## Supply-chain checks (needs cargo-deny, cargo-audit)
 	cargo deny check
@@ -73,7 +73,7 @@ test: test-rust test-e2e ## All tests that run without a browser
 ci: fmt-check lint lint-scripts test-rust ext-typecheck ext-lint ext-format-check ext-test ext-build test-e2e ## Everything CI runs
 
 install: ## Install locally (build + copy binary + host manifest)
-	./install.sh
+	./install/install.sh
 
 sync-version: ## Propagate the Cargo.toml version into the extension files
 	./scripts/sync-version.sh

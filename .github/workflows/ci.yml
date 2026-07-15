@@ -70,7 +70,7 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       # shellcheck is preinstalled on GitHub's ubuntu runners.
-      - run: shellcheck install.sh scripts/*.sh tests/run_all.sh
+      - run: shellcheck install/install.sh scripts/*.sh tests/run_all.sh
 
   linux-install:
     name: Linux installer (isolated XDG directories)
@@ -95,7 +95,7 @@ jobs:
           trap 'rm -rf "$tmp"' EXIT
           XDG_DATA_HOME="$tmp/data" \
           XDG_CONFIG_HOME="$tmp/config" \
-            ./install.sh --browser both --skip-extension-build
+            ./install/install.sh --browser both --skip-extension-build
           test -x "$tmp/data/browser-bridge/browser-bridge"
           test -x "$tmp/data/browser-bridge/run-host.sh"
           test -f "$tmp/config/google-chrome/NativeMessagingHosts/com.browser_bridge.host.json"

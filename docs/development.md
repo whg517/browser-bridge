@@ -31,7 +31,7 @@ tests/               e2e.py (protocol), dom_test.ts (DOM), ext_test.ts (smoke)
 scripts/             lib.sh (shared helpers) + check-version.sh, sync-version.sh
 ```
 
-Shell scripts (`install.sh`, `scripts/*.sh`, `tests/run_all.sh`) share
+Shell scripts (`install/install.sh`, `scripts/*.sh`, `tests/run_all.sh`) share
 `scripts/lib.sh` (sourced) for cargo discovery and version parsing — edit the
 candidate list or parsing in one place. They're `shellcheck`-clean (CI gates
 it; `make lint-scripts` locally).

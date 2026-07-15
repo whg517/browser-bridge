@@ -27,6 +27,14 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Project root. In a release tarball the installer sits at the archive root next
+# to extension/ (ROOT == HERE); in the source tree it lives in install/ with the
+# project one level up (ROOT == HERE/..). Detect by which layout is beside us.
+if [[ -d "$HERE/extension" || -f "$HERE/Cargo.toml" ]]; then
+  ROOT="$HERE"
+else
+  ROOT="$(cd "$HERE/.." && pwd)"
+fi
 HOST_NAME="com.browser_bridge.host"
 BINARY_NAME="browser-bridge"
 
@@ -202,16 +210,16 @@ fi
 # Prebuilt release tarball (no Cargo.toml) → use the shipped browser-bridge and
 # extension/dist as-is; no Rust/Node needed.
 
-if [[ -f "$HERE/Cargo.toml" ]]; then
-  # shellcheck source=scripts/lib.sh
-  source "$HERE/scripts/lib.sh"
+if [[ -f "$ROOT/Cargo.toml" ]]; then
+  # shellcheck source=SCRIPTDIR/../scripts/lib.sh
+  source "$ROOT/scripts/lib.sh"
   bb_find_cargo # sets BB_CARGO + puts its dir on PATH (plain call, not subshell)
   echo "[install] source mode — building with $BB_CARGO"
-  "$BB_CARGO" build --release --manifest-path "$HERE/Cargo.toml"
-  BIN_SRC="$HERE/target/release/$BINARY_NAME"
+  "$BB_CARGO" build --release --manifest-path "$ROOT/Cargo.toml"
+  BIN_SRC="$ROOT/target/release/$BINARY_NAME"
 
   if [[ "$SKIP_EXTENSION_BUILD" == "1" ]]; then
-    DIST_DIR="$HERE/extension/dist"
+    DIST_DIR="$ROOT/extension/dist"
     [[ -d "$DIST_DIR" ]] || {
       echo "error: --skip-extension-build requires an existing $DIST_DIR" >&2
       exit 1
@@ -224,14 +232,14 @@ if [[ -f "$HERE/Cargo.toml" ]]; then
       exit 1
     fi
     echo "[install] building extension bundle (esbuild)…"
-    [[ -d "$HERE/extension/node_modules" ]] || npm --prefix "$HERE/extension" install
-    npm --prefix "$HERE/extension" run build
-    DIST_DIR="$HERE/extension/dist"
+    [[ -d "$ROOT/extension/node_modules" ]] || npm --prefix "$ROOT/extension" install
+    npm --prefix "$ROOT/extension" run build
+    DIST_DIR="$ROOT/extension/dist"
   fi
 else
   echo "[install] prebuilt mode — using shipped binary + extension (no build)"
-  BIN_SRC="$HERE/$BINARY_NAME"
-  DIST_DIR="$HERE/extension/dist"
+  BIN_SRC="$ROOT/$BINARY_NAME"
+  DIST_DIR="$ROOT/extension/dist"
   [[ -f "$BIN_SRC" ]] || { echo "error: prebuilt binary not found at $BIN_SRC" >&2; exit 1; }
   [[ -d "$DIST_DIR" ]] || { echo "error: extension/dist not found at $DIST_DIR" >&2; exit 1; }
 fi
@@ -303,7 +311,8 @@ NEXT STEPS  (no extension-ID copying — it's pinned to $EXTENSION_ID)
 
 2. Register the MCP server with your client. The binary is at:
    $INSTALL_DIR/$BINARY_NAME   (run with no arguments; speaks MCP over stdio)
-   A ready-to-copy JSON snippet is in mcp-config.example.json. E.g. Claude Code:
+   A ready-to-copy JSON snippet is in mcp-config.example.json (beside this
+   installer). E.g. Claude Code:
    claude mcp add browser-bridge -- "$INSTALL_DIR/$BINARY_NAME"
 
 3. Restart Chrome (so it picks up the native messaging host manifest).

@@ -93,10 +93,10 @@ needed.
 
 ```sh
 git clone https://github.com/whg517/browser-bridge && cd browser-bridge
-./install.sh                    # Linux: --browser chrome|chromium|both
+./install/install.sh            # Linux: --browser chrome|chromium|both
 ```
 
-`install.sh` builds the Rust binary and the extension bundle, then installs both.
+`install/install.sh` builds the Rust binary and the extension bundle, then installs both.
 See [docs/development.md](./docs/development.md) for the full build/test loop.
 </details>
 
@@ -123,7 +123,7 @@ stdio). Use an **absolute path**; most clients don't expand `~`.
   claude mcp add browser-bridge -- "$HOME/.browser-bridge/browser-bridge"
   ```
 - **Claude Desktop / generic (`mcpServers` JSON):** copy the `browser-bridge`
-  entry from [`mcp-config.example.json`](./mcp-config.example.json).
+  entry from [`mcp-config.example.json`](./install/mcp-config.example.json).
 - **Codex (`~/.codex/config.toml`):**
   ```toml
   [mcp_servers.browser-bridge]

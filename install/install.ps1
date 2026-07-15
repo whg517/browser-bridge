@@ -14,6 +14,15 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 $Here = Split-Path -Parent $MyInvocation.MyCommand.Path
+# Project root. In a release zip the installer sits at the archive root next to
+# extension\ (Root == Here); in the source tree it lives in install\ with the
+# project one level up (Root == Here\..). Detect by which layout is beside us.
+if ((Test-Path -LiteralPath (Join-Path $Here 'extension')) -or
+    (Test-Path -LiteralPath (Join-Path $Here 'Cargo.toml'))) {
+    $Root = $Here
+} else {
+    $Root = Split-Path -Parent $Here
+}
 $HostName = 'com.browser_bridge.host'
 $InstallDir = Join-Path $env:LOCALAPPDATA 'browser-bridge'
 $BinaryName = 'browser-bridge.exe'
@@ -67,19 +76,19 @@ function Find-Cargo {
     throw 'cargo.exe not found. Install Rust from https://rustup.rs and run this installer again.'
 }
 
-if (Test-Path -LiteralPath (Join-Path $Here 'Cargo.toml')) {
+if (Test-Path -LiteralPath (Join-Path $Root 'Cargo.toml')) {
     $cargo = Find-Cargo
     Write-Host "[install] source mode - building with $cargo"
-    & $cargo build --release --manifest-path (Join-Path $Here 'Cargo.toml')
+    & $cargo build --release --manifest-path (Join-Path $Root 'Cargo.toml')
     if ($LASTEXITCODE -ne 0) { throw "cargo build failed with exit code $LASTEXITCODE" }
-    $binarySource = Join-Path $Here "target\release\$BinaryName"
+    $binarySource = Join-Path $Root "target\release\$BinaryName"
 
     $npm = Get-Command npm.cmd -ErrorAction SilentlyContinue
     if (-not $npm) {
         throw 'npm.cmd not found. Install Node.js from https://nodejs.org and run this installer again.'
     }
     Write-Host '[install] building extension bundle (esbuild)...'
-    $extensionDir = Join-Path $Here 'extension'
+    $extensionDir = Join-Path $Root 'extension'
     if (-not (Test-Path -LiteralPath (Join-Path $extensionDir 'node_modules'))) {
         & $npm.Source --prefix $extensionDir install
         if ($LASTEXITCODE -ne 0) { throw "npm install failed with exit code $LASTEXITCODE" }
@@ -89,8 +98,8 @@ if (Test-Path -LiteralPath (Join-Path $Here 'Cargo.toml')) {
     $distDir = Join-Path $extensionDir 'dist'
 } else {
     Write-Host '[install] prebuilt mode - using shipped binary and extension'
-    $binarySource = Join-Path $Here $BinaryName
-    $distDir = Join-Path $Here 'extension\dist'
+    $binarySource = Join-Path $Root $BinaryName
+    $distDir = Join-Path $Root 'extension\dist'
     if (-not (Test-Path -LiteralPath $binarySource)) { throw "prebuilt binary not found at $binarySource" }
     if (-not (Test-Path -LiteralPath $distDir)) { throw "extension bundle not found at $distDir" }
 }

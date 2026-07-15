@@ -15,8 +15,8 @@ const hex = createHash("sha256").update(Buffer.from(manifest.key, "base64")).dig
 const derivedId = [...hex].map((digit) => String.fromCharCode(97 + Number.parseInt(digit, 16))).join("");
 
 const sources = [
-  ["install.sh", /PINNED_EXTENSION_ID="([a-p]{32})"/],
-  ["install.ps1", /\$ExtensionId\s*=\s*'([a-p]{32})'/],
+  ["install/install.sh", /PINNED_EXTENSION_ID="([a-p]{32})"/],
+  ["install/install.ps1", /\$ExtensionId\s*=\s*'([a-p]{32})'/],
 ];
 
 let failed = false;

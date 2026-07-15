@@ -9,7 +9,7 @@ WSL 可以用两种方式运行 browser-bridge。选择哪一种取决于 **Chro
 这是最常见的 WSL 使用方式：Codex、Claude Code 等 MCP 客户端运行在 WSL，
 日常浏览器仍是 Windows Chrome。
 
-1. 在 Windows 仓库中执行 `install.ps1`，并把 `extension/dist` 加载到
+1. 在 Windows 仓库中执行 `install/install.ps1`，并把 `extension/dist` 加载到
    Windows Chrome。
 2. 在 WSL 的 MCP 配置中直接运行 Windows 安装的 `.exe`。WSL interop 会把
    它作为 Windows 进程启动，因此它与 Windows Chrome 使用相同的注册表、
@@ -32,10 +32,10 @@ args = []
 Rust、Node.js，以及 Google Chrome 或 Chromium，然后在 WSL 仓库执行：
 
 ```sh
-./install.sh                    # 自动检测 Chrome 或 Chromium
-./install.sh --browser chrome   # 仅 Google Chrome
-./install.sh --browser chromium # 仅 Chromium
-./install.sh --browser both     # 同时写入两种 manifest
+./install/install.sh                    # 自动检测 Chrome 或 Chromium
+./install/install.sh --browser chrome   # 仅 Google Chrome
+./install/install.sh --browser chromium # 仅 Chromium
+./install/install.sh --browser both     # 同时写入两种 manifest
 ```
 
 默认安装位置：
