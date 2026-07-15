@@ -134,8 +134,23 @@ Set-Item -Path $registryPath -Value $manifestPath
 Write-Host "[install] native host registered at $registryPath"
 Write-Host "[install] manifest written to $manifestPath"
 
+# Backslashes must be doubled inside JSON/TOML double-quoted strings.
+$escapedBinary = $installedBinary -replace '\\', '\\'
+
 Write-Host ''
 Write-Host 'NEXT STEPS'
 Write-Host "1. Open chrome://extensions, enable Developer mode, and load unpacked: $distDir"
-Write-Host "2. Configure your MCP client to run: $installedBinary"
+Write-Host '2. Register the MCP server with your client. Config below already has the'
+Write-Host "   absolute path filled in ($installedBinary) - just paste:"
+Write-Host ''
+Write-Host '   - Claude Code (CLI):'
+Write-Host "       claude mcp add browser-bridge -- `"$installedBinary`""
+Write-Host ''
+Write-Host '   - Claude Desktop / generic MCP client (mcpServers JSON):'
+Write-Host "       `"browser-bridge`": { `"command`": `"$escapedBinary`", `"args`": [] }"
+Write-Host ''
+Write-Host '   - Codex (%USERPROFILE%\.codex\config.toml):'
+Write-Host '       [mcp_servers.browser-bridge]'
+Write-Host "       command = `"$escapedBinary`""
+Write-Host '       args = []'
 Write-Host '3. Restart Chrome, then ask your MCP client to list browser tabs.'

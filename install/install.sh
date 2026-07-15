@@ -12,6 +12,10 @@
 #   ./install.sh --skip-extension-build Reuse an existing extension/dist. Useful
 #                                       in WSL when only the Rust toolchain is
 #                                       installed in Linux.
+#   ./install.sh --register-claude-code Also run `claude mcp add` to register the
+#                                       server with Claude Code (needs the claude
+#                                       CLI on PATH). Off by default; other clients
+#                                       get ready-to-paste config printed instead.
 #   ./install.sh --uninstall            Remove what this installer placed (binary,
 #                                       run-host wrapper, native-host manifest,
 #                                       run.lock). Leaves Chrome and the loaded
@@ -49,6 +53,7 @@ EXTENSION_ID="$PINNED_EXTENSION_ID"
 BROWSER="auto"
 SKIP_EXTENSION_BUILD="${BB_SKIP_EXTENSION_BUILD:-0}"
 UNINSTALL=0
+REGISTER_CLAUDE=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -66,12 +71,16 @@ while [[ $# -gt 0 ]]; do
       SKIP_EXTENSION_BUILD=1
       shift
       ;;
+    --register-claude-code)
+      REGISTER_CLAUDE=1
+      shift
+      ;;
     --uninstall)
       UNINSTALL=1
       shift
       ;;
     -h|--help)
-      sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'
+      sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'
       exit 0
       ;;
     *)
@@ -298,6 +307,30 @@ EOF
 done
 echo "[install]   allowed_origins: $ORIGINS"
 
+# The MCP server command every client points at (absolute; no PATH/~ needed).
+SERVER_CMD="$INSTALL_DIR/$BINARY_NAME"
+
+# Optionally register with Claude Code through its official CLI — the only safe
+# auto-writer. We never hand-edit a client's JSON/TOML config; for the other
+# clients we print a ready-to-paste block with the path already filled in.
+CLAUDE_HINT="(re-run with --register-claude-code to add this automatically)"
+if command -v claude >/dev/null 2>&1; then
+  if [[ "$REGISTER_CLAUDE" == "1" ]]; then
+    if claude mcp list 2>/dev/null | grep -q 'browser-bridge'; then
+      echo "[install] Claude Code already has 'browser-bridge' — left as is"
+      CLAUDE_HINT="(already registered ✓)"
+    elif claude mcp add browser-bridge -- "$SERVER_CMD" >/dev/null 2>&1; then
+      echo "[install] registered 'browser-bridge' with Claude Code"
+      CLAUDE_HINT="(added automatically ✓)"
+    else
+      echo "[install] warning: 'claude mcp add' failed — add it by hand (below)" >&2
+      CLAUDE_HINT="(auto-add failed — run the command below)"
+    fi
+  fi
+else
+  CLAUDE_HINT="(install the claude CLI to use --register-claude-code)"
+fi
+
 cat <<TIP
 
 ────────────────────────────────────────────────────────────────────
@@ -310,10 +343,21 @@ NEXT STEPS  (no extension-ID copying — it's pinned to $EXTENSION_ID)
     trusts it, so nothing to patch.)
 
 2. Register the MCP server with your client. The binary is at:
-   $INSTALL_DIR/$BINARY_NAME   (run with no arguments; speaks MCP over stdio)
-   A ready-to-copy JSON snippet is in mcp-config.example.json (beside this
-   installer). E.g. Claude Code:
-   claude mcp add browser-bridge -- "$INSTALL_DIR/$BINARY_NAME"
+     $SERVER_CMD
+   (run with no arguments; speaks MCP over stdio). Config below already has the
+   absolute path filled in — just paste:
+
+   • Claude Code (CLI):
+       claude mcp add browser-bridge -- "$SERVER_CMD"
+       $CLAUDE_HINT
+
+   • Claude Desktop / generic MCP client (mcpServers JSON):
+       "browser-bridge": { "command": "$SERVER_CMD", "args": [] }
+
+   • Codex (~/.codex/config.toml):
+       [mcp_servers.browser-bridge]
+       command = "$SERVER_CMD"
+       args = []
 
 3. Restart Chrome (so it picks up the native messaging host manifest).
 
