@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Browser Bridge",
   "version": "0.1.0",
-  "description": "Let an MCP client (Claude Code, Codex, …) operate this real Chrome — your tabs, your login sessions. You approve new sites and high-risk actions.",
+  "description": "Let an MCP client (Claude Code, Codex, …) operate your real Chrome — your tabs and logins. You approve new sites and risky actions.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAuE+qrxaJ5pXhQu4k+ecB0cvAXk1bKdCNjwV49Nepgj4j6aj4EGb6LS8rnnnkpPN3Ixh/tFFS4CU/vDa2ZBZS8pUOcLTOUjii6/MyIDNCCs4D6fg/746ko0ISBWEOynVGBFRaA9YYFm3F6K1Damnw3uZnr2nnTAvnDAoBvHyCVry1phyY7XCVFSQ6R7S2vZHUTBgJhd2dEGI7+OqKbPXgnFLVwITbDk8A8Z4S3lZlbVQidwtUZuhe9cPt3Jgxj+ytxcoftmR1zssj3QJ2NAhuk/NDmlyrJ4CL9tk1/ludMdJbd6pcPmHcV3EDm7btheksLERX6+5/N+vL+46VOg4PLQIDAQAB",
   "permissions": [
     "tabs",

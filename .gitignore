@@ -33,6 +33,9 @@ tests/node_modules/
 /extension/dist/
 /extension/node_modules/
 
+# Chrome Web Store upload package (built from dist/, never committed)
+/browser-bridge-extension-cws-*.zip
+
 # Playwright MCP scratch
 /.playwright-mcp/
 
