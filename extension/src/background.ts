@@ -12,6 +12,12 @@
 import "./background/messages"; // registers the runtime.onMessage router
 import { connectNative } from "./background/port";
 import { installCdpLifecycleListeners } from "./background/cdp/registry";
+import { verifyExtensionId } from "./background/id-check";
+
+// Loudly log if the running extension id ≠ the pinned id. A mismatch means the
+// native host rejects this extension (allowed_origins pins the id) — the most
+// common "won't connect" cause. Runs first so it's visible at the top of the log.
+verifyExtensionId();
 
 // CDP mode (ADR-0017): tear down debugger sessions when a tab closes, when
 // Chrome detaches us, or when the user turns cdpMode off. Registered once here

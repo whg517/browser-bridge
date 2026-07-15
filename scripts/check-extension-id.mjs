@@ -17,6 +17,7 @@ const derivedId = [...hex].map((digit) => String.fromCharCode(97 + Number.parseI
 const sources = [
   ["install/install.sh", /PINNED_EXTENSION_ID="([a-p]{32})"/],
   ["install/install.ps1", /\$ExtensionId\s*=\s*'([a-p]{32})'/],
+  ["extension/src/shared/extension-id.ts", /PINNED_EXTENSION_ID\s*=\s*"([a-p]{32})"/],
 ];
 
 let failed = false;
