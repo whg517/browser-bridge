@@ -14,10 +14,13 @@ main
  ├── feat/...
  ├── fix/...
  ├── refactor/...
- └── chore/...
+ └── docs/...
 ```
 
-No long-lived `develop`. Branches merge via PR and are deleted after merge.
+Branch prefixes use the Conventional Commits types
+(`feat|fix|docs|refactor|perf|test|ci|build|style|revert`); `chore` is not used
+(see [CONTRIBUTING.md](CONTRIBUTING.md)). No long-lived `develop`. Branches merge
+via PR and are deleted after merge.
 
 `main` rules (enforced where possible via branch protection):
 
@@ -73,6 +76,30 @@ priority:P0  priority:P1  priority:P2  priority:P3
 
 A tech-debt issue states: the problem, the risk, the current workaround, the
 target state, and what should trigger addressing it.
+
+## Repository root is reference-locked
+
+The files at the repository root are intentionally minimal, and most of them
+**cannot move** without breaking tooling — a future "tidy-up" that relocates them
+will silently break the build or lint gates. Before moving anything at root,
+know why it is there:
+
+- **Tool-pinned to root (cannot move):** `Cargo.toml` / `Cargo.lock` (cargo
+  crate root), `rust-toolchain.toml` (rustup resolves it from the project root),
+  `rustfmt.toml` and `clippy.toml` (`cargo fmt` / clippy discover them from the
+  crate root; no CLI override is set), `deny.toml` (`cargo deny check` is invoked
+  bare, so it uses the default root path), `.editorconfig` / `.gitignore` /
+  `.gitattributes` / `.shellcheckrc` (walked up from the working tree).
+- **Convention / GitHub-surfaced (keep at root):** `README.md`, `LICENSE`,
+  `SECURITY.md`, `CONTRIBUTING.md`, `GOVERNANCE.md`, `CHANGELOG.md`, `AGENTS.md`.
+- **Referenced by path (moving requires editing every reference):** `install.sh`
+  / `install.ps1` and `mcp-config.example.json` are packaged at the archive root
+  by `release.yml` and read by the installer and docs; `install.sh` also assumes
+  `extension/` is its sibling. `Makefile` is the canonical task entrypoint.
+
+If a genuine reason to relocate one appears, update every reference in the same
+change (CI workflows, `Makefile`, `scripts/`, docs, `CODEOWNERS`) and confirm the
+lint/build gates still find their config.
 
 ## Versioning & release
 
