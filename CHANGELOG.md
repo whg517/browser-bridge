@@ -6,8 +6,9 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-Engineering-standardization overhaul (no user-facing behavior change to the
-tools themselves; the extension now ships from a build step).
+Engineering-standardization overhaul, plus a round of extension features and UX
+polish: an opt-in CDP execution mode, per-action confirmation toggles, an
+extension-ID self-check, restyled confirmations, and dark mode.
 
 ### Added
 - Unified `Makefile` task runner (`build`, `fmt`, `lint`, `test`, `ci`,
@@ -28,7 +29,27 @@ tools themselves; the extension now ships from a build step).
 - **Prebuilt release tarballs** — tagging `v*` triggers a GitHub Actions release
   build (macOS Apple Silicon) that publishes a binary + built extension +
   installer. `install.sh` auto-detects a prebuilt tarball and installs with no
-  Rust/Node toolchain.
+  Rust/Node toolchain. The matrix also builds Linux x64 and Windows x64, each
+  with a `.sha256` checksum and SLSA build-provenance attestation, plus a
+  standalone extension zip; a decoupled workflow attaches a CycloneDX SBOM.
+- **Opt-in CDP execution mode** (`cdpMode`, off by default) — routes every page
+  op through `chrome.debugger` (CDP) in the page's main world instead of the
+  content script, which **bypasses page CSP** so `page_eval` works on strict-CSP
+  sites (e.g. Bing). Keeps every confirmation/allowlist/masking gate. A
+  persistent debugger attach shows Chrome's "Started debugging this browser"
+  banner while enabled. (ADR-0017)
+- **`confirmPageEval` / `confirmTabClose` settings** — opt out of the per-call
+  confirmation for `page_eval` / `tab_close` for hands-off automation. Both
+  default on, so behavior is unchanged unless you turn them off.
+- **Extension-ID self-check** — the service worker logs a loud `[bb]` error at
+  startup when the running extension ID ≠ the pinned ID, the most common
+  "won't connect" cause (native-messaging `allowed_origins` mismatch).
+- **Dark mode** for the options and popup pages (`prefers-color-scheme`).
+- **macOS Gatekeeper**: the installer clears the `com.apple.quarantine`
+  attribute on the installed binary so a browser-downloaded build isn't silently
+  blocked when Chrome spawns the native host.
+- Docs: a Chrome Web Store publication checklist (`docs/chrome-web-store.md`) and
+  a privacy policy.
 
 ### Changed
 - **Installers moved to `install/`** (`install/install.sh`, `install/install.ps1`,
@@ -58,6 +79,17 @@ tools themselves; the extension now ships from a build step).
 - Signal handling: `SIGTERM`/`SIGINT` now trigger a graceful shutdown that
   removes the lock file (via a `libc` `sigwait` thread); scattered hand-rolled
   `extern "C"` shims collapsed onto `libc`.
+- **README redesigned** — security-first intro, a prebuilt-first 60-second
+  quickstart, the accurate 15-tool catalogue grouped by risk, plus
+  configuration and troubleshooting sections.
+- **Confirmation toasts restyled** — one consistent size (360px) across all of
+  them; high-risk confirmations (submit/navigate click, `tab_close`, `page_eval`)
+  now use a red danger theme, while the informational toast stays blue.
+- **Installer UX** — prints the fully-resolved `claude mcp add …` command and
+  can auto-register with Claude Code when its CLI is present.
+- Repository tidy: `deny.toml` moved to `ci/deny.toml`; the remaining root files
+  are documented in `GOVERNANCE.md` as reference-locked (required at root by a
+  tool or convention).
 
 ### Fixed
 - `page_fill` no longer sends a bogus "masked" copy of the value alongside the
@@ -66,6 +98,8 @@ tools themselves; the extension now ships from a build step).
   waits for a fresh host to reconnect instead of writing into a dead socket.
 - Removed dead code (`is_connected`, an empty reserved `SENSITIVE_HOSTS`, a
   duplicate unused `STORAGE_KEY`).
+- **Release workflow** pins `actions/checkout` to the released tag, so a manual
+  `workflow_dispatch` run builds (and signs/labels) the tag rather than `main`.
 
 ### Dependencies
 - Added `libc` and `thiserror` (Rust); esbuild/TypeScript/ESLint/Prettier
