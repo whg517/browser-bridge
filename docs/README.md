@@ -48,6 +48,7 @@ ADR(Architecture Decision Record)记录的是**有多个合理选项、最终选
 | [0010](./adr/0010-cookie-storage-readonly.md) | Cookie/Storage 只读访问 | Accepted |
 | [0011](./adr/0011-options-page-for-settings.md) | 配置通过独立 Options 页管理 | Accepted |
 | [0017](./adr/0017-cdp-mode-all-ops.md) | CDP 模式:所有页面操作可选走 chrome.debugger | Accepted |
+| [0018](./adr/0018-tab-workspace-group.md) | AI 标签页归入「Browser Bridge」分组(工作区) | Accepted |
 
 ## ADR 写作约定
 

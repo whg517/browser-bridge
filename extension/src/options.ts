@@ -216,8 +216,9 @@ function escapeAttr(s: string) {
 (async function init() {
   const s = await loadSettings();
 
-  // Boolean toggles. These are all PROTECTIONS: safe when on, warned when off,
-  // so the warning/danger styling shows while UNCHECKED.
+  // Boolean toggles. The protections (safe on / warned off) show danger styling
+  // while UNCHECKED via their `<key>-warn` element; benign toggles like
+  // groupTabs simply have no `-warn` element, so no styling fires.
   for (const key of [
     "pageEvalEnabled",
     "evalMask",
@@ -225,6 +226,7 @@ function escapeAttr(s: string) {
     "confirmPageEval",
     "confirmTabClose",
     "warnPreciseSnapshot",
+    "groupTabs",
   ] as (keyof Settings)[]) {
     const input = $<HTMLInputElement>(key);
     input.checked = s[key] !== false;

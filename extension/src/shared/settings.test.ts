@@ -15,6 +15,7 @@ describe("DEFAULTS", () => {
         "disabledTools",
         "evalMask",
         "evalToastTimeoutMs",
+        "groupTabs",
         "pageEvalEnabled",
         "warnPreciseSnapshot",
       ].sort()
@@ -24,6 +25,7 @@ describe("DEFAULTS", () => {
     expect(DEFAULTS.disabledTools).toEqual([]);
     expect(DEFAULTS.allowAllSites).toBe(false);
     expect(DEFAULTS.cdpMode).toBe(false);
+    expect(DEFAULTS.groupTabs).toBe(true);
   });
 });
 

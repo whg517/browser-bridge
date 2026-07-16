@@ -40,12 +40,15 @@ export async function injectIfNeeded(tabId: number) {
 
 export async function tabList() {
   const tabs = await chrome.tabs.query({});
+  // groupId is -1 (chrome.tabGroups.TAB_GROUP_ID_NONE) for ungrouped tabs;
+  // normalize that to undefined so the response only carries real group ids.
   return tabs.map((t) => ({
     id: t.id,
     title: t.title,
     url: t.url,
     active: t.active,
     windowId: t.windowId,
+    groupId: typeof t.groupId === "number" && t.groupId >= 0 ? t.groupId : undefined,
   }));
 }
 
@@ -57,10 +60,43 @@ export async function tabFocus(tabId: number) {
   return { focused: tabId };
 }
 
+// Name + color of the tab group browser-bridge collects its tabs into, so the
+// AI's tabs are visually separated from the user's and can be collapsed/closed
+// as a unit. See ADR-0018.
+const WORKSPACE_TITLE = "Browser Bridge";
+const WORKSPACE_COLOR = "blue";
+
 export async function tabOpen(url: string) {
   await ensureAllowed(url);
   const t = await chrome.tabs.create({ url });
-  return { opened: t.id, url };
+  let groupId: number | undefined;
+  if ((await getSetting("groupTabs")) !== false && typeof t.id === "number") {
+    groupId = await addToWorkspaceGroup(t.id, t.windowId);
+  }
+  return { opened: t.id, url, groupId };
+}
+
+// Add a tab to the "Browser Bridge" workspace group in its window, creating the
+// group (named + colored) if it doesn't exist yet. Best-effort: grouping is a
+// UX nicety, so a failure here never fails the underlying tab_open.
+async function addToWorkspaceGroup(
+  tabId: number,
+  windowId: number | undefined
+): Promise<number | undefined> {
+  try {
+    const groups = await chrome.tabGroups.query(windowId != null ? { windowId } : {});
+    const existing = groups.find((g) => g.title === WORKSPACE_TITLE);
+    if (existing) {
+      await chrome.tabs.group({ tabIds: [tabId], groupId: existing.id });
+      return existing.id;
+    }
+    const groupId = await chrome.tabs.group({ tabIds: [tabId] });
+    await chrome.tabGroups.update(groupId, { title: WORKSPACE_TITLE, color: WORKSPACE_COLOR });
+    return groupId;
+  } catch (e) {
+    console.warn("[bb] tab grouping failed:", (e as Error)?.message || e);
+    return undefined;
+  }
 }
 
 export async function tabClose(tabId: number) {

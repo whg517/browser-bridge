@@ -22,6 +22,7 @@ export interface Settings {
   disabledTools: string[];
   allowAllSites: boolean;
   cdpMode: boolean;
+  groupTabs: boolean;
 }
 
 // A request from the native host, forwarded to the right tab's content script.
