@@ -19,6 +19,7 @@ export const DEFAULTS: Settings = {
   disabledTools: [], // string[] of tool/op names that are blocked
   allowAllSites: false,
   cdpMode: false, // route ALL page ops through chrome.debugger (CDP). See ADR-0017.
+  groupTabs: true, // collect tab_open tabs into a "Browser Bridge" group. See ADR-0018.
 };
 
 // Read one setting from chrome.storage.local, falling back to its default.
