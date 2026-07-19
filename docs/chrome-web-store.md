@@ -1,5 +1,10 @@
 # 上架 Chrome Web Store:决策清单
 
+> **现状(2026-07-19):已上架并发布。** 决策记录见
+> [ADR-0019](./adr/0019-chrome-web-store-distribution.md);商店条目
+> [Browser Bridge](https://chromewebstore.google.com/detail/browser-bridge/dgccjfjjilfpkbdllclmkiicajndkfcd)。
+> 下文保留为当初的**决策清单**存档,并在末尾补充**自动发布流水线**的一次性配置。
+
 > 本文是**决策清单**,不是"已经决定要做"。上架能移除当前最大的使用门槛(手动加载
 > unpacked 扩展),但它是一次**产品承诺**:开发者账号、隐私政策、审核风险、以及一处
 > 会影响现有"钉死扩展 ID"设计的迁移工作。是否上架属于 GOVERNANCE 里 RFC/ADR 级别的
@@ -77,8 +82,38 @@ Google 审核会重点看以下几项,提前准备书面理由:
 因为它触及分发方式与安全姿态,按本项目 [GOVERNANCE](../GOVERNANCE.md) 属 **RFC/ADR 级**
 决策——建议先开 issue 讨论定夺,再动手,而不是一个快速 PR。
 
+## 自动发布流水线(一次性配置)
+
+发布自动化由 [`.github/workflows/cws-publish.yml`](../.github/workflows/cws-publish.yml)
+承担:在 `release: published`(正式版,非 prerelease)或手动 `workflow_dispatch` 时,用
+纯 `curl` 调 CWS API 打包(剥 `key`、manifest 置于 zip 根)→ 上传 → 提交发布。它与
+二进制发布**解耦**(仿 `sbom.yml`),商店侧失败**永不阻塞** GitHub Release。
+
+**默认关闭**,需一次性配置后才生效:
+
+1. **Google Cloud OAuth**(一次):建一个 OAuth client(桌面类型),用它换取一个
+   **refresh token**(需在 Google Cloud Console 启用 *Chrome Web Store API*)。
+2. **仓库 secrets**(Settings → Secrets and variables → Actions → Secrets):
+   - `CWS_CLIENT_ID`
+   - `CWS_CLIENT_SECRET`
+   - `CWS_REFRESH_TOKEN`
+3. **仓库变量**(同页 → Variables):
+   - `CWS_AUTO_PUBLISH` = `true`(总开关;不设或非 `true` 则整个 job 跳过)
+   - 可选 `CWS_ITEM_ID`(默认已内置商店 ID `dgccjfjjilfpkbdllclmkiicajndkfcd`)
+
+**注意事项:**
+
+- **审核不可跳过**:自动化只是"审核通过后自动上线",商店仍会审核每次更新(数天)。
+- **版本必须递增**:商店拒绝重复版本;本项目已有 `scripts/check-version.sh` 保证
+  Cargo/manifest 一致,发新版前记得 bump。
+- **未开启「Verified CRX uploads」**:因此直接上传 zip 即可(见
+  [ADR-0019](./adr/0019-chrome-web-store-distribution.md) 方案 B)。若将来开启,本流水线
+  需改为上传**签名后的 `.crx`**。
+- 想先试跑:用 `workflow_dispatch` 手动触发并传入已存在的 tag(如 `v0.1.0`)。
+
 ## 相关
 
+- 决策记录:[ADR-0019](./adr/0019-chrome-web-store-distribution.md)。
 - 安全边界与威胁模型:[SECURITY.md](../SECURITY.md) ·
   [security/threat-model.md](./security/threat-model.md) ·
   [security/trust-boundaries.md](./security/trust-boundaries.md)。
