@@ -43,13 +43,21 @@ HOST_NAME="com.browser_bridge.host"
 BINARY_NAME="browser-bridge"
 
 # Deterministic extension ID, derived from the public `key` in
-# extension/manifest.json (same for everyone, regardless of load path). If you
-# ever change that key, update this to match (or pass --extension-id).
+# extension/manifest.json (same for everyone loading unpacked / the prebuilt
+# bundle). If you ever change that key, update this to match (or pass
+# --extension-id).
 PINNED_EXTENSION_ID="mkjjlmjbcljpcfkfadfmhblmmddkdihf"
+
+# Chrome Web Store-assigned ID. Users who install from the store run the
+# published build, whose ID is fixed by the store and differs from the pinned
+# unpacked ID. The host manifest trusts BOTH by default so either install path
+# connects. Passing --extension-id narrows trust to just that one id.
+STORE_EXTENSION_ID="dgccjfjjilfpkbdllclmkiicajndkfcd"
 
 # ---- platform + args ------------------------------------------------------
 
 EXTENSION_ID="$PINNED_EXTENSION_ID"
+EXTENSION_ID_OVERRIDDEN=0
 BROWSER="auto"
 SKIP_EXTENSION_BUILD="${BB_SKIP_EXTENSION_BUILD:-0}"
 UNINSTALL=0
@@ -60,6 +68,7 @@ while [[ $# -gt 0 ]]; do
     --extension-id)
       EXTENSION_ID="${2:-}"
       [[ -n "$EXTENSION_ID" ]] || { echo "error: --extension-id requires a value" >&2; exit 1; }
+      EXTENSION_ID_OVERRIDDEN=1
       shift 2
       ;;
     --browser)
@@ -287,8 +296,21 @@ exec "$INSTALL_DIR/$BINARY_NAME" --native-host
 EOF
 chmod 0755 "$WRAPPER"
 
-# allowed_origins pins the extension ID (fixed via the manifest key).
-ORIGINS="[\"chrome-extension://$EXTENSION_ID/\"]"
+# allowed_origins lists every extension ID the host will accept a connection
+# from. By default we trust both the store-published ID and the pinned unpacked
+# ID, so a user connects whether they installed from the Chrome Web Store or
+# loaded the bundle unpacked. --extension-id narrows this to the single override.
+if [[ "$EXTENSION_ID_OVERRIDDEN" == "1" ]]; then
+  TRUSTED_IDS=("$EXTENSION_ID")
+else
+  TRUSTED_IDS=("$STORE_EXTENSION_ID" "$PINNED_EXTENSION_ID")
+fi
+ORIGINS=""
+for id in "${TRUSTED_IDS[@]}"; do
+  [[ -n "$ORIGINS" ]] && ORIGINS+=","
+  ORIGINS+="\"chrome-extension://$id/\""
+done
+ORIGINS="[$ORIGINS]"
 
 for NM_DIR in "${NM_DIRS[@]}"; do
   mkdir -p "$NM_DIR"

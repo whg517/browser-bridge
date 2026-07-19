@@ -5,6 +5,12 @@
 param(
     [ValidatePattern('^[a-p]{32}$')]
     [string]$ExtensionId = 'mkjjlmjbcljpcfkfadfmhblmmddkdihf',
+    # Chrome Web Store-assigned ID. Store users run the published build, whose ID
+    # is fixed by the store and differs from the pinned unpacked ID above. The
+    # host manifest trusts BOTH by default; passing -ExtensionId narrows trust to
+    # just that one id.
+    [ValidatePattern('^[a-p]{32}$')]
+    [string]$StoreExtensionId = 'dgccjfjjilfpkbdllclmkiicajndkfcd',
     # Remove exactly what this installer places (binary, native-host manifest,
     # HKCU registry key, run.lock) and leave Chrome and the extension untouched.
     [switch]$Uninstall
@@ -113,13 +119,22 @@ Write-Host "[install] binary installed at $installedBinary"
 
 # Chrome appends the calling extension origin on Windows. The executable uses
 # that argument to select native-host mode, so no wrapper script is required.
+# allowed_origins lists every extension ID the host will accept a connection
+# from. By default trust both the store-published ID and the pinned unpacked ID;
+# an explicit -ExtensionId narrows trust to just that one.
+$trustedIds = if ($PSBoundParameters.ContainsKey('ExtensionId')) {
+    @($ExtensionId)
+} else {
+    @($ExtensionId, $StoreExtensionId)
+}
+$allowedOrigins = @($trustedIds | ForEach-Object { "chrome-extension://$_/" })
 $manifestPath = Join-Path $InstallDir "$HostName.json"
 $manifest = [ordered]@{
     name = $HostName
     description = 'Browser Bridge native messaging host'
     path = $installedBinary
     type = 'stdio'
-    allowed_origins = @("chrome-extension://$ExtensionId/")
+    allowed_origins = $allowedOrigins
 }
 $manifestJson = $manifest | ConvertTo-Json -Depth 4
 [System.IO.File]::WriteAllText(
