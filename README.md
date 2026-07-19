@@ -104,14 +104,24 @@ See [docs/development.md](./docs/development.md) for the full build/test loop.
 > `browser-bridge-extension-<tag>.zip` from the same release and unzip it — it
 > contains a top-level `dist/` you can load directly.
 
-### 2. Load the extension
+### 2. Add the extension
+
+**Recommended — from the Chrome Web Store:** install
+**[Browser Bridge](https://chromewebstore.google.com/detail/browser-bridge/dgccjfjjilfpkbdllclmkiicajndkfcd)**
+→ **Add to Chrome**. No Developer mode, survives restarts, and works on managed
+Chrome. The installer already trusts the store's extension ID
+(`dgccjfjjilfpkbdllclmkiicajndkfcd`), so there's nothing to copy or patch.
+
+<details>
+<summary><b>Developer / advanced — load unpacked</b></summary>
 
 `chrome://extensions` → enable **Developer mode** → **Load unpacked** → select
 the **`extension/dist/`** directory (the build output, *not* `extension/`).
 
-The extension ID is **pinned** to `mkjjlmjbcljpcfkfadfmhblmmddkdihf` (via the
-manifest `key`), which the installer already trusted — **nothing to copy, nothing
-to patch.**
+Loaded this way the extension ID is **pinned** to
+`mkjjlmjbcljpcfkfadfmhblmmddkdihf` (via the manifest `key`), which the installer
+also trusts by default — so unpacked and store installs both connect.
+</details>
 
 ### 3. Register the MCP server
 
