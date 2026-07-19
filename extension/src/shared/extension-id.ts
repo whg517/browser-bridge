@@ -15,10 +15,7 @@ export const PINNED_EXTENSION_ID = "mkjjlmjbcljpcfkfadfmhblmmddkdihf";
 export const STORE_EXTENSION_ID = "dgccjfjjilfpkbdllclmkiicajndkfcd";
 
 // Every id a correctly-installed browser-bridge may legitimately run under.
-export const TRUSTED_EXTENSION_IDS: readonly string[] = [
-  PINNED_EXTENSION_ID,
-  STORE_EXTENSION_ID,
-];
+export const TRUSTED_EXTENSION_IDS: readonly string[] = [PINNED_EXTENSION_ID, STORE_EXTENSION_ID];
 
 export interface IdDiagnosis {
   ok: boolean;
