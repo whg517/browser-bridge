@@ -18,8 +18,10 @@
 #                                       get ready-to-paste config printed instead.
 #   ./install.sh --uninstall            Remove what this installer placed (binary,
 #                                       run-host wrapper, native-host manifest,
-#                                       run.lock). Leaves Chrome and the loaded
-#                                       extension untouched.
+#                                       run.lock). Prints how to remove the
+#                                       extension and MCP client entries too.
+#                                       Add --unregister-claude-code to also run
+#                                       `claude mcp remove browser-bridge`.
 #
 # Two modes, auto-detected:
 #   - source checkout (Cargo.toml present): builds the binary (Rust) + the
@@ -54,6 +56,7 @@ BROWSER="auto"
 SKIP_EXTENSION_BUILD="${BB_SKIP_EXTENSION_BUILD:-0}"
 UNINSTALL=0
 REGISTER_CLAUDE=0
+UNREGISTER_CLAUDE=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -73,6 +76,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --register-claude-code)
       REGISTER_CLAUDE=1
+      shift
+      ;;
+    --unregister-claude-code)
+      UNREGISTER_CLAUDE=1
       shift
       ;;
     --uninstall)
@@ -208,9 +215,33 @@ if [[ "$UNINSTALL" == "1" ]]; then
   if [[ "$removed" == "0" ]]; then
     echo "[uninstall] nothing to remove — already clean"
   fi
-  echo "[uninstall] done. Chrome and the loaded extension were left untouched;"
-  echo "[uninstall] if you loaded the unpacked extension, remove it yourself via"
-  echo "[uninstall] chrome://extensions."
+
+  # Symmetric to install-time registration: deregister from Claude Code (the
+  # only client we ever auto-wrote), else print how. We never hand-edit a
+  # client's JSON/TOML — for the other clients we print what to delete.
+  SERVER_CMD="$INSTALL_DIR/$BINARY_NAME"
+  if command -v claude >/dev/null 2>&1 && claude mcp list 2>/dev/null | grep -q 'browser-bridge'; then
+    if [[ "$UNREGISTER_CLAUDE" == "1" ]]; then
+      if claude mcp remove browser-bridge >/dev/null 2>&1; then
+        echo "[uninstall] deregistered 'browser-bridge' from Claude Code"
+      else
+        echo "[uninstall] warning: 'claude mcp remove browser-bridge' failed — remove it by hand" >&2
+      fi
+    else
+      echo "[uninstall] note: Claude Code still has a 'browser-bridge' server entry."
+      echo "[uninstall]       remove it with:  claude mcp remove browser-bridge"
+      echo "[uninstall]       (or re-run:  ./install.sh --uninstall --unregister-claude-code)"
+    fi
+  fi
+
+  cat <<TIP
+[uninstall] done. Host artifacts removed. Two things this script does NOT touch:
+  1. The extension — remove it yourself at chrome://extensions (Browser Bridge).
+  2. Any MCP client server entry pointing at the (now-deleted) binary:
+     • Claude Code : claude mcp remove browser-bridge
+     • Claude Desktop / generic : delete the "browser-bridge" entry from mcpServers
+     • Codex : delete the [mcp_servers.browser-bridge] block from ~/.codex/config.toml
+TIP
   exit 0
 fi
 
@@ -363,4 +394,7 @@ NEXT STEPS  (no extension-ID copying — it's pinned to $EXTENSION_ID)
 
 4. In your MCP client, try "list my browser tabs". Approve new sites via the
    Browser Bridge toolbar icon when prompted.
+
+To uninstall later: ./install.sh --uninstall
+   (add --unregister-claude-code to also remove the Claude Code server entry)
 TIP

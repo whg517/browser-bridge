@@ -63,8 +63,12 @@ if ($Uninstall) {
         Write-Host "[uninstall] removed empty dir: $InstallDir"
     }
 
-    Write-Host '[uninstall] done. Chrome and the loaded extension were left untouched;'
-    Write-Host '[uninstall] remove the unpacked extension yourself via chrome://extensions if desired.'
+    Write-Host '[uninstall] done. Host artifacts removed. Two things this script does NOT touch:'
+    Write-Host '  1. The extension - remove it yourself at chrome://extensions (Browser Bridge).'
+    Write-Host '  2. Any MCP client server entry pointing at the (now-deleted) binary:'
+    Write-Host '     - Claude Code : claude mcp remove browser-bridge'
+    Write-Host '     - Claude Desktop / generic : delete the "browser-bridge" entry from mcpServers'
+    Write-Host '     - Codex : delete the [mcp_servers.browser-bridge] block from %USERPROFILE%\.codex\config.toml'
     return
 }
 
@@ -154,3 +158,5 @@ Write-Host '       [mcp_servers.browser-bridge]'
 Write-Host "       command = `"$escapedBinary`""
 Write-Host '       args = []'
 Write-Host '3. Restart Chrome, then ask your MCP client to list browser tabs.'
+Write-Host ''
+Write-Host 'To uninstall later: powershell -ExecutionPolicy Bypass -File .\install.ps1 -Uninstall'

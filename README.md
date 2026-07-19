@@ -259,6 +259,29 @@ in Claude Code) and the extension's Service Worker console at
 `chrome://extensions` (look for `[bb]` logs). Full runbook:
 [docs/cli.md](./docs/cli.md) · [docs/operations.md](./docs/operations.md).
 
+## Uninstall
+
+Run the same installer with the uninstall flag. It removes exactly what it
+placed (binary, native-host manifest / registry key, `run.lock`) — idempotent,
+no wildcards, never touches a process or the browser.
+
+```sh
+./install.sh --uninstall                          # macOS / Linux
+#   add --unregister-claude-code to also run `claude mcp remove browser-bridge`
+powershell -ExecutionPolicy Bypass -File .\install.ps1 -Uninstall   # Windows
+```
+
+Two things it deliberately leaves to you (and prints reminders for):
+
+1. **The extension** — remove it at `chrome://extensions` (unpacked extensions
+   can't be removed by a script).
+2. **Your MCP client's server entry** — e.g. `claude mcp remove browser-bridge`,
+   or delete the `browser-bridge` entry from Claude Desktop's `mcpServers` /
+   the `[mcp_servers.browser-bridge]` block in `~/.codex/config.toml`.
+
+The extension's stored data (allowlist, settings) lives in Chrome and is cleared
+when you remove the extension.
+
 ---
 
 ## Docs map
