@@ -6,9 +6,16 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-Engineering-standardization overhaul, plus a round of extension features and UX
-polish: an opt-in CDP execution mode, per-action confirmation toggles, an
-extension-ID self-check, restyled confirmations, and dark mode.
+## [0.1.0] - 2026-07-19
+
+First stable release — a Rust single-binary MCP server + `--native-host` bridge
+and an MV3 extension that lets any MCP client (Claude Code, Codex, …) operate the
+user's real Chrome. Ships the v0.1 tool set (tab management, page
+snapshot/click/fill/text/screenshot/scroll/wait, `page_eval`,
+`page_snapshot_precise`, `cookie_get`, `storage_get`) behind per-site approval
+and per-action confirmation, plus an engineering-standardization overhaul, an
+opt-in CDP execution mode, restyled confirmations, dark mode, and a Chrome Web
+Store listing. See `docs/` for the requirements, architecture, and ADRs.
 
 ### Added
 - Unified `Makefile` task runner (`build`, `fmt`, `lint`, `test`, `ci`,
@@ -42,8 +49,15 @@ extension-ID self-check, restyled confirmations, and dark mode.
   confirmation for `page_eval` / `tab_close` for hands-off automation. Both
   default on, so behavior is unchanged unless you turn them off.
 - **Extension-ID self-check** — the service worker logs a loud `[bb]` error at
-  startup when the running extension ID ≠ the pinned ID, the most common
-  "won't connect" cause (native-messaging `allowed_origins` mismatch).
+  startup when the running extension ID isn't one of the trusted IDs (pinned or
+  store), the most common "won't connect" cause (native-messaging
+  `allowed_origins` mismatch).
+- **Tab grouping** — tabs the agent opens are collected into a dedicated
+  "Browser Bridge" tab group, keeping AI-driven tabs visually separated from the
+  user's own.
+- **`--uninstall`** (both installers) — removes exactly what the installer
+  placed (binary, native-host manifest, `run.lock`; the HKCU key on Windows),
+  with a symmetric `--unregister-claude-code` that runs `claude mcp remove`.
 - **Dark mode** for the options and popup pages (`prefers-color-scheme`).
 - **macOS Gatekeeper**: the installer clears the `com.apple.quarantine`
   attribute on the installed binary so a browser-downloaded build isn't silently
@@ -63,6 +77,10 @@ extension-ID self-check, restyled confirmations, and dark mode.
   regardless of load path. `install.sh` writes the host manifest with that ID
   directly — **no more "copy the extension ID and re-run with --extension-id"**.
   (`--extension-id` remains as an override.)
+- **Published to the Chrome Web Store**, which assigns its own fixed ID
+  (`dgccjfjjilfpkbdllclmkiicajndkfcd`). The installers now write **both** IDs to
+  `allowed_origins` by default, so store installs and unpacked/dev loads both
+  connect; `--extension-id` narrows trust to a single ID.
 - **Decoupled from ZCode — now generic across MCP clients** (Claude Code, Codex,
   any MCP client). The server already spoke standard MCP; this is a naming/docs
   change plus two identifier renames:
@@ -104,10 +122,3 @@ extension-ID self-check, restyled confirmations, and dark mode.
 ### Dependencies
 - Added `libc` and `thiserror` (Rust); esbuild/TypeScript/ESLint/Prettier
   toolchain (extension dev-dependencies).
-
-## [0.1.0]
-
-Initial implementation: Rust single-binary MCP server + `--native-host` bridge,
-MV3 extension, and the v0.1 tool set (tab management, page snapshot/click/fill/
-text/screenshot/scroll/wait, `page_eval`, `page_snapshot_precise`, `cookie_get`,
-`storage_get`). See `docs/` for the requirements, architecture, and ADRs.
