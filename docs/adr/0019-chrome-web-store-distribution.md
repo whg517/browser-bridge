@@ -30,14 +30,19 @@
    [`scripts/check-extension-id.mjs`](../../scripts/check-extension-id.mjs) 这个 CI
    门禁保持一致,并校验商店 ID ≠ 钉死(key 派生)ID。
 
-2. **商店上传包不含 `key`**:商店拒绝带 `key` 字段的包,且它自己分配 ID。因此**商店 zip
-   在打包时剥掉 `key`**,而源 manifest **保留 `key`**(unpacked 仍需它派生钉死 ID)。
-   上传包要求 `manifest.json` 在 zip **根目录**、`description` ≤ 132 字符。
+2. **商店上传包去掉 `key`**:已发布条目的 manifest **不含 `key`**(经下载线上 CRX 核实)——商店在
+   首次上传时分配并掌管派生商店 ID 的签名密钥,不保存 manifest 里的 `key`。因此后续更新上传也
+   **必须不带 `key`**,否则报「清单中 key 字段的值与当前内容不符」。商店 zip = 源 `extension/dist`
+   去掉 `manifest.key`、`manifest.json` 置于 zip **根目录**、`description` ≤ 132 字符。发布流水线
+   产出**两份** zip:`browser-bridge-extension-<tag>-store.zip`(**去 `key`**,上传商店用)与
+   `browser-bridge-extension-<tag>.zip`(**保留 `key`**,供开发者 "Load unpacked" 得到钉死 ID)。
+   两条路径对 `key` 的需求相反,**不能合成一份**。
 
 3. **隐私政策**:因扩展读取页面内容、cookie、web storage,商店要求隐私政策 URL——
    见 [`docs/privacy-policy.md`](../privacy-policy.md)。
 
-4. **发布方式:手动上传**。商店后台上传剥掉 `key` 的扩展 zip、走审核上线,**不做自动化**。
+4. **发布方式:手动上传**。商店后台上传 `browser-bridge-extension-<tag>-store.zip`(**去 `key`**、
+   manifest 在根)、走审核上线,**不做自动化**。
    (评估过用 CWS API 做 CI 自动发布,但 OAuth refresh-token 维护成本、`release: published`
    触发器对 `GITHUB_TOKEN` 所建 release 不生效等问题,收益不抵复杂度,故选择手动。)
 
