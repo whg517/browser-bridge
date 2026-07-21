@@ -1,8 +1,8 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Browser Bridge 设置</title>
+  <title>Browser Bridge Settings</title>
   <style>
     :root {
       --fg: #111827; --muted: #6b7280; --faint: #9ca3af;
@@ -110,126 +110,126 @@
 </head>
 <body>
   <header>
-    <h1>Browser Bridge 设置</h1>
-    <div class="sub">所有更改即时保存。安全类开关请谨慎调整。</div>
+    <h1>Browser Bridge Settings</h1>
+    <div class="sub">All changes are saved instantly. Adjust security-related switches with care.</div>
   </header>
 
-  <!-- ===== 安全 ===== -->
-  <h2>安全</h2>
+  <!-- ===== Security ===== -->
+  <h2>Security</h2>
   <div class="card" id="card-pageEvalEnabled">
     <input type="checkbox" id="pageEvalEnabled" />
     <div class="body">
-      <div class="title">允许 page_eval(执行任意 JavaScript)</div>
-      <div class="desc">关闭后,AI 调用 page_eval 会直接被拒绝,不会在页面执行任何代码。这是最危险的工具——即使有确认通道,关闭它可彻底消除静默代码执行的风险(ADR-0008)。</div>
+      <div class="title">Allow page_eval (execute arbitrary JavaScript)</div>
+      <div class="desc">When disabled, an AI call to page_eval is rejected outright and no code runs on the page. This is the most dangerous tool — even with a confirmation channel, disabling it completely eliminates the risk of silent code execution (ADR-0008).</div>
     </div>
   </div>
 
   <div class="card" id="card-evalMask">
     <input type="checkbox" id="evalMask" />
     <div class="body">
-      <div class="title">脱敏 page_eval 返回值</div>
-      <div class="desc">对 eval 结果做正则遮罩:JWT、长 hex、长数字、疑似 token/密钥的字符串(ADR-0008)。</div>
-      <div class="warn" id="evalMask-warn" style="display:none">⚠ 关闭后,token / Cookie / 密钥可能原样泄露给 AI。</div>
+      <div class="title">Redact page_eval return values</div>
+      <div class="desc">Apply regex masking to eval results: JWTs, long hex, long numbers, and strings that look like tokens/keys (ADR-0008).</div>
+      <div class="warn" id="evalMask-warn" style="display:none">⚠ When disabled, tokens / cookies / keys may leak to the AI verbatim.</div>
     </div>
   </div>
 
   <div class="card" id="card-confirmHighRiskClick">
     <input type="checkbox" id="confirmHighRiskClick" />
     <div class="body">
-      <div class="title">高危点击二次确认(提交按钮 / 链接跳转)</div>
-      <div class="desc">点击表单提交按钮或链接时弹出确认 Toast,需用户批准。这是防止 AI 静默下单/转账/跳转的关键防线(ADR-0006)。</div>
-      <div class="warn" id="confirmHighRiskClick-warn" style="display:none">⚠ 关闭后,AI 点击提交/链接将不再确认,请仅在你完全信任 AI 时关闭。</div>
+      <div class="title">Confirm high-risk clicks (submit buttons / link navigation)</div>
+      <div class="desc">When a form submit button or link is clicked, a confirmation toast appears and requires user approval. This is the key line of defense against the AI silently placing orders / transferring funds / navigating away (ADR-0006).</div>
+      <div class="warn" id="confirmHighRiskClick-warn" style="display:none">⚠ When disabled, the AI's clicks on submit buttons/links are no longer confirmed. Only disable this if you fully trust the AI.</div>
     </div>
   </div>
 
   <div class="card" id="card-confirmPageEval">
     <input type="checkbox" id="confirmPageEval" />
     <div class="body">
-      <div class="title">page_eval 二次确认(执行任意 JS)</div>
-      <div class="desc">每次 page_eval 弹出确认 Toast 并展示完整代码,需用户批准(ADR-0008)。page_eval 能执行任意 JavaScript,是风险最高的操作。</div>
-      <div class="warn" id="confirmPageEval-warn" style="display:none">⚠ 关闭后,AI 将无提示直接执行任意 JS,请仅在完全信任 AI 且需要全自动时关闭。</div>
+      <div class="title">Confirm page_eval (execute arbitrary JS)</div>
+      <div class="desc">Every page_eval call shows a confirmation toast displaying the full code and requires user approval (ADR-0008). page_eval can execute arbitrary JavaScript and is the highest-risk operation.</div>
+      <div class="warn" id="confirmPageEval-warn" style="display:none">⚠ When disabled, the AI executes arbitrary JS directly with no prompt. Only disable this if you fully trust the AI and need fully automated operation.</div>
     </div>
   </div>
 
   <div class="card" id="card-confirmTabClose">
     <input type="checkbox" id="confirmTabClose" />
     <div class="body">
-      <div class="title">tab_close 二次确认(关闭标签页)</div>
-      <div class="desc">关闭标签页前在页面内弹出「Close tab?」确认,需用户批准。</div>
-      <div class="warn" id="confirmTabClose-warn" style="display:none">⚠ 关闭后,AI 将无提示直接关闭标签页。</div>
+      <div class="title">Confirm tab_close (close tab)</div>
+      <div class="desc">Before a tab is closed, an in-page "Close tab?" confirmation appears and requires user approval.</div>
+      <div class="warn" id="confirmTabClose-warn" style="display:none">⚠ When disabled, the AI closes tabs directly with no prompt.</div>
     </div>
   </div>
 
   <div class="card" id="card-warnPreciseSnapshot">
     <input type="checkbox" id="warnPreciseSnapshot" />
     <div class="body">
-      <div class="title">精确 snapshot 前提示</div>
-      <div class="desc">调用 page_snapshot_precise(走 chrome.debugger)前在页面弹出信息提示。Chrome 顶部会短暂显示「调试中」横幅(ADR-0009)。</div>
+      <div class="title">Warn before precise snapshot</div>
+      <div class="desc">Before page_snapshot_precise (which uses chrome.debugger) is called, show an informational prompt on the page. Chrome briefly displays a "Debugging" banner at the top (ADR-0009).</div>
     </div>
   </div>
 
-  <!-- ===== 标签页 ===== -->
-  <h2>标签页</h2>
+  <!-- ===== Tabs ===== -->
+  <h2>Tabs</h2>
   <div class="card" id="card-groupTabs">
     <input type="checkbox" id="groupTabs" />
     <div class="body">
-      <div class="title">把 AI 打开的标签页归入「Browser Bridge」分组</div>
-      <div class="desc">通过 tab_open 打开的标签页会自动放进一个命名的标签分组,和你自己的标签页视觉隔离,可整组折叠/关闭。默认开启(ADR-0018)。</div>
+      <div class="title">Put AI-opened tabs into a "Browser Bridge" group</div>
+      <div class="desc">Tabs opened via tab_open are automatically placed into a named tab group, visually isolated from your own tabs, and can be collapsed/closed as a group. Enabled by default (ADR-0018).</div>
     </div>
   </div>
 
-  <!-- ===== 执行模式 ===== -->
-  <h2>执行模式</h2>
+  <!-- ===== Execution mode ===== -->
+  <h2>Execution mode</h2>
   <div class="card" id="card-cdpMode">
     <input type="checkbox" id="cdpMode" />
     <div class="body">
-      <div class="title">全部页面操作走 CDP(chrome.debugger)</div>
-      <div class="desc">开启后所有页面操作改用 CDP(chrome.debugger),不再注入内容脚本;可在严格 CSP 站点(如 Bing)执行 page_eval。默认关闭(ADR-0017)。</div>
-      <div class="warn" id="cdpMode-warn">⚠ 开启后 Chrome 顶部会持续显示「正在调试此浏览器」横幅(调试器全程附加),且访问面更大。仅在需要绕过 CSP 或统一深控时开启。</div>
+      <div class="title">Route all page operations through CDP (chrome.debugger)</div>
+      <div class="desc">When enabled, all page operations use CDP (chrome.debugger) instead of injecting content scripts; this allows page_eval to run on strict-CSP sites (such as Bing). Disabled by default (ADR-0017).</div>
+      <div class="warn" id="cdpMode-warn">⚠ When enabled, Chrome persistently displays a "Debugging this browser" banner at the top (the debugger stays attached the whole time), and the access surface is larger. Only enable this when you need to bypass CSP or want unified deep control.</div>
     </div>
   </div>
 
-  <!-- ===== 确认超时与宽限期 ===== -->
-  <h2>确认超时与宽限期</h2>
+  <!-- ===== Confirmation timeouts and grace period ===== -->
+  <h2>Confirmation timeouts and grace period</h2>
   <div class="panel">
     <div class="row">
-      <label for="confirmGraceMs">确认后免重复宽限期</label>
+      <label for="confirmGraceMs">Grace period without re-confirming after approval</label>
       <input type="number" id="confirmGraceMs" min="0" max="3600000" step="1000" />
-      <span class="unit">毫秒(0 = 每次都确认)</span>
+      <span class="unit">milliseconds (0 = confirm every time)</span>
     </div>
     <div class="row">
-      <label for="clickToastTimeoutMs">点击确认 Toast 超时</label>
+      <label for="clickToastTimeoutMs">Click confirmation toast timeout</label>
       <input type="number" id="clickToastTimeoutMs" min="5000" max="300000" step="1000" />
-      <span class="unit">毫秒(超时自动拒绝)</span>
+      <span class="unit">milliseconds (auto-reject on timeout)</span>
     </div>
     <div class="row">
-      <label for="evalToastTimeoutMs">eval 确认 Toast 超时</label>
+      <label for="evalToastTimeoutMs">eval confirmation toast timeout</label>
       <input type="number" id="evalToastTimeoutMs" min="10000" max="300000" step="1000" />
-      <span class="unit">毫秒(超时自动拒绝)</span>
+      <span class="unit">milliseconds (auto-reject on timeout)</span>
     </div>
   </div>
 
-  <!-- ===== 工具 ===== -->
-  <h2>工具启用</h2>
-  <div class="sub">取消勾选的工具,AI 调用时会收到「tool disabled in settings」错误。注意:AI 仍能看到该工具存在,但无法执行。</div>
+  <!-- ===== Tools ===== -->
+  <h2>Tool enablement</h2>
+  <div class="sub">For any unchecked tool, an AI call receives a "tool disabled in settings" error. Note: the AI can still see that the tool exists, but cannot execute it.</div>
   <div class="tools" id="tools-grid"></div>
 
-  <!-- ===== 允许的站点 ===== -->
-  <h2>允许的站点(白名单)</h2>
+  <!-- ===== Allowed sites ===== -->
+  <h2>Allowed sites (allowlist)</h2>
 
   <div class="card" id="card-allowAllSites">
     <input type="checkbox" id="allowAllSites" />
     <div class="body">
-      <div class="title">允许所有站点(跳过逐站点审批)</div>
-      <div class="desc">开启后,AI 可直接操作任意 http(s) 站点,不再为每个新站点弹窗授权。开启时会请求「<所有网址>」主机权限。适合信任 AI 全自动浏览的场景;否则建议保持关闭,用下面的逐站点白名单。</div>
-      <div class="warn" id="allowAllSites-warn" style="display:none">⚠ 开启后,任意站点(含银行、邮箱、内网)都无需授权即可被操作,请谨慎。</div>
+      <div class="title">Allow all sites (skip per-site approval)</div>
+      <div class="desc">When enabled, the AI can operate on any http(s) site directly, without a per-site authorization prompt for each new site. Enabling it requests the "&lt;all_urls&gt;" host permission. Suitable when you trust the AI to browse fully automatically; otherwise it's recommended to keep this off and use the per-site allowlist below.</div>
+      <div class="warn" id="allowAllSites-warn" style="display:none">⚠ When enabled, any site (including banking, email, and intranet sites) can be operated on without authorization. Use with care.</div>
     </div>
   </div>
 
-  <div class="sub">格式:<code>https://域名/*</code>。手动添加后,首次访问该站点时仍需批准 Chrome 的主机权限弹窗。</div>
+  <div class="sub">Format: <code>https://domain/*</code>. After adding manually, Chrome's host-permission prompt still needs to be approved on first visit to that site.</div>
   <div class="add-row">
     <input type="text" id="new-site" placeholder="https://example.com/*" />
-    <button class="primary" id="add-site">添加</button>
+    <button class="primary" id="add-site">Add</button>
   </div>
   <div class="list" id="site-list"></div>
 

@@ -1,83 +1,83 @@
-# ADR-0002:三进程架构 + localhost TCP 桥接
+# ADR-0002: Three-Process Architecture + localhost TCP Bridge
 
-- **状态**:Accepted
-- **日期**:2026-07-07
+- **Status**: Accepted
+- **Date**: 2026-07-07
 
-## 背景
+## Context
 
-browser-bridge 涉及两个独立的"宿主":
+browser-bridge involves two independent "hosts":
 
-- **MCP 客户端**(如 Claude Code、Codex)会 spawn 一个进程作为 MCP server(stdio JSON-RPC)
-- **Chrome** 会 spawn 一个进程作为 native messaging host(stdio NM 帧)
+- The **MCP client** (such as Claude Code or Codex) spawns a process to act as the MCP server (stdio JSON-RPC)
+- **Chrome** spawns a process to act as the native messaging host (stdio NM frames)
 
-这两个宿主**各自独立 spawn 自己的进程**,它们不是父子关系,无法共享 stdin/stdout。因此必须有某种 IPC 让 MCP server 进程和 native host 进程交换消息。
+These two hosts **each spawn their own process independently**; they are not in a parent-child relationship and cannot share stdin/stdout. Therefore, some form of IPC is required to let the MCP server process and the native host process exchange messages.
 
-此外,MV3 的 Service Worker 会被 Chrome 每 5 分钟强制重启(Chromium #40733525),重启时所有内存状态丢失,扩展的 native Port 也会关闭。这意味着任何"会话状态"(当前焦点 tab、最近 snapshot 的 ref 映射)都不能存在 SW 或 native host 里。
+In addition, MV3's Service Worker is force-restarted by Chrome every 5 minutes (Chromium #40733525). On restart, all in-memory state is lost, and the extension's native Port is also closed. This means that any "session state" (the currently focused tab, the ref mapping of the most recent snapshot) must not live inside the SW or the native host.
 
-## 决策
+## Decision
 
-**采用三进程架构,用 localhost TCP + 锁文件作为 IPC:**
+**Adopt a three-process architecture, using localhost TCP + a lock file as the IPC:**
 
-1. **MCP server 进程**(MCP 客户端 spawn,长期):持有所有会话状态,监听 `127.0.0.1:0`(随机端口),把端口 + per-run secret 写到 0600 锁文件
-2. **native host 进程**(Chrome spawn,随 Port 生命周期):极薄,只做 stdin NM 帧 ↔ TCP NDJSON 的协议翻译
-3. **Chrome 扩展**(SW + content):实际页面操作
+1. **MCP server process** (spawned by the MCP client, long-lived): holds all session state, listens on `127.0.0.1:0` (random port), and writes the port + a per-run secret to a 0600 lock file
+2. **native host process** (spawned by Chrome, tied to the Port lifecycle): extremely thin, only performing protocol translation between stdin NM frames and TCP NDJSON
+3. **Chrome extension** (SW + content): the actual page operations
 
-native host 连接 MCP server 时,先发一行 `{"hello": "<secret>"}` 鉴权,匹配锁文件里的 secret 才接受连接。
+When the native host connects to the MCP server, it first sends a line `{"hello": "<secret>"}` to authenticate; the connection is accepted only if it matches the secret in the lock file.
 
-## 考虑过的替代方案
+## Alternatives Considered
 
-### 方案 A:MCP server 和 native host 合并为一个进程
-- **不可行**:两个宿主(MCP 客户端、Chrome)各自 spawn,进程不是父子关系,stdin/stdout 不共享。除非用 socket activation 之类的机制,但 Chrome 的 native messaging 不支持。
+### Option A: Merge the MCP server and native host into a single process
+- **Not feasible**: the two hosts (the MCP client and Chrome) each spawn their own process, the processes are not in a parent-child relationship, and stdin/stdout are not shared. This would require a mechanism such as socket activation, but Chrome's native messaging does not support it.
 
-### 方案 B:Unix domain socket(替代 TCP)
-- **优点**:文件权限可限 0600,只有当前用户能连,安全面更小
-- **缺点**:
-  - Windows 不支持(当前只针对 macOS,所以这条不影响)
-  - 路径管理略繁(要处理 `/tmp` vs 用户目录)
-- **未被选中的原因**:用户在决策时选了 localhost TCP(调试方便,能 telnet)。TCP 配合 per-run secret + 0600 锁文件,在单用户机器上安全足够
+### Option B: Unix domain socket (instead of TCP)
+- **Pros**: file permissions can be restricted to 0600, so only the current user can connect, giving a smaller attack surface
+- **Cons**:
+  - Not supported on Windows (we currently only target macOS, so this does not matter)
+  - Path management is slightly cumbersome (you have to handle `/tmp` vs. the user directory)
+- **Reason not selected**: at decision time the user chose localhost TCP (convenient to debug, can be telnet'd). TCP combined with a per-run secret + 0600 lock file is secure enough on a single-user machine
 
-### 方案 C:文件 IPC(MCP server 和 host 不直接通信,都读写同一文件)
-- **缺点**:并发/时效差;不适合交互式控制(每次工具调用要往返)
-- **排除**:用户在选项里明确标记"不推荐"
+### Option C: File IPC (the MCP server and host do not communicate directly; both read and write the same file)
+- **Cons**: poor concurrency/timeliness; unsuitable for interactive control (a round trip is needed for every tool call)
+- **Excluded**: the user explicitly marked it "not recommended" among the options
 
-### 方案 D:native host 持有会话状态(不让 MCP server 持有)
-- **问题**:native host 随 Chrome Port 生命周期,SW 重启就丢;且 native host 是"被动"的(Chrome spawn),不适合做协调者
-- **排除**:状态必须在最稳定的进程(MCP server)里
+### Option D: The native host holds the session state (rather than the MCP server)
+- **Problem**: the native host is tied to the Chrome Port lifecycle and is lost when the SW restarts; moreover, the native host is "passive" (spawned by Chrome), making it unsuitable as the coordinator
+- **Excluded**: state must reside in the most stable process (the MCP server)
 
-## 后果
+## Consequences
 
-### 正面
-- **会话状态稳定**:MCP server 进程不随 SW/Chrome 重启而丢状态
-- **host 极薄**:native host 只做协议翻译,逻辑全在 MCP server,易测试、易维护
-- **可调试**:localhost TCP 能用 telnet/nc 手动连上去调试
-- **鉴权**:per-run secret + 0600 锁文件,防止同机其他用户/进程误连
+### Positive
+- **Stable session state**: the MCP server process does not lose state when the SW/Chrome restarts
+- **Extremely thin host**: the native host only does protocol translation, with all logic in the MCP server, making it easy to test and maintain
+- **Debuggable**: localhost TCP can be connected to manually with telnet/nc for debugging
+- **Authentication**: per-run secret + 0600 lock file, preventing accidental connections from other users/processes on the same machine
 
-### 负面
-- **多一层 IPC**:理论上多一次序列化/反序列化开销(实际本地 TCP < 1ms,可忽略)
-- **锁文件管理**:MCP server 退出要清理锁文件;stale 锁文件会导致 host 连接失败(已处理:host 连不上会删除锁文件)
-- **端口随机**:每次 MCP server 启动端口不同,锁文件是唯一的发现机制
-- **理论上同机其他用户可连**:secret 防护依赖锁文件 0600;在多用户机器上不安全(本项目设计前提是单用户)
+### Negative
+- **One extra IPC layer**: in theory this adds one round of serialization/deserialization overhead (in practice, local TCP is < 1ms, negligible)
+- **Lock file management**: the MCP server must clean up the lock file on exit; a stale lock file causes the host connection to fail (already handled: if the host cannot connect, it deletes the lock file)
+- **Random port**: the port differs each time the MCP server starts, so the lock file is the only discovery mechanism
+- **In theory, other users on the same machine could connect**: the secret protection relies on the lock file being 0600; this is not secure on a multi-user machine (this project is designed on the premise of a single user)
 
-### 中性
-- localhost TCP 在 macOS/Linux/Windows 都支持,跨平台无障碍(虽然 v0.1 只测 macOS)
+### Neutral
+- localhost TCP is supported on macOS/Linux/Windows, so it is cross-platform without obstacles (although v0.1 is only tested on macOS)
 
-## 鉴权细节
+## Authentication Details
 
-- **锁文件**:`~/Library/Application Support/browser-bridge/run.lock`(macOS),权限 0600
-- **内容**:`{port, secret, pid}`,secret 是 128 位熵(/dev/urandom)
-- **写入**:原子 rename(tmp 文件 → 正式文件),防止 host 读到半写
-- **校验流程**:host 连上后第一行发 `{"hello": secret}`,MCP server 比对锁文件里的 secret,不匹配则拒绝
-- **stale 处理**:host 连接失败时主动删除锁文件,让下次 MCP server 启动能干净开始
+- **Lock file**: `~/Library/Application Support/browser-bridge/run.lock` (macOS), permissions 0600
+- **Contents**: `{port, secret, pid}`, where the secret is 128 bits of entropy (/dev/urandom)
+- **Writing**: atomic rename (tmp file → final file), preventing the host from reading a half-written file
+- **Validation flow**: after the host connects, its first line sends `{"hello": secret}`; the MCP server compares it against the secret in the lock file and rejects the connection if it does not match
+- **Stale handling**: when the host fails to connect, it proactively deletes the lock file so that the next MCP server startup can begin cleanly
 
-## 实施
+## Implementation
 
-- `src/ipc.rs`:`listen()`(bind + 生成 LockFile)、`connect()`(读锁 + 连 + 发 hello)、`validate_hello()`
-- `src/session.rs`:`attach_connection()`(校验 hello + 起 reader 线程分发 BridgeResp)、`call()`(注册 pending sender → 发 BridgeReq → 等响应,120s 超时)
-- `src/native_host.rs`:两个线程,stdin→TCP 和 TCP→stdout
-- MCP server 退出时(`stdin EOF`)删除锁文件
+- `src/ipc.rs`: `listen()` (bind + generate LockFile), `connect()` (read lock + connect + send hello), `validate_hello()`
+- `src/session.rs`: `attach_connection()` (validate hello + start a reader thread to dispatch BridgeResp), `call()` (register a pending sender → send BridgeReq → wait for response, 120s timeout)
+- `src/native_host.rs`: two threads, stdin→TCP and TCP→stdout
+- Delete the lock file when the MCP server exits (`stdin EOF`)
 
-## 已验证
+## Verified
 
-端到端测试 PASS:
-1. mock host 连接 → hello 鉴权通过 → 工具调用往返成功
-2. `--native-host` 模式真实 NM 帧双向流通 + 完整往返
+End-to-end tests PASS:
+1. mock host connects → hello authentication passes → tool call round trip succeeds
+2. `--native-host` mode: real NM frames flow bidirectionally + full round trip

@@ -1,113 +1,113 @@
-# ADR-0011:配置通过独立 Options 页管理
+# ADR-0011: Settings Managed via a Dedicated Options Page
 
-- **状态**:Accepted
-- **日期**:2026-07-09
+- **Status**: Accepted
+- **Date**: 2026-07-09
 
-## 背景
+## Context
 
-随着阶段二、三逐步落地,方案里散落了大量可配置的安全策略与行为开关:
+As phases two and three landed incrementally, the design accumulated a large number of configurable security policies and behavior switches scattered across the codebase:
 
-- **ADR-0008** 的 `page_eval` 返回值脱敏开关(`evalMask`)——v0.2 时塞在 popup 里
-- **ADR-0006** 的高危点击确认、60 秒免确认宽限期、Toast 30s 超时——全部硬编码在 content.js
-- **ADR-0009** 的精确 snapshot 前提示——每次都弹,不可关
-- **ADR-0004** 的白名单——只能撤回不能手动添加(popup.js 注释明说 v0.1 没做手动加)
-- 各工具是否启用——无总开关
+- **ADR-0008**'s `page_eval` return-value redaction switch (`evalMask`) — crammed into the popup in v0.2
+- **ADR-0006**'s high-risk click confirmation, 60-second confirmation-free grace period, and 30s Toast timeout — all hardcoded in content.js
+- **ADR-0009**'s pre-precise-snapshot prompt — shown every time, cannot be dismissed
+- **ADR-0004**'s allowlist — could only be revoked, not manually added (popup.js comments explicitly state manual add was not implemented in v0.1)
+- Whether each tool is enabled — no master switch
 
-这些值最初以"安全默认值"的形式硬编码,理由是 v0.1/v0.2 阶段优先跑稳基础架构。但累积下来,用户**没有任何途径**调整这些行为——既不能关闭某个他觉得烦的确认,也不能按场景调超时,更不能关掉 page_eval 这个攻击面最大的工具。安全策略被"焊死"了。
+These values were initially hardcoded as "secure defaults," on the rationale that the v0.1/v0.2 phases prioritized getting the base architecture running stably. But as they piled up, users had **no way whatsoever** to adjust these behaviors — they could neither turn off a confirmation they found annoying, nor tune timeouts per scenario, nor disable page_eval, the tool with the largest attack surface. Security policy was "welded shut."
 
-同时,原 popup 宽度仅 320px,已经开始拥挤(连接状态 + 待授权弹窗 + 白名单列表 + evalMask 开关),继续往 popup 里堆开关不可持续。
+At the same time, the original popup was only 320px wide and had already started to feel crowded (connection status + pending-approval prompt + allowlist + evalMask switch). Continuing to pile switches into the popup is not sustainable.
 
-需要一个统一的配置管理入口。
+A unified entry point for configuration management is needed.
 
-## 决策
+## Decision
 
-**通过 manifest `options_ui` 注册一个独立的整页 Options 配置页(`options.html`,新标签页打开),集中管理所有可配置项;popup 顶部加"⚙ 设置"按钮跳转过去,原 popup 里的 `evalMask` 开关迁出。**
+**Register a dedicated full-page Options settings page (`options.html`, opened in a new tab) via the manifest `options_ui`, centralizing management of all configurable items; add a "⚙ Settings" button at the top of the popup to jump to it, and migrate the `evalMask` switch out of the popup.**
 
-配置项全部存 `chrome.storage.local`,沿用现有扁平 key 的约定(与 `evalMask` / `allowlist` 一致),`change` 即时持久化(无需"保存"按钮,与 popup 行为一致)。
+All configuration items are stored in `chrome.storage.local`, following the existing flat-key convention (consistent with `evalMask` / `allowlist`), with `change` events persisting immediately (no "Save" button needed, consistent with popup behavior).
 
-### 配置项清单
+### Configuration Item Inventory
 
-| key | 类型 | 默认 | 关联 | 作用 |
+| key | Type | Default | Related | Purpose |
 |-----|------|------|------|------|
-| `pageEvalEnabled` | bool | true | ADR-0008 | page_eval 总开关,关闭后直接拒绝执行任意 JS |
-| `evalMask` | bool | true | ADR-0008 | page_eval 返回值脱敏 |
-| `confirmHighRiskClick` | bool | true | ADR-0006 | 高危点击(提交/链接)确认开关 |
-| `warnPreciseSnapshot` | bool | true | ADR-0009 | 精确 snapshot 前的信息提示 |
-| `confirmGraceMs` | int | 60000 | ADR-0006 | 确认后同源同类免重复的宽限期(0=每次确认) |
-| `clickToastTimeoutMs` | int | 30000 | ADR-0006 | 点击确认 Toast 自动拒绝超时 |
-| `evalToastTimeoutMs` | int | 45000 | ADR-0008 | eval 确认 Toast 自动拒绝超时 |
-| `disabledTools` | string[] | [] | — | 被禁用的工具(op)名集合 |
-| `allowAllSites` | bool | false | ADR-0004 | 跳过逐站点审批,允许所有站点 |
+| `pageEvalEnabled` | bool | true | ADR-0008 | page_eval master switch; when off, arbitrary JS execution is rejected outright |
+| `evalMask` | bool | true | ADR-0008 | page_eval return-value redaction |
+| `confirmHighRiskClick` | bool | true | ADR-0006 | High-risk click (submit/link) confirmation switch |
+| `warnPreciseSnapshot` | bool | true | ADR-0009 | Informational prompt before a precise snapshot |
+| `confirmGraceMs` | int | 60000 | ADR-0006 | Grace period exempting repeat confirmations for the same origin and type (0 = confirm every time) |
+| `clickToastTimeoutMs` | int | 30000 | ADR-0006 | Auto-reject timeout for the click confirmation Toast |
+| `evalToastTimeoutMs` | int | 45000 | ADR-0008 | Auto-reject timeout for the eval confirmation Toast |
+| `disabledTools` | string[] | [] | — | Set of disabled tool (op) names |
+| `allowAllSites` | bool | false | ADR-0004 | Skip per-site approval and allow all sites |
 
-## 考虑过的替代方案
+## Alternatives Considered
 
-### 方案 A:全部塞进 popup
-- **优点**:实现最简,无需新文件;用户点扩展图标即见所有配置
-- **缺点**:popup 宽 320px、不可滚动太多;开关一多极拥挤;popup 定位是"连接状态 + 授权快捷操作",混入大堆配置职责不清
-- **未被选**:扩展已接近 popup 容量上限
+### Option A: Cram everything into the popup
+- **Pros**: Simplest to implement, no new files needed; users see all settings by clicking the extension icon
+- **Cons**: The popup is 320px wide and can't scroll much; it gets extremely crowded once switches multiply; the popup's role is "connection status + approval shortcuts," so mixing in a big pile of settings blurs its responsibilities
+- **Not chosen**: The extension is already near the popup's capacity limit
 
-### 方案 B:独立 Options 页(用户选择)
-- **优点**:空间充足、可分组、可扩展;符合 Chrome 扩展惯例(详情页有"扩展程序选项"入口);popup 保持轻量
-- **缺点**:多一次跳转(点扩展图标→点设置);options 页与 popup 是两个上下文,状态需通过 storage 同步
-- **实现**
+### Option B: Dedicated Options page (chosen)
+- **Pros**: Ample space, groupable, extensible; matches Chrome extension conventions (the details page has an "Extension options" entry); keeps the popup lightweight
+- **Cons**: One extra jump (click extension icon → click Settings); the options page and popup are two separate contexts, so state must be synced via storage
+- **Implementation**
 
-### 方案 C:全屏 tab,取消 popup 配置入口
-- **优点**:最干净
-- **缺点**:每次配置要点"扩展详情→选项",发现性差
-- **排除**:popup 加跳转按钮成本极低,保留更友好
+### Option C: Full-screen tab, remove the popup settings entry
+- **Pros**: Cleanest
+- **Cons**: Every configuration change requires clicking "Extension details → Options," poor discoverability
+- **Ruled out**: Adding a jump button to the popup costs almost nothing, so keeping it is friendlier
 
-## 关键设计决策
+## Key Design Decisions
 
-### 1. 工具禁用在扩展 dispatch 层拦截,不在 Rust tools/list 过滤
+### 1. Tool disabling is intercepted at the extension dispatch layer, not filtered in the Rust tools/list
 
-`disabledTools` 在 `background.js` 的 `dispatch()` 入口检查:命中则 `throw new Error("tool disabled in settings: <op>")`。
+`disabledTools` is checked at the entry of `dispatch()` in `background.js`: on a hit, it does `throw new Error("tool disabled in settings: <op>")`.
 
-**为什么不改 `src/tools.rs` 的 `tools/list`**:配置的唯一数据源在扩展(`chrome.storage.local`),Rust host 读不到。若要让 AI 直接"看不到"被禁工具,需要扩展把配置同步给 host(改 IPC 协议),工程量大且引入跨进程一致性维护。
+**Why not change `tools/list` in `src/tools.rs`**: the sole data source for configuration lives in the extension (`chrome.storage.local`), which the Rust host cannot read. To make the AI literally "not see" disabled tools, the extension would need to sync the configuration to the host (changing the IPC protocol) — a large amount of work that introduces the burden of maintaining cross-process consistency.
 
-**代价**:AI 仍会在 `tools/list` 里看到被禁工具,调用时才收到清晰错误。权衡后接受——被禁工具至少无法执行,且错误信息明确,符合"安全靠拦截而非靠隐藏"的原则。
+**Cost**: the AI still sees disabled tools in `tools/list` and only receives a clear error on invocation. This is accepted after weighing the trade-off — disabled tools at least cannot execute, and the error message is explicit, consistent with the principle "security through interception, not through hiding."
 
-### 2. allowAllSites 开关需同步申请 <all_urls> 权限
+### 2. The allowAllSites switch must synchronously request the <all_urls> permission
 
-开启"允许所有站点"后,`ensureAllowed` 直接放行,不再逐站点审批。但扩展仍需 `<all_urls>` host permission 才能给任意页面注入 content script——否则跳过授权判断后注入静默失败。
+Once "allow all sites" is enabled, `ensureAllowed` lets requests through directly, no longer performing per-site approval. But the extension still needs the `<all_urls>` host permission to inject the content script into arbitrary pages — otherwise injection silently fails after the approval check is skipped.
 
-`optional_host_permissions: ["<all_urls>"]` 已声明,开启开关时在 options 页的 change 事件里(合法 user gesture)调 `chrome.permissions.request({ origins: ["<all_urls>"] })`;用户拒绝则 checkbox 回滚。加载时用 `chrome.permissions.contains` 校正存储值与实际权限,防漂移。
+`optional_host_permissions: ["<all_urls>"]` is already declared; when the switch is turned on, `chrome.permissions.request({ origins: ["<all_urls>"] })` is called inside the options page's change event (a valid user gesture); if the user denies, the checkbox rolls back. On load, `chrome.permissions.contains` is used to reconcile the stored value with the actual permission, preventing drift.
 
-### 3. options 页加站点不主动申请 host 权限
+### 3. Adding a site on the options page does not proactively request the host permission
 
-手动添加白名单时只写 `chrome.storage.local`。理由:MV3 下 `chrome.permissions.request` 必须在用户手势(popup/action)上下文,options 页虽是扩展页面但申请权限受限。真实访问该站点时,`ensureAllowed` 会触发正常的权限申请流程(走 popup 授权弹窗)。
+Manually adding to the allowlist only writes to `chrome.storage.local`. The rationale: under MV3, `chrome.permissions.request` must run in a user-gesture (popup/action) context; although the options page is an extension page, requesting permissions from it is restricted. When the site is actually accessed, `ensureAllowed` triggers the normal permission-request flow (going through the popup approval prompt).
 
-### 4. DEFAULTS 常量三处镜像
+### 4. The DEFAULTS constant is mirrored in three places
 
-配置项的默认值在 `options.js` / `background.js` / `content.js` 各自定义 `DEFAULTS` 对象(content.js 为页内行为子集),注释标明 KEEP IN SYNC。这沿用了项目现有的跨文件同步约定(如 `op` 字符串在 background.js / content.js / tools.rs 三处镜像)。
+The default values for configuration items are defined in separate `DEFAULTS` objects in `options.js` / `background.js` / `content.js` (content.js holding the subset of in-page behaviors), with comments marking KEEP IN SYNC. This follows the project's existing cross-file sync convention (e.g., the `op` strings mirrored in three places across background.js / content.js / tools.rs).
 
-## 后果
+## Consequences
 
-### 正面
-- **安全策略可调**:用户能按场景关闭烦人的确认、调超时、关 page_eval,不再被焊死
-- **职责清晰**:popup 专注连接状态 + 授权快捷操作;配置归 options 页
-- **可扩展**:新增配置项只需加 storage key + DEFAULTS + UI 控件,模式统一
-- **符合惯例**:`options_ui` 是 Chrome 扩展管理配置的标准做法
+### Positive
+- **Adjustable security policy**: users can turn off annoying confirmations, tune timeouts, and disable page_eval per scenario, no longer welded shut
+- **Clear responsibilities**: the popup focuses on connection status + approval shortcuts; configuration belongs to the options page
+- **Extensible**: adding a new configuration item only requires a storage key + DEFAULTS + a UI control, following a uniform pattern
+- **Follows convention**: `options_ui` is the standard Chrome extension way to manage settings
 
-### 负面
-- **DEFAULTS 三处镜像**:加配置项要同步改三个文件的 DEFAULTS,易漏。受限于扩展各脚本独立加载,无共享模块的轻量方案(项目一贯用注释约定同步)
-- **工具禁用非隐藏**:AI 仍看到被禁工具,靠调用时报错拦截——非"真正从工具集移除"
-- **allowAllSites 风险**:开启后任意站点(含银行/邮箱/内网)无需授权即可操作,UI 有醒目警告但最终依赖用户判断
+### Negative
+- **DEFAULTS mirrored in three places**: adding a configuration item requires syncing DEFAULTS across three files, which is easy to miss. Constrained by the fact that each extension script loads independently, there is no lightweight shared-module option (the project consistently uses comment conventions for syncing)
+- **Tool disabling is not hiding**: the AI still sees disabled tools and is intercepted by an error at invocation time — not "truly removed from the tool set"
+- **allowAllSites risk**: once enabled, any site (including banking/email/intranet) can be operated on without approval; the UI has a prominent warning but ultimately relies on the user's judgment
 
-### 中性
-- 配置即时生效(改即存 storage,下次动作读取新值),但 content.js 已注入页面的 `_maskCache` 等内存缓存需下次 eval 才刷新
+### Neutral
+- Configuration takes effect immediately (a change is stored to storage right away, and the next action reads the new value), but in-memory caches such as `_maskCache` in content.js already injected into a page only refresh on the next eval
 
-## 实施细节
+## Implementation Details
 
-- `extension/manifest.json`:加 `options_ui: { page: "options.html", open_in_tab: true }`
-- `extension/options.html`:整页布局,分组(安全 / 确认超时与宽限期 / 工具启用 / 允许的站点),危险开关有黄色警告卡片
-- `extension/options.js`:读写 storage、表单即时持久化、allowlist 增删、allowAllSites 权限申请/移除/校正
-- `extension/popup.html` / `popup.js`:加"⚙ 设置"按钮(`openOptionsPage`),移除 evalMask 区
-- `extension/background.js`:DEFAULTS + `getSetting`、`dispatch` 入口 disabledTools 拦截、`add_allow` 消息、`snapshotPrecise` 读 warnPreciseSnapshot、`ensureAllowed`/`ensureDomainAllowed` 读 allowAllSites
-- `extension/content.js`:DEFAULTS + `getSetting`、runEval 读 pageEvalEnabled、click 读 confirmHighRiskClick、宽限期/超时读 storage
+- `extension/manifest.json`: add `options_ui: { page: "options.html", open_in_tab: true }`
+- `extension/options.html`: full-page layout, grouped (Security / Confirmation timeouts and grace period / Tool enablement / Allowed sites), with a yellow warning card for dangerous switches
+- `extension/options.js`: read/write storage, immediate form persistence, allowlist add/remove, allowAllSites permission request/removal/reconciliation
+- `extension/popup.html` / `popup.js`: add a "⚙ Settings" button (`openOptionsPage`), remove the evalMask section
+- `extension/background.js`: DEFAULTS + `getSetting`, disabledTools interception at the `dispatch` entry, `add_allow` message, `snapshotPrecise` reading warnPreciseSnapshot, `ensureAllowed`/`ensureDomainAllowed` reading allowAllSites
+- `extension/content.js`: DEFAULTS + `getSetting`, runEval reading pageEvalEnabled, click reading confirmHighRiskClick, grace period/timeout reading from storage
 
-## 与其他 ADR 的关系
+## Relationship to Other ADRs
 
-- **[ADR-0004](./0004-allowlist-with-optional-host-permissions.md)**:allowAllSites 是白名单的"总开关"变体——跳过逐站点审批,但底层仍依赖同一套 optional host permissions 机制。手动加白名单补齐了 v0.1 缺失的 add 能力
-- **[ADR-0006](./0006-toast-confirmation-for-high-risk.md)**:confirmHighRiskClick / confirmGraceMs / clickToastTimeoutMs 把该 ADR 的硬编码值(60s 宽限、30s 超时、确认开/关)可配置化,默认值与原决策一致
-- **[ADR-0008](./0008-page-eval-confirmation-channel.md)**:pageEvalEnabled(总开关)、evalMask(迁自 popup)、evalToastTimeoutMs 把该 ADR 的策略可配置化
-- **[ADR-0009](./0009-page-snapshot-precise-debugger.md)**:warnPreciseSnapshot 让精确 snapshot 前的提示可关
+- **[ADR-0004](./0004-allowlist-with-optional-host-permissions.md)**: allowAllSites is a "master switch" variant of the allowlist — it skips per-site approval but underneath still relies on the same optional host permissions mechanism. Manually adding to the allowlist fills in the add capability that was missing in v0.1
+- **[ADR-0006](./0006-toast-confirmation-for-high-risk.md)**: confirmHighRiskClick / confirmGraceMs / clickToastTimeoutMs make this ADR's hardcoded values (60s grace, 30s timeout, confirmation on/off) configurable, with defaults matching the original decision
+- **[ADR-0008](./0008-page-eval-confirmation-channel.md)**: pageEvalEnabled (master switch), evalMask (migrated from the popup), and evalToastTimeoutMs make this ADR's policy configurable
+- **[ADR-0009](./0009-page-snapshot-precise-debugger.md)**: warnPreciseSnapshot makes the pre-precise-snapshot prompt dismissible

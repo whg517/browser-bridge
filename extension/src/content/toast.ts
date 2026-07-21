@@ -90,17 +90,17 @@ function showEvalToast(code: string, url: string, tabTitle: string) {
     const card = document.createElement("div");
     card.className = "zcb-toast-card zcb-danger zcb-eval-card";
     card.innerHTML = `
-        <div class="zcb-toast-title">⚠ Browser Bridge: 执行确认</div>
+        <div class="zcb-toast-title">⚠ Browser Bridge: Confirm execution</div>
         <div class="zcb-eval-meta"></div>
         <pre class="zcb-eval-code"></pre>
-        <div class="zcb-eval-warn">上面的代码将在该页面以你的身份运行,可能读取 token / Cookie / 发起请求。</div>
+        <div class="zcb-eval-warn">The code above will run on this page as you, and may read tokens / cookies / make requests.</div>
         <div class="zcb-toast-actions">
-          <button class="zcb-toast-deny">拒绝</button>
-          <button class="zcb-toast-allow">允许执行</button>
+          <button class="zcb-toast-deny">Deny</button>
+          <button class="zcb-toast-allow">Allow and run</button>
         </div>`;
     // Use textContent for any value to prevent injection from code strings.
     card.querySelector(".zcb-eval-meta")!.textContent =
-      `${truncate(url || "", 60)} · 「${truncate(tabTitle || "无标题", 40)}」`;
+      `${truncate(url || "", 60)} · "${truncate(tabTitle || "Untitled", 40)}"`;
     card.querySelector(".zcb-eval-code")!.textContent = code;
     host.appendChild(card);
 
@@ -144,7 +144,7 @@ export function showInfoToast(message: string) {
         <div class="zcb-info-title">Browser Bridge</div>
         <div class="zcb-info-text"></div>
         <div class="zcb-info-actions">
-          <button class="zcb-info-cancel">取消</button>
+          <button class="zcb-info-cancel">Cancel</button>
         </div>`;
     card.querySelector(".zcb-info-text")!.textContent = message;
     host.appendChild(card);

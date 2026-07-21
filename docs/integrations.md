@@ -1,44 +1,45 @@
-# 接入各家 AI Agent
+# Integrating with Various AI Agents
 
-> 装完 browser-bridge 后,怎么让你的 Agent **发现**并**使用**这 15 个工具。
+> After installing browser-bridge, how to let your Agent **discover** and **use** these 15 tools.
 
-## 核心机制:注册一次,自动发现
+## Core mechanism: register once, auto-discover
 
-主流 Agent(Claude Code、Codex、OpenClaw、Cursor、Windsurf、Cline……)**都是 MCP host**。
-机制统一成两步:
+Mainstream Agents (Claude Code, Codex, OpenClaw, Cursor, Windsurf, Cline, and so on) **are all MCP hosts**.
+The mechanism boils down to two steps:
 
-1. **让 Agent 知道它存在**:把 browser-bridge 注册成一个 MCP server(指向安装好的**绝对路径**、
-   **无参数**的二进制)。
-2. **Agent 自动发现能力**:它 spawn 这个二进制、跑 `initialize` + `tools/list`,15 个工具连同
-   参数 schema 就都出现了——**不需要你写任何 wrapper**。
+1. **Let the Agent know it exists**: register browser-bridge as an MCP server (pointing at the installed
+   binary by its **absolute path**, with **no arguments**).
+2. **The Agent auto-discovers capabilities**: it spawns this binary, runs `initialize` + `tools/list`, and all
+   15 tools show up together with their parameter schemas — **without you writing any wrapper**.
 
-browser-bridge 本身已经是合规的 MCP stdio server,所以**发现这一环无需任何改动**;你要做的只是
-在你的 Agent 里**注册一次**。安装器可自动注册 Claude Code / Codex / OpenClaw(见下)。
+browser-bridge itself is already a compliant MCP stdio server, so **discovery needs no changes at all**; all you
+have to do is **register it once** in your Agent. The installer can auto-register Claude Code / Codex / OpenClaw
+(see below).
 
-**二进制绝对路径**(下文的 `<BIN>`):
+**Binary absolute path** (the `<BIN>` referenced below):
 
-| 平台 | 路径 |
+| Platform | Path |
 |---|---|
 | macOS | `~/.browser-bridge/browser-bridge` |
 | Linux | `~/.local/share/browser-bridge/browser-bridge` |
 | Windows | `%LOCALAPPDATA%\browser-bridge\browser-bridge.exe` |
 
-## 有 CLI 的:一条命令(可让安装器代劳)
+## Those with a CLI: one command (the installer can do it for you)
 
-| Agent | 注册 | 验证 | 安装器自动注册 |
+| Agent | Register | Verify | Installer auto-registration |
 |---|---|---|---|
-| **Claude Code** | `claude mcp add browser-bridge -- "<BIN>"` | `claude mcp list` / 会话内 `/mcp` | `./install.sh --register-claude-code` |
+| **Claude Code** | `claude mcp add browser-bridge -- "<BIN>"` | `claude mcp list` / in-session `/mcp` | `./install.sh --register-claude-code` |
 | **Codex** | `codex mcp add browser-bridge -- "<BIN>"` | `codex mcp list` / `/mcp` | `./install.sh --register-codex` |
 | **OpenClaw** | `openclaw mcp add browser-bridge --command "<BIN>"` | `openclaw mcp probe browser-bridge` | `./install.sh --register-openclaw` |
 
-> OpenClaw 注意:**不要**加 `--transport stdio`(其 CLI 有已知 bug,stdio 是默认)。
+> OpenClaw note: **do not** add `--transport stdio` (its CLI has a known bug, and stdio is the default).
 
-卸载时对称移除:`./install.sh --uninstall --unregister-codex --unregister-openclaw`(或各自
-`<cli> mcp remove browser-bridge`)。
+Remove symmetrically when uninstalling: `./install.sh --uninstall --unregister-codex --unregister-openclaw` (or
+`<cli> mcp remove browser-bridge` for each).
 
-## 用 JSON 配置文件的:粘一个 `mcpServers` 条目
+## Those using a JSON config file: paste in one `mcpServers` entry
 
-条目体都一样,只有文件路径不同:
+The entry body is identical; only the file path differs:
 
 ```json
 {
@@ -48,57 +49,59 @@ browser-bridge 本身已经是合规的 MCP stdio server,所以**发现这一环
 }
 ```
 
-| Agent | 配置文件 | 生效方式 |
+| Agent | Config file | How it takes effect |
 |---|---|---|
-| **Cursor** | `~/.cursor/mcp.json`(全局)或 `<项目>/.cursor/mcp.json` | 自动加载 |
-| **Windsurf / Cascade** | `~/.codeium/windsurf/mcp_config.json` | 点 MCP 面板的 **Refresh** |
-| **Cline**(VS Code 扩展) | 扩展的 `cline_mcp_settings.json` | 保存后自动加载 |
-| **Claude Desktop** | `claude_desktop_config.json` | **完全退出并重启** Claude Desktop |
+| **Cursor** | `~/.cursor/mcp.json` (global) or `<project>/.cursor/mcp.json` | Loaded automatically |
+| **Windsurf / Cascade** | `~/.codeium/windsurf/mcp_config.json` | Click **Refresh** in the MCP panel |
+| **Cline** (VS Code extension) | The extension's `cline_mcp_settings.json` | Loaded automatically after saving |
+| **Claude Desktop** | `claude_desktop_config.json` | **Fully quit and restart** Claude Desktop |
 
-## Codex 手写 TOML(等价于 `codex mcp add`)
+## Codex hand-written TOML (equivalent to `codex mcp add`)
 
 ```toml
 # ~/.codex/config.toml
 [mcp_servers.browser-bridge]
 command = "<BIN>"
 args = []
-# 可选: startup_timeout_sec = 20, tool_timeout_sec = 60
+# Optional: startup_timeout_sec = 20, tool_timeout_sec = 60
 ```
 
-## Hermes Agent(Nous Research)
+## Hermes Agent (Nous Research)
 
-[Hermes Agent](https://hermes-agent.nousresearch.com/) 也是 **MCP host**:client 模式启动时发现
-MCP server,把它们的工具和内置工具注册进同一个 registry。注册两种方式:
+[Hermes Agent](https://hermes-agent.nousresearch.com/) is also an **MCP host**: when started in client mode it
+discovers MCP servers and registers their tools alongside its built-in tools in the same registry. Two ways to
+register:
 
 ```sh
-# CLI(会走"先发现再选工具"的交互清单,勾选要暴露给 agent 的工具)
+# CLI (goes through the "discover first, then pick tools" interactive checklist; select which tools to expose to the agent)
 hermes mcp add browser-bridge --command "<BIN>"
 ```
 
-或直接编辑 `~/.hermes/config.yaml`(`mcp_servers` 是**按名字索引的 map**,不是 list):
+Or edit `~/.hermes/config.yaml` directly (`mcp_servers` is a **map indexed by name**, not a list):
 
 ```yaml
 mcp_servers:
   browser-bridge:
-    command: "<BIN>"        # 安装好的绝对路径
+    command: "<BIN>"        # the installed absolute path
     args: []
     tools:
       include: [tab_list, tab_open, page_snapshot, page_click, page_fill, page_text]
-      # 省略 include 则暴露全部 15 个;Hermes 支持按需筛选,避免"工具膨胀"
+      # Omit include to expose all 15; Hermes supports on-demand filtering to avoid "tool bloat"
 ```
 
-- **生效**:会话内 `/reload-mcp`,或重启 Hermes。
-- **卸载**:删掉 `~/.hermes/config.yaml` 里的 `browser-bridge:` 块(Hermes 没有 `mcp remove`/
-  `mcp list` 子命令)。
-- **注意**:browser-bridge 的安装器**不自动注册 Hermes**——`hermes mcp add` 是交互式的(要你勾选
-  工具),且 Hermes 无 `mcp list`(未知子命令可能进交互选择器而挂起),所以这一步请手动跑。
+- **Take effect**: run `/reload-mcp` in-session, or restart Hermes.
+- **Uninstall**: delete the `browser-bridge:` block from `~/.hermes/config.yaml` (Hermes has no `mcp remove` /
+  `mcp list` subcommands).
+- **Note**: browser-bridge's installer **does not auto-register Hermes** — `hermes mcp add` is interactive (it
+  wants you to select tools), and Hermes has no `mcp list` (an unknown subcommand may drop into the interactive
+  selector and hang), so run this step manually.
 
-> 别混淆:**Hermes Agent**(上面这个产品,MCP host)≠ **Hermes 格式**(下节,Nous 的函数调用**提示词
-> 格式**)。
+> Don't confuse them: **Hermes Agent** (the product above, an MCP host) ≠ **Hermes format** (next section, Nous's
+> function-calling **prompt format**).
 
 ## LangChain / LangGraph
 
-LangChain 核心不是 MCP-native,但有官方桥接 `langchain-mcp-adapters`(PyPI):
+LangChain's core is not MCP-native, but there is an official bridge, `langchain-mcp-adapters` (PyPI):
 
 ```python
 from langchain_mcp_adapters.client import MultiServerMCPClient
@@ -107,36 +110,39 @@ from langchain.agents import create_agent
 client = MultiServerMCPClient({
     "browser-bridge": {"command": "<BIN>", "args": [], "transport": "stdio"},
 })
-tools = await client.get_tools()          # 跑 initialize + tools/list,拿到全部 15 个工具
+tools = await client.get_tools()          # runs initialize + tools/list, getting all 15 tools
 agent = create_agent("openai:gpt-4.1", tools)
 ```
 
-## Hermes / harmony **格式**(≠ Hermes Agent 产品):是格式,不是 MCP 客户端 → 用 CLI
+## Hermes / harmony **format** (≠ the Hermes Agent product): it's a format, not an MCP client → use the CLI
 
-这里指**函数调用的提示词格式**:**Hermes 格式**(Nous 的 `<tools>`/`<tool_call>`)和 **harmony**
-(OpenAI,gpt-oss/Codex 用的 functions 命名空间)。它们本身不懂 MCP、不做发现。
-(注意与上面的 **Hermes Agent 产品**区分——那个是 MCP host,按上节注册即可。)分两种情况:
+This refers to **function-calling prompt formats**: the **Hermes format** (Nous's `<tools>`/`<tool_call>`) and
+**harmony** (OpenAI, the functions namespace used by gpt-oss/Codex). They themselves don't understand MCP and don't
+do discovery. (Distinguish this from the **Hermes Agent product** above — that one is an MCP host, just register it
+per the previous section.) There are two cases:
 
-- **模型跑在某个 MCP host 里**(Codex、OpenClaw 等)→ 按上面注册 MCP server 即可,host 负责一切。
-- **你的 harness 直接驱动一个 Hermes/harmony 格式的模型**(没有 MCP 客户端)→ 用 browser-bridge 的
-  **非 MCP CLI** 补上"发现 + 调用":
+- **The model runs inside some MCP host** (Codex, OpenClaw, etc.) → just register the MCP server as above, and the
+  host handles everything.
+- **Your harness drives a Hermes/harmony-format model directly** (no MCP client) → use browser-bridge's
+  **non-MCP CLI** to fill in "discovery + invocation":
 
   ```sh
-  browser-bridge tools --json    # 发现:{tools:[{name,description,inputSchema}]},把每个工具
-                                 # 转成 Hermes 的 <tools> / harmony 的 functions 命名空间,注入系统提示
-  browser-bridge call <tool> '<json-args>'   # 调用:模型发出工具调用时,harness 跑这条,把原始 JSON 结果喂回
+  browser-bridge tools --json    # Discovery: {tools:[{name,description,inputSchema}]}; turn each tool
+                                 # into Hermes's <tools> / harmony's functions namespace and inject it into the system prompt
+  browser-bridge call <tool> '<json-args>'   # Invocation: when the model emits a tool call, the harness runs this and feeds the raw JSON result back
   ```
 
-  `tools --json` 的每条是 `{name, description, inputSchema}`,与 MCP `tools/list` 同形,转成任意
-  函数调用格式都很直接。详见 [cli.md](./cli.md)。
+  Each entry from `tools --json` is `{name, description, inputSchema}`, the same shape as MCP `tools/list`, so
+  converting it into any function-calling format is straightforward. See [cli.md](./cli.md) for details.
 
-## 通用规律
+## General rules
 
-- **是 MCP host** → 注册 MCP server(上面),自动发现,首选。
-- **不是 MCP host / 裸脚本** → `browser-bridge tools --json`(发现)+ `browser-bridge call`(调用)。
-- 无论哪种,browser-bridge 端都**不用改**——它同时是 MCP server 和自描述 CLI。
+- **Is an MCP host** → register an MCP server (above), auto-discover, preferred.
+- **Not an MCP host / a bare script** → `browser-bridge tools --json` (discovery) + `browser-bridge call`
+  (invocation).
+- Either way, the browser-bridge side **needs no changes** — it is both an MCP server and a self-describing CLI.
 
-## 相关
+## See Also
 
-- CLI 与 `tools`/`call`:[cli.md](./cli.md)
-- 安装与客户端注册:[../install/install.sh](../install/install.sh) · [../README.md](../README.md)
+- The CLI and `tools`/`call`: [cli.md](./cli.md)
+- Installation and client registration: [../install/install.sh](../install/install.sh) · [../README.md](../README.md)

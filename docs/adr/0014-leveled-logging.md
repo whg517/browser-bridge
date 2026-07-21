@@ -1,79 +1,79 @@
-# ADR-0014:分级日志(BB_LOG)与 thiserror 类型化错误
+# ADR-0014: Leveled Logging (BB_LOG) and Typed Errors with thiserror
 
-- **状态**:Accepted
-- **日期**:2026-07-10
-- **决策者**:用户 + AI 助手
+- **Status**: Accepted
+- **Date**: 2026-07-10
+- **Deciders**: User + AI assistant
 
-## 背景
+## Background
 
-整改前,Rust 后端的诊断输出是散落的 `eprintln!`,错误处理则大量是"字符串化"的——工具调用路径上出错就地拼一个 `String`,没有类型区分,调用方无法按错误种类分流,`Display` 文本也四散在各处不好统一。两个具体痛点:
+Before this rework, the Rust backend's diagnostic output was scattered `eprintln!` calls, and error handling was largely "stringly-typed" — whenever something went wrong on a tool-call path, a `String` was assembled on the spot, with no type distinction, so callers could not route by error kind, and the `Display` text was scattered everywhere and hard to unify. Two specific pain points:
 
-- **日志无分级、无开关**:所有 `eprintln!` 要么永远打、要么被删,无法在排障时临时调高 verbosity;而且散落各处,格式不统一。
-- **错误 stringly-typed**:session/tool 边界的错误(未连接、写失败、超时、连接断开、未知工具、扩展自身报错)全靠临时字符串,既不能穷举也不能 match,`isError` 内容文本组织混乱。
+- **Logging had no levels and no switch**: every `eprintln!` was either always printed or deleted, so verbosity could not be temporarily raised during troubleshooting; and being scattered around, the formatting was inconsistent.
+- **Errors were stringly-typed**: errors at the session/tool boundary (not connected, write failed, timeout, connection dropped, unknown tool, the extension itself reporting an error) all relied on ad-hoc strings, which could neither be enumerated nor matched on, and the `isError` content text was disorganized.
 
-同时有个硬约束贯穿始终:**两个二进制模式的 stdout 都是协议流**——native host 走 4 字节前缀 NM 帧,MCP server 走 NDJSON JSON-RPC(见架构文档 §3)。任何非协议字节写进 stdout 都会损坏帧、断开连接。所以一切诊断输出**只能走 stderr**。
+At the same time, a hard constraint runs throughout: **stdout for both binary modes is a protocol stream** — the native host uses 4-byte-prefixed NM frames, and the MCP server uses NDJSON JSON-RPC (see the architecture doc §3). Any non-protocol bytes written to stdout would corrupt frames and drop the connection. So all diagnostic output **must go to stderr only**.
 
-## 决策
+## Decision
 
-**引入一个最小的、由 `BB_LOG` 环境变量控制的分级 stderr 日志器(`src/log.rs`),取代散落的 `eprintln!`;并在工具调用路径上用 thiserror 定义类型化错误(`src/error.rs`)。**
+**Introduce a minimal, `BB_LOG`-controlled leveled stderr logger (`src/log.rs`) to replace the scattered `eprintln!`; and define typed errors with thiserror on the tool-call path (`src/error.rs`).**
 
-### 1. 分级日志(`src/log.rs`)
-- 四级 `Level`:`Error < Warn < Info < Debug`。
-- 阈值由 `BB_LOG`(`error|warn|info|debug`)在进程启动时经 `OnceLock` 解析一次;**未设或无法识别一律回退 `info`**。
-- 只写 stderr:`eprintln!("[{LEVEL}] [{tag}] {msg}")`,过阈值才打。
-- 提供 `log_error!` / `log_warn!` / `log_info!` / `log_debug!` 宏,统一 tag + 格式。
-- 默认 `info`,`debug` 行默认隐藏,排障时启动加 `BB_LOG=debug` 即可放开,无需重编译。
+### 1. Leveled logging (`src/log.rs`)
+- Four-level `Level`: `Error < Warn < Info < Debug`.
+- The threshold is parsed once at process startup from `BB_LOG` (`error|warn|info|debug`) via `OnceLock`; **if unset or unrecognized, it always falls back to `info`**.
+- Writes to stderr only: `eprintln!("[{LEVEL}] [{tag}] {msg}")`, printing only above the threshold.
+- Provides `log_error!` / `log_warn!` / `log_info!` / `log_debug!` macros with a unified tag + format.
+- Defaults to `info`; `debug` lines are hidden by default, and during troubleshooting you can just start with `BB_LOG=debug` to open them up, with no recompile.
 
-### 2. 类型化错误(`src/error.rs`)
-- `CallError` 枚举用 `thiserror` 派生 `Error` + `Display`,覆盖工具调用边界的错误种类:`NotConnected` / `Write(io::Error)` / `Timeout(Duration)` / `Disconnected` / `UnknownTool(String)` / `Extension(String)`。
-- 每个变体的 `Display` 文本**就是模型最终看到的错误内容**(经 `tools::dispatch` 以 `isError` 呈现),措辞面向模型可读、可反应。
-- IO/wire 层(`protocol`、`ipc`)继续用 `std::io::Result`——`io::Error` 在那一层本就是对的货币,不强行套 `CallError`;类型化只覆盖更高层的 session/tool 边界。
+### 2. Typed errors (`src/error.rs`)
+- The `CallError` enum derives `Error` + `Display` via `thiserror`, covering the error kinds at the tool-call boundary: `NotConnected` / `Write(io::Error)` / `Timeout(Duration)` / `Disconnected` / `UnknownTool(String)` / `Extension(String)`.
+- Each variant's `Display` text **is exactly the error content the model ultimately sees** (surfaced by `tools::dispatch` as `isError`), worded to be readable and actionable for the model.
+- The IO/wire layer (`protocol`, `ipc`) continues to use `std::io::Result` — `io::Error` is the right currency at that layer, so we don't force `CallError` onto it; typing only covers the higher-level session/tool boundary.
 
-## 考虑过的替代方案
+## Alternatives Considered
 
-### 日志:`log` + `env_logger` crate
-- **优点**:Rust 生态事实标准,facade + 后端解耦,格式/过滤功能齐全。
-- **缺点**:
-  - 两个 crate(外加它们的传递依赖:`env_logger` 拉 `regex`/`termcolor`/时间格式等一串),显著扩大依赖树和二进制体积。
-  - 本项目的需求极小:四级、按 env 阈值、只写 stderr、固定格式。`env_logger` 的绝大多数能力(模块级过滤、彩色、时间戳、多后端)用不上。
-  - 与项目"依赖最小、产物可审计、608KB"的取向冲突(见 ADR-0001)。
-- **未被选**:手写日志器仅约百行、零传递依赖,完全覆盖需求。
+### Logging: the `log` + `env_logger` crates
+- **Pros**: the de facto standard in the Rust ecosystem, facade + backend decoupling, full formatting/filtering features.
+- **Cons**:
+  - Two crates (plus their transitive dependencies: `env_logger` pulls in a string of things like `regex`/`termcolor`/time formatting), significantly expanding the dependency tree and binary size.
+  - This project's needs are minimal: four levels, an env-based threshold, stderr-only, a fixed format. The vast majority of `env_logger`'s capabilities (module-level filtering, color, timestamps, multiple backends) go unused.
+  - Conflicts with the project's "minimal dependencies, auditable artifact, 608KB" orientation (see ADR-0001).
+- **Not chosen**: a hand-written logger is only about a hundred lines with zero transitive dependencies and fully covers the needs.
 
-### 日志:继续裸 `eprintln!`
-- **优点**:零抽象。
-- **缺点**:无分级、无开关、格式不统一,排障时要么信息淹没要么无从加档。
-- **未被选**:整改就是要给诊断输出补分级和开关。
+### Logging: keep bare `eprintln!`
+- **Pros**: zero abstraction.
+- **Cons**: no levels, no switch, inconsistent formatting; during troubleshooting you either drown in output or have no way to turn things up.
+- **Not chosen**: the whole point of the rework is to add levels and a switch to diagnostic output.
 
-### 错误:继续 stringly-typed / 引入 `anyhow`
-- **裸 String**:无法穷举、无法 match、`Display` 分散。
-- **anyhow**:适合"应用顶层随手 `?` + context"的场景,但它是**擦除类型**的,调用方拿不到具体变体分流——而这里恰恰想让 session/tool 边界的错误可区分(如 `NotConnected` vs `Timeout` vs `Extension`)。
-- **thiserror(采用)**:为库/边界定义**有名字、可 match、Display 可控**的错误枚举而生,正好匹配"工具路径要区分错误种类、且 Display 文本要精确面向模型"的需求。
+### Errors: keep stringly-typed / introduce `anyhow`
+- **Bare String**: cannot be enumerated, cannot be matched on, `Display` is scattered.
+- **anyhow**: well suited to the "application top-level, casual `?` + context" scenario, but it is **type-erased**, so callers cannot obtain a specific variant to route on — whereas here we specifically want the session/tool boundary errors to be distinguishable (e.g. `NotConnected` vs `Timeout` vs `Extension`).
+- **thiserror (adopted)**: built for defining **named, matchable, Display-controllable** error enums for libraries/boundaries, which exactly matches the need for "the tool path must distinguish error kinds, and the Display text must be precisely model-facing".
 
-## 后果
+## Consequences
 
-### 正面
-- **可控诊断**:分级 + `BB_LOG` 让排障能按需放开 verbosity,不重编译;stderr-only 保证不污染协议 stdout。
-- **错误可分流**:`CallError` 各变体可 match、Display 面向模型,`isError` 内容组织统一。
-- **依赖仍克制**:日志器手写、零传递依赖;错误仅引入 thiserror(编译期派生宏,运行时零成本)。
+### Positive
+- **Controllable diagnostics**: levels + `BB_LOG` let troubleshooting raise verbosity on demand without recompiling; stderr-only guarantees the protocol stdout is not polluted.
+- **Routable errors**: each `CallError` variant can be matched on, `Display` is model-facing, and the `isError` content is uniformly organized.
+- **Dependencies still restrained**: the logger is hand-written with zero transitive dependencies; errors only bring in thiserror (a compile-time derive macro, zero-cost at runtime).
 
-### 负面
-- **新增两个依赖**:`libc`(信号处理相关,见下)与 `thiserror`。这**回访了 ADR-0001 "唯一第三方依赖是 serde/serde_json" 的最小依赖立场**——那条现已过时。权衡后接受:
-  - `thiserror` 是编译期 derive 宏,不进运行时、体积影响极小,是 Rust 生态定义错误类型的"零争议"选择;
-  - `libc` 用于 stdout/信号等底层交互(取代部分手动 unsafe/平台细节),是系统级 host 的合理依赖。
-  - 二者都在 Rust 生态里属低风险、广泛审计过的基础 crate,与 ADR-0001"易审计"的精神一致,只是把"唯二依赖"扩成"少数几个基础依赖"。
-- **手写日志器需自维护**:功能虽小但要自己保证正确(已有单测覆盖分级 ordering 与阈值语义)。
+### Negative
+- **Two new dependencies**: `libc` (related to signal handling, see below) and `thiserror`. This **revisits ADR-0001's minimal-dependency stance that "the only third-party dependencies are serde/serde_json"** — that statement is now outdated. Accepted after weighing the trade-offs:
+  - `thiserror` is a compile-time derive macro that does not enter the runtime, has negligible size impact, and is the "uncontroversial" choice for defining error types in the Rust ecosystem;
+  - `libc` is used for low-level interactions such as stdout/signals (replacing some manual unsafe/platform details) and is a reasonable dependency for a system-level host.
+  - Both are low-risk, widely audited foundational crates in the Rust ecosystem, consistent with ADR-0001's "easy to audit" spirit; it merely expands "just two dependencies" to "a handful of foundational dependencies".
+- **The hand-written logger must be self-maintained**: though small in scope, correctness must be ensured by hand (unit tests already cover level ordering and threshold semantics).
 
-### 中性
-- 日志阈值 `OnceLock` 进程内只解析一次——运行中改 `BB_LOG` 不生效,须重启进程;对 host/server 这类常驻进程可接受。
+### Neutral
+- The log threshold is parsed only once per process via `OnceLock` — changing `BB_LOG` at runtime has no effect and requires restarting the process; acceptable for long-running processes like the host/server.
 
-## 实施
+## Implementation
 
-- `src/log.rs`:`Level` 枚举、`threshold()`(OnceLock 解析 `BB_LOG`,默认 `info`)、`emit`、`log_*!` 宏;含分级 ordering / 阈值单测。
-- `src/error.rs`:`CallError`(thiserror 派生),Display 即模型可见文本;含 Display 文本单测。
-- `Cargo.toml`:`[dependencies]` 增 `libc`、`thiserror`(在 serde/serde_json 之外)。
-- 工具调用路径改用 `CallError`;散落 `eprintln!` 迁移到 `log_*!`。
+- `src/log.rs`: the `Level` enum, `threshold()` (`OnceLock` parsing of `BB_LOG`, defaulting to `info`), `emit`, and the `log_*!` macros; includes unit tests for level ordering / thresholds.
+- `src/error.rs`: `CallError` (thiserror-derived), with `Display` being the model-visible text; includes `Display` text unit tests.
+- `Cargo.toml`: adds `libc` and `thiserror` to `[dependencies]` (beyond serde/serde_json).
+- The tool-call path switches to `CallError`; scattered `eprintln!` calls are migrated to `log_*!`.
 
-## 与其他 ADR 的关系
+## Relationship to Other ADRs
 
-- **[ADR-0001](./0001-use-rust-single-binary.md)**:本 ADR 修订该 ADR"唯一第三方依赖是 serde/serde_json"的表述——现在还有 `libc` 与 `thiserror`。最小依赖的原则不变,只是边界从"两个"放宽到"少数几个经审计的基础 crate";架构文档 §8 已同步更新。
-- **[ADR-0013](./0013-ci-and-toolchain.md)**:日志器与错误类型的正确性由 CI 的 rust job(clippy + `cargo test`)守护。
+- **[ADR-0001](./0001-use-rust-single-binary.md)**: this ADR revises that ADR's statement that "the only third-party dependencies are serde/serde_json" — there are now also `libc` and `thiserror`. The minimal-dependency principle is unchanged; only the boundary is relaxed from "two" to "a handful of audited foundational crates"; architecture doc §8 has been updated accordingly.
+- **[ADR-0013](./0013-ci-and-toolchain.md)**: the correctness of the logger and error types is guarded by CI's rust job (clippy + `cargo test`).

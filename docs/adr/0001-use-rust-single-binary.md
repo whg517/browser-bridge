@@ -1,87 +1,87 @@
-# ADR-0001:用 Rust 单二进制 + 子命令分发
+# ADR-0001: Rust Single Binary + Subcommand Dispatch
 
-- **状态**:Accepted(依赖清单部分由 [ADR-0014](./0014-leveled-logging.md) 修订)
-- **日期**:2026-07-07
-- **决策者**:用户 + AI 助手
+- **Status**: Accepted (dependency list partially revised by [ADR-0014](./0014-leveled-logging.md))
+- **Date**: 2026-07-07
+- **Deciders**: User + AI assistant
 
-> **修订note**:本 ADR 原文称唯一依赖是 `serde`/`serde_json`。工程化整改后另加了
-> `libc`(信号处理)与 `thiserror`(类型化错误),见 [ADR-0014](./0014-leveled-logging.md)。
-> 单二进制、手写协议、不用 tokio 的核心决策不变。
+> **Revision note**: This ADR originally stated that the only dependencies were `serde`/`serde_json`. After engineering cleanup,
+> `libc` (signal handling) and `thiserror` (typed errors) were added as well; see [ADR-0014](./0014-leveled-logging.md).
+> The core decisions — single binary, hand-written protocol, no tokio — remain unchanged.
 
-## 背景
+## Context
 
-browser-bridge 的后端需要同时承担两个角色:
+The browser-bridge backend needs to play two roles simultaneously:
 
-1. **MCP server**:由 MCP 客户端通过其 MCP server 配置 spawn,讲 JSON-RPC over stdio
-2. **Native Messaging host**:由 Chrome 通过 host manifest spawn,讲 4 字节长度前缀帧 over stdio
+1. **MCP server**: spawned by the MCP client through its MCP server configuration, speaking JSON-RPC over stdio
+2. **Native Messaging host**: spawned by Chrome through the host manifest, speaking 4-byte length-prefixed frames over stdio
 
-这两个角色都需要长期运行、都需要处理 stdin/stdout 的二进制协议、都需要可靠。
+Both roles need to run long-term, both need to handle binary protocols over stdin/stdout, and both need to be reliable.
 
-最初的设计稿(基于"环境只有 Python 3.9.6"的错误探测,后已纠正)用 Python 标准库实现。在核实环境时发现用户机器实际有 Homebrew Rust 1.96,且 Rust 对这个场景有显著优势。
+The initial design draft (based on the mistaken detection that "the environment only had Python 3.9.6," later corrected) was implemented with the Python standard library. When verifying the environment, we found that the user's machine actually had Homebrew Rust 1.96, and that Rust offers significant advantages for this scenario.
 
-## 决策
+## Decision
 
-**用 Rust 写后端,编译成单个二进制,通过子命令分发模式:**
+**Write the backend in Rust, compile it into a single binary, and dispatch via a subcommand pattern:**
 
-- 默认调用(无参数)= MCP server 模式
-- `--native-host` = native host 模式
-- `--help` = 帮助
+- Default invocation (no arguments) = MCP server mode
+- `--native-host` = native host mode
+- `--help` = help
 
-两个模式共享同一个 crate、同一份协议代码(`protocol.rs`),只是入口分发不同。
+The two modes share the same crate and the same protocol code (`protocol.rs`); only the entry-point dispatch differs.
 
-## 考虑过的替代方案
+## Alternatives Considered
 
-### 方案 A:Python 标准库(最初设计)
-- **优点**:零编译;跨平台;标准库够用
-- **缺点**:
-  - 运行时依赖 Python 环境(用户机器虽有,但是 Homebrew 装的,PATH 不一定有)
-  - host manifest 的 `path` 要指向 Python 解释器 + 脚本,wrapper 更复杂
-  - 性能/内存不如编译型语言(常驻进程)
-  - **决定性问题**:用户的实际 Python 环境是 Homebrew 装的多版本,系统 `python3` 是 3.9.6,host 启动时用哪个不确定,易碎
+### Option A: Python standard library (initial design)
+- **Pros**: no compilation; cross-platform; the standard library is sufficient
+- **Cons**:
+  - Runtime dependency on a Python environment (the user's machine has one, but it is installed via Homebrew and may not be on PATH)
+  - The host manifest's `path` would have to point to the Python interpreter plus the script, making the wrapper more complex
+  - Performance/memory are worse than a compiled language (long-running process)
+  - **Decisive issue**: the user's actual Python environment is a multi-version Homebrew install, the system `python3` is 3.9.6, and which one the host uses at startup is uncertain and fragile
 
-### 方案 B:两个独立 Rust crate(host 一个、mcp-server 一个)
-- **优点**:职责边界清晰;各自依赖最小
-- **缺点**:
-  - 两个编译产物要同步分发
-  - 共享协议代码要提成 workspace 内的子 crate,增加结构复杂度
-  - 升级要替换两个文件
+### Option B: two separate Rust crates (one for the host, one for mcp-server)
+- **Pros**: clear separation of responsibilities; minimal dependencies for each
+- **Cons**:
+  - Two compiled artifacts must be distributed in sync
+  - Shared protocol code would have to be extracted into a sub-crate within the workspace, increasing structural complexity
+  - Upgrades require replacing two files
 
-### 方案 C:Go
-- **优点**:单二进制;交叉编译方便;GC 但对这个场景无所谓
-- **缺点**:用户机器没装 Go(已核实 `which go` not found);需要先装工具链
-- **排除**:Rust 已在用户环境(Homebrew),Go 还要装
+### Option C: Go
+- **Pros**: single binary; convenient cross-compilation; GC, but it doesn't matter for this scenario
+- **Cons**: Go is not installed on the user's machine (verified: `which go` not found); the toolchain would need to be installed first
+- **Excluded**: Rust is already in the user's environment (Homebrew), whereas Go would still need to be installed
 
-### 方案 D:Rust + tokio(异步)
-- **优点**:并发模型成熟;生态丰富
-- **缺点**:
-  - 请求是串行的(一次工具调用一个往返),没有高并发需求
-  - tokio 徒增二进制体积(几 MB)、编译时间(几十秒)、复杂度
-  - std 的线程 + mpsc channel 完全够用
+### Option D: Rust + tokio (async)
+- **Pros**: mature concurrency model; rich ecosystem
+- **Cons**:
+  - Requests are serial (one round-trip per tool call), so there is no need for high concurrency
+  - tokio only adds binary size (several MB), compile time (tens of seconds), and complexity
+  - std's threads + mpsc channel are entirely sufficient
 
-## 后果
+## Consequences
 
-### 正面
-- **单二进制分发**:升级 = 拷贝一个文件;host manifest `path` 写绝对路径,与 PATH 无关(契合用户 PATH 不含 homebrew 的现实约束)
-- **产物小**:release + opt-level z + lto,608KB
-- **零运行时依赖**:用户机器不需要任何运行时(对比 Python 方案)
-- **共享代码**:两个模式共用 `protocol.rs` 里的 NM 帧、MCP JSON-RPC、桥接协议定义
-- **panic 安全**:Rust 的 `panic = "abort"` + stderr hook 比 Python 异常更容易保证不污染 stdout
+### Positive
+- **Single-binary distribution**: upgrading = copying one file; the host manifest `path` uses an absolute path, independent of PATH (fitting the real-world constraint that the user's PATH does not include homebrew)
+- **Small artifact**: release + opt-level z + lto, 608KB
+- **Zero runtime dependencies**: the user's machine needs no runtime at all (compared to the Python option)
+- **Shared code**: both modes reuse the NM framing, MCP JSON-RPC, and bridge protocol definitions in `protocol.rs`
+- **Panic safety**: Rust's `panic = "abort"` + stderr hook makes it easier than Python exceptions to guarantee that stdout is not polluted
 
-### 负面
-- **编译需要 Rust 工具链**:用户机器有(Homebrew 1.96),但首次开发环境配置比 Python 略重
-- **`install.sh` 要处理 PATH**:`cargo` 子进程依赖 PATH 里的 `rustc`,而用户 PATH 不含 `/opt/homebrew/bin`。已在 install.sh 里加 `export PATH="$(dirname $CARGO):$PATH"` 处理
-- **改代码要重新编译**:开发迭代比 Python 慢(release ~45s,dev ~5s)
+### Negative / Trade-offs
+- **Compilation requires the Rust toolchain**: the user's machine has it (Homebrew 1.96), but first-time development environment setup is slightly heavier than Python
+- **`install.sh` must handle PATH**: the `cargo` subprocess depends on `rustc` being on PATH, but the user's PATH does not include `/opt/homebrew/bin`. This is handled by adding `export PATH="$(dirname $CARGO):$PATH"` in install.sh
+- **Code changes require recompilation**: development iteration is slower than Python (release ~45s, dev ~5s)
 
-### 中性
-- `serde`/`serde_json` 是唯一第三方依赖,几乎是 Rust 生态的"零争议"选择,审计算 1 个 crate
+### Neutral
+- `serde`/`serde_json` is the only third-party dependency, an almost "zero-controversy" choice in the Rust ecosystem, counting as 1 crate for auditing purposes
 
-## 实施
+## Implementation
 
-- `Cargo.toml` 单 crate,profile.release 设 `opt-level="z"` + `lto=true` + `panic="abort"`
-- `src/main.rs` 根据 `args[1]` 分发到 `mcp_server::run()` 或 `native_host::run()`
-- `install.sh` 编译后拷贝到 `~/.browser-bridge/browser-bridge`,用 `run-host.sh` wrapper 加 `--native-host` 参数(绕过 NM manifest 无 args 字段的限制)
+- `Cargo.toml` is a single crate, with profile.release set to `opt-level="z"` + `lto=true` + `panic="abort"`
+- `src/main.rs` dispatches to `mcp_server::run()` or `native_host::run()` based on `args[1]`
+- `install.sh` compiles and then copies the binary to `~/.browser-bridge/browser-bridge`, using the `run-host.sh` wrapper to add the `--native-host` argument (working around the limitation that the NM manifest has no args field)
 
-## 参考
+## See Also
 
-- 用户环境核实:`/opt/homebrew/bin/cargo` 1.96.1(Homebrew);`~/.cargo` 无 cargo/rustc(非 rustup)
-- 现有同类 host(Claude/Codex/AutoClaw)都是编译型二进制,印证了这个选择
+- User environment verification: `/opt/homebrew/bin/cargo` 1.96.1 (Homebrew); `~/.cargo` has no cargo/rustc (not rustup)
+- Existing hosts of the same kind (Claude/Codex/AutoClaw) are all compiled binaries, confirming this choice

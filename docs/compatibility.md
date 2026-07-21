@@ -1,56 +1,56 @@
-# 兼容性:协议与能力版本
+# Compatibility: Protocol and Capability Versions
 
-> 本文说明 browser-bridge 的三种"版本"、内部桥接协议的兼容策略,以及版本/能力握手的
-> **契约现状**。协议边界的总览见 [architecture.md §11](./architecture.md#11-协议边界错误分类与握手);
-> 契约单一信源见 [`contracts/`](../contracts/README.md)。
+> This document explains browser-bridge's three kinds of "version", the compatibility strategy for the internal bridge protocol, and the
+> **current contract state** of the version/capability handshake. For an overview of the protocol boundary, see [architecture.md §11](./architecture.md#11-protocol-boundaries-error-classification-and-handshake);
+> for the single source of truth for contracts, see [`contracts/`](../contracts/README.md).
 
-## 三种互不相同的"版本"
+## Three Mutually Distinct "Versions"
 
-谈兼容性前先分清三个层级(见 [architecture.md §11.2](./architecture.md#112-能力--版本握手capabilitiesjson--protocol-versionjson)):
+Before discussing compatibility, first distinguish the three levels (see [architecture.md §11.2](./architecture.md#112-capability--version-handshake-capabilitiesjson--protocol-versionjson)):
 
-| 版本 | 取值 | 单源 | 变化含义 |
+| Version | Value | Single source | Meaning of a change |
 |------|------|------|----------|
-| MCP JSON-RPC 版本 | 日期串 `2025-06-18` | [ADR-0007](./adr/0007-mcp-protocol-version-2025-06-18.md) | MCP 客户端 ↔ MCP server 的外部协议;锁定不随意动 |
-| 内部桥接协议版本 | 单调整数(当前 `1`) | [`contracts/protocol-version.json`](../contracts/protocol-version.json) | MCP server ↔ native host ↔ 扩展的 wire 契约 |
-| 扩展/二进制发布版本 | SemVer(如 `0.1.0`) | `Cargo.toml`(见 [ADR-0013](./adr/0013-ci-and-toolchain.md)) | 发布物版本;发布纪律见 [release.md](./release.md) |
+| MCP JSON-RPC version | Date string `2025-06-18` | [ADR-0007](./adr/0007-mcp-protocol-version-2025-06-18.md) | External protocol between MCP client ↔ MCP server; locked, not changed casually |
+| Internal bridge protocol version | Monotonic integer (currently `1`) | [`contracts/protocol-version.json`](../contracts/protocol-version.json) | Wire contract between MCP server ↔ native host ↔ extension |
+| Extension/binary release version | SemVer (e.g. `0.1.0`) | `Cargo.toml` (see [ADR-0013](./adr/0013-ci-and-toolchain.md)) | Release artifact version; for release discipline see [release.md](./release.md) |
 
-本文关注**内部桥接协议版本**:它是一个小整数,仅在桥接 wire 契约
-(`BridgeReq`/`BridgeResp` 形状、`hello` 握手、op/能力语义)发生**不兼容**变更时 +1。
-新增可选字段、新增工具、新增能力这类向后兼容变更不 bump 它(按 SemVer 落在发布版本的
-minor 上,见 [release.md](./release.md#semver-规则)。
+This document focuses on the **internal bridge protocol version**: it is a small integer that is incremented (+1) only when the bridge wire contract
+(the shape of `BridgeReq`/`BridgeResp`, the `hello` handshake, op/capability semantics) undergoes an **incompatible** change.
+Backward-compatible changes such as adding optional fields, adding tools, or adding capabilities do not bump it (under SemVer they land on the
+minor of the release version; see [release.md](./release.md#semver-rules)).
 
-## 能力协商:capabilities.json
+## Capability Negotiation: capabilities.json
 
-除了协议版本,连接还要协商**能力集**。
-[`capabilities.json`](../contracts/capabilities.json) 把工具按共享的 Chrome 权限/作用域
-分组(如 `page_eval`、`cookie_read`、`page_snapshot_precise`),由 `tools.json` 的
-`permission`/`scope` 概念性推导而来。设计意图是:连接时扩展/native host 上报**实际可用**的
-能力 id(权限已授予、工具未被禁用),某工具只有在其能力被 advertise 时才可调用。
+Beyond the protocol version, a connection must also negotiate a **capability set**.
+[`capabilities.json`](../contracts/capabilities.json) groups tools by shared Chrome permission/scope
+(such as `page_eval`, `cookie_read`, `page_snapshot_precise`), conceptually derived from the
+`permission`/`scope` notions in `tools.json`. The design intent is: on connection, the extension/native host reports the **actually available**
+capability ids (permission granted, tool not disabled), and a tool may only be called when its capability is advertised.
 
-## 握手与快速失败(契约已定义,wiring 待接线)
+## Handshake and Fast Failure (Contract Defined, Wiring Pending)
 
-[`protocol-version.json`](../contracts/protocol-version.json) 的 `handshake` 段描述了
-**意图中**的协商流程,叠加在既有的 `hello` secret 鉴权(见
-[ADR-0002](./adr/0002-three-process-architecture-localhost-tcp.md))之上:
+The `handshake` section of [`protocol-version.json`](../contracts/protocol-version.json) describes
+the **intended** negotiation flow, layered on top of the existing `hello` secret authentication (see
+[ADR-0002](./adr/0002-three-process-architecture-localhost-tcp.md)):
 
-1. secret 校验通过后,扩展上报自己的 `protocolVersion` 与能力 id 列表。
-2. server 比对协议版本:**不兼容则快速失败**,回
-   [`errors.json`](../contracts/errors.json) 里的 `PROTOCOL_MISMATCH`
-   (`category: protocol`、`retryable: false`)并给清晰消息,而不是接受连接、
-   等某次 `tools/call` 才以"unknown op"晚爆。
-3. 某工具所需能力未被 advertise → 前置拒绝该工具调用,而非派发一个扩展处理不了的 op。
+1. After the secret check passes, the extension reports its own `protocolVersion` and list of capability ids.
+2. The server compares protocol versions: **on incompatibility it fails fast**, returning
+   the `PROTOCOL_MISMATCH` from [`errors.json`](../contracts/errors.json)
+   (`category: protocol`, `retryable: false`) with a clear message, rather than accepting the connection and
+   only blowing up late on some `tools/call` with an "unknown op".
+3. A capability required by a tool is not advertised → reject that tool call up front, rather than dispatching an op the extension cannot handle.
 
-**诚实说明现状**:上面这套"版本 + 能力握手"目前**只定义在契约里**(`protocol-version.json`
-+ `capabilities.json`),代码侧的握手 **wiring 尚未接线**——已有意延后,触发条件是二进制与
-扩展可独立升级(如上架 Web Store 或分离发布节奏)时再接。当前已落地的是**首阶段**:
-pending 请求与 connection generation 绑定、generation-guarded 重连,让旧连接无法影响新连接
-(见 [architecture.md §5.2](./architecture.md#52-native-host-重连流程))。
-`PROTOCOL_MISMATCH` 错误码已在契约中就位,等 wiring 落地即可启用。
+**An honest note on the current state**: this "version + capability handshake" is currently **defined only in the contracts** (`protocol-version.json`
++ `capabilities.json`); the handshake **wiring on the code side has not yet been connected** — it is intentionally deferred, to be wired up once the binary and
+extension can be upgraded independently (such as when listed on the Chrome Web Store or when release cadences diverge). What has landed so far is the **first stage**:
+pending requests are bound to the connection generation, and generation-guarded reconnection keeps an old connection from affecting a new one
+(see [architecture.md §5.2](./architecture.md#52-native-host-reconnection-flow)).
+The `PROTOCOL_MISMATCH` error code is already in place in the contracts and can be enabled as soon as the wiring lands.
 
-## 相关
+## See Also
 
-- 错误分类与 `PROTOCOL_MISMATCH`:[architecture.md §11.1](./architecture.md#111-错误分类errorsjson)、
-  [`contracts/errors.json`](../contracts/errors.json)。
-- 连接与重连语义:[architecture.md §5.2](./architecture.md#52-native-host-重连流程)、
-  [operations.md](./operations.md)。
-- 发布与 SemVer 纪律:[release.md](./release.md)。
+- Error classification and `PROTOCOL_MISMATCH`: [architecture.md §11.1](./architecture.md#111-error-classification-errorsjson),
+  [`contracts/errors.json`](../contracts/errors.json).
+- Connection and reconnection semantics: [architecture.md §5.2](./architecture.md#52-native-host-reconnection-flow),
+  [operations.md](./operations.md).
+- Release and SemVer discipline: [release.md](./release.md).

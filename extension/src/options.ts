@@ -24,7 +24,7 @@ async function loadSettings(): Promise<Settings> {
 
 async function saveSetting(key: string, value: unknown) {
   await chrome.storage.local.set({ [key]: value });
-  flashToast("已保存");
+  flashToast("Saved");
 }
 
 // ---- toast feedback -------------------------------------------------------
@@ -73,7 +73,7 @@ function wireAllowAllSites() {
       if (!granted) {
         // User declined the OS prompt → roll back.
         target.checked = false;
-        flashToast("未授权 <所有网址>,已保持逐站点审批");
+        flashToast("<all_urls> not granted; kept per-site approval");
         return;
       }
     } else {
@@ -83,7 +83,7 @@ function wireAllowAllSites() {
     if (warn) warn.style.display = checked ? "block" : "none";
     if (card) card.classList.toggle("danger", checked);
     await saveSetting("allowAllSites", checked);
-    flashToast(checked ? "已允许所有站点" : "已恢复逐站点审批");
+    flashToast(checked ? "All sites allowed" : "Restored per-site approval");
   });
 }
 
@@ -132,14 +132,14 @@ async function refreshAllowlist() {
   const list = (resp?.list as string[]) || [];
   const box = $("site-list");
   if (list.length === 0) {
-    box.innerHTML = `<div class="empty">还没有允许任何站点。</div>`;
+    box.innerHTML = `<div class="empty">No sites allowed yet.</div>`;
     return;
   }
   box.innerHTML = list
     .map(
       (g) =>
         `<div class="item"><code>${escapeHtml(g)}</code>` +
-        `<button class="danger" data-glob="${escapeAttr(g)}">移除</button></div>`
+        `<button class="danger" data-glob="${escapeAttr(g)}">Remove</button></div>`
     )
     .join("");
   box.querySelectorAll<HTMLButtonElement>("button").forEach((b) => {
@@ -147,7 +147,7 @@ async function refreshAllowlist() {
       const glob = b.getAttribute("data-glob")!;
       await send({ type: "remove_allow", glob });
       refreshAllowlist();
-      flashToast("已移除");
+      flashToast("Removed");
     };
   });
 }
@@ -162,7 +162,7 @@ function wireAddSite() {
     const v = input.value.trim();
     if (!v) return;
     if (!/^https?:\/\/[^/]+\//.test(v) && !/^https?:\/\/[^/]+$/.test(v)) {
-      flashToast("格式应为 https://域名/*");
+      flashToast("Format should be https://domain/*");
       return;
     }
     // Normalize to an origin glob: https://host/*
@@ -171,16 +171,16 @@ function wireAddSite() {
       const u = new URL(v);
       glob = `${u.protocol}//${u.host}/*`;
     } catch (_) {
-      flashToast("URL 解析失败");
+      flashToast("Failed to parse URL");
       return;
     }
     const resp = await send({ type: "add_allow", glob });
     if (resp && resp.ok) {
       input.value = "";
       refreshAllowlist();
-      flashToast("已添加");
+      flashToast("Added");
     } else {
-      flashToast((resp?.error as string) || "添加失败");
+      flashToast((resp?.error as string) || "Failed to add");
     }
   }
   btn.onclick = add;

@@ -3,7 +3,7 @@
   "tools": [
     {
       "name": "tab_list",
-      "uiLabel": "列出所有标签页",
+      "uiLabel": "List all tabs",
       "risk": "low",
       "scope": "tab",
       "permission": "tabs",
@@ -17,7 +17,7 @@
     },
     {
       "name": "tab_focus",
-      "uiLabel": "切换到指定标签页",
+      "uiLabel": "Switch to a tab",
       "risk": "low",
       "scope": "tab",
       "permission": "tabs",
@@ -38,7 +38,7 @@
     },
     {
       "name": "tab_open",
-      "uiLabel": "打开新标签页(需白名单)",
+      "uiLabel": "Open a new tab (allowlist required)",
       "risk": "medium",
       "scope": "tab",
       "permission": "tabs",
@@ -59,7 +59,7 @@
     },
     {
       "name": "tab_close",
-      "uiLabel": "关闭标签页(带确认)",
+      "uiLabel": "Close a tab (with confirmation)",
       "risk": "high",
       "scope": "tab",
       "permission": "tabs",
@@ -80,7 +80,7 @@
     },
     {
       "name": "page_snapshot",
-      "uiLabel": "快照页面可交互元素",
+      "uiLabel": "Snapshot interactive elements",
       "risk": "low",
       "scope": "page",
       "permission": "scripting",
@@ -94,7 +94,7 @@
     },
     {
       "name": "page_click",
-      "uiLabel": "点击元素",
+      "uiLabel": "Click an element",
       "risk": "high",
       "scope": "page",
       "permission": "scripting",
@@ -117,7 +117,7 @@
     },
     {
       "name": "page_fill",
-      "uiLabel": "填写表单字段",
+      "uiLabel": "Fill a form field",
       "risk": "high",
       "scope": "page",
       "permission": "scripting",
@@ -146,7 +146,7 @@
     },
     {
       "name": "page_text",
-      "uiLabel": "读取页面可见文本",
+      "uiLabel": "Read visible page text",
       "risk": "medium",
       "scope": "page",
       "permission": "scripting",
@@ -160,7 +160,7 @@
     },
     {
       "name": "page_screenshot",
-      "uiLabel": "截取可视区域",
+      "uiLabel": "Capture the viewport",
       "risk": "medium",
       "scope": "page",
       "permission": "tabs",
@@ -174,7 +174,7 @@
     },
     {
       "name": "page_scroll",
-      "uiLabel": "滚动页面",
+      "uiLabel": "Scroll the page",
       "risk": "low",
       "scope": "page",
       "permission": "scripting",
@@ -197,7 +197,7 @@
     },
     {
       "name": "page_wait_for",
-      "uiLabel": "等待条件满足",
+      "uiLabel": "Wait for a condition",
       "risk": "low",
       "scope": "page",
       "permission": "scripting",
@@ -228,7 +228,7 @@
     },
     {
       "name": "page_eval",
-      "uiLabel": "执行任意 JS(高危)",
+      "uiLabel": "Execute arbitrary JS (high-risk)",
       "risk": "critical",
       "scope": "page",
       "permission": "scripting",
@@ -249,7 +249,7 @@
     },
     {
       "name": "page_snapshot_precise",
-      "uiLabel": "精确快照(走 debugger)",
+      "uiLabel": "Precise snapshot (via debugger)",
       "risk": "medium",
       "scope": "page",
       "permission": "debugger",
@@ -268,7 +268,7 @@
     },
     {
       "name": "cookie_get",
-      "uiLabel": "读取 Cookie(脱敏)",
+      "uiLabel": "Read cookies (redacted)",
       "risk": "high",
       "scope": "tab",
       "permission": "cookies",
@@ -295,7 +295,7 @@
     },
     {
       "name": "storage_get",
-      "uiLabel": "读取 localStorage/sessionStorage(脱敏)",
+      "uiLabel": "Read localStorage/sessionStorage (redacted)",
       "risk": "high",
       "scope": "page",
       "permission": "scripting",
