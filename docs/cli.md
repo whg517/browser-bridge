@@ -10,10 +10,25 @@
 | 调用 | 模式 | 说明 |
 |------|------|------|
 | `browser-bridge`(无参数) | MCP server | 默认模式:监听 TCP、持有会话状态、分发工具。由 MCP 客户端 spawn。 |
+| `browser-bridge tools [--json]` | 自描述 | 打印工具目录(名字 + 描述 + 参数)。`--json` 与 MCP `tools/list` 同形。**不启动桥接、无副作用**。 |
 | `browser-bridge call <tool> [json]` | 一次性工具调用 | 面向非 MCP 调用方(脚本 / agent):跑一个工具、打印其**原始结果**、退出。见下。 |
 | `browser-bridge --native-host` | native host | 薄桥接:stdin/stdout NM 帧 ↔ TCP NDJSON。由 Chrome(经 wrapper)spawn。 |
 | `browser-bridge doctor`(别名 `status`) | 只读诊断 | 打印环境与连接自检,不启动 server、不改任何状态。 |
 | `browser-bridge --help` | 帮助 | 用法说明。 |
+
+## `tools`:自描述(给非 MCP agent 发现能力)
+
+MCP 客户端靠 `tools/list` 知道"有哪些工具、怎么调";非 MCP 的 agent(如 OpenClaw)
+看不到它。`tools` 把同一份能力清单直接吐出来,**不需要浏览器、不启动桥接**:
+
+```sh
+browser-bridge tools          # 人读:每个工具的名字、描述、参数(名/类型/必填/说明)
+browser-bridge tools --json   # 机读:{ "tools": [ { name, description, inputSchema } ] },
+                              #        与 MCP tools/list 完全同形,agent 可直接 parse
+```
+
+**给非 MCP agent 的接入闭环**:先 `tools --json` 学能力 → 再 `call <tool> '<json>'` 执行。
+把这两条告诉你的 agent(或写进它的工具说明),它就能自助使用 browser-bridge,无需实现 MCP。
 
 ## `call`:面向非 MCP 调用方的一次性工具调用
 

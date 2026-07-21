@@ -6,7 +6,7 @@
 //! - --native-host: Chrome-spawned bridge subprocess. Chrome launches this
 //!   via the native messaging host manifest; it should never be invoked by hand.
 
-use browser_bridge::cli::{is_native_host_mode, print_help};
+use browser_bridge::cli::{is_native_host_mode, print_help, print_tools};
 use browser_bridge::{doctor, mcp_server, native_host};
 
 fn main() {
@@ -18,6 +18,11 @@ fn main() {
         0
     } else if args.len() > 1 && (args[1] == "doctor" || args[1] == "status") {
         doctor::run()
+    } else if args.len() > 1 && args[1] == "tools" {
+        // Self-describe: print the tool catalogue so a non-MCP caller can
+        // discover what's available. `--json` = machine-readable (MCP tools/list).
+        print_tools(args.iter().skip(2).any(|a| a == "--json"));
+        0
     } else if args.len() > 1 && args[1] == "call" {
         // One-shot tool call for non-MCP callers: `call <tool> [json-args]`.
         match args.get(2) {
