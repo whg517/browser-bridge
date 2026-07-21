@@ -1,84 +1,84 @@
-# ADR-0017:CDP 模式 —— 所有页面操作可选走 chrome.debugger
+# ADR-0017: CDP Mode — All page operations can optionally go through chrome.debugger
 
-- **状态**:Accepted
-- **日期**:2026-07-15
-- **关联**:[ADR-0003](./0003-content-script-snapshot-vs-chrome-debugger.md)(默认走 content script)、[ADR-0009](./0009-page-snapshot-precise-debugger.md)(precise 单点用 CDP)、[ADR-0008](./0008-page-eval-confirmation-channel.md)(page_eval 确认通道)
+- **Status**: Accepted
+- **Date**: 2026-07-15
+- **Relationship**: [ADR-0003](./0003-content-script-snapshot-vs-chrome-debugger.md) (default goes through content script), [ADR-0009](./0009-page-snapshot-precise-debugger.md) (precise uses CDP at a single point), [ADR-0008](./0008-page-eval-confirmation-channel.md) (page_eval confirmation channel)
 
-## 背景
+## Background
 
-默认路径下,页面级操作(snapshot / click / fill / text / screenshot / scroll / wait_for / eval / storage_get)由 background 注入 content script,再经 `chrome.tabs.sendMessage` 执行(ADR-0003 的决定:避免 chrome.debugger 的「正在调试此浏览器」横幅)。
+On the default path, page-level operations (snapshot / click / fill / text / screenshot / scroll / wait_for / eval / storage_get) are executed by the background injecting a content script and then dispatching through `chrome.tabs.sendMessage` (the decision in ADR-0003: avoid chrome.debugger's "You are debugging this browser" banner).
 
-这个路径有一个硬限制:**严格 CSP 站点**(如 Bing、GitHub 等设置了 `script-src` 且不含 `unsafe-eval` 的站点)会阻止 content script 里的 `new Function` / `eval`,导致 `page_eval` 直接失败。ADR-0009 已经证明:`chrome.debugger` 的 `Runtime.evaluate` 在页面 **MAIN world** 执行,不受页面 CSP 约束(因为不是页面自己在 eval,而是调试器在求值)。ADR-0009 只把 CDP 用在 `page_snapshot_precise` 一个工具上(attach→取树→detach,横幅只闪现)。
+This path has a hard limitation: **strict-CSP sites** (such as Bing, GitHub, and others that set `script-src` without `unsafe-eval`) block `new Function` / `eval` inside the content script, causing `page_eval` to fail outright. ADR-0009 already proved that chrome.debugger's `Runtime.evaluate` executes in the page's **MAIN world** and is not constrained by the page's CSP (because it is not the page itself doing the eval, but the debugger performing the evaluation). ADR-0009 only used CDP for a single tool, `page_snapshot_precise` (attach → grab tree → detach, so the banner only flashes briefly).
 
-需求:提供一个**全局开关**,让**所有**页面操作都改走 CDP,从而:
+Requirement: provide a **global switch** that makes **all** page operations go through CDP instead, so that:
 
-- 在严格 CSP 站点也能执行 `page_eval`;
-- 与「Started debugging this browser」横幅行为一致的深度控制(统一走 MAIN world)。
+- `page_eval` can also run on strict-CSP sites;
+- deep control is consistent with the "Started debugging this browser" banner behavior (everything uniformly goes through MAIN world).
 
-## 决策
+## Decision
 
-**新增用户设置 `cdpMode`(默认 `false`)。开启后,dispatch 把所有页面级操作路由到 CDP 后端;关闭时行为与今天逐字节一致(仍走 content script)。**
+**Add a user setting `cdpMode` (default `false`). When enabled, dispatch routes all page-level operations to the CDP backend; when disabled, behavior is byte-for-byte identical to today (still goes through content script).**
 
-用三个模式组织实现(`extension/src/background/`):
+The implementation is organized around three patterns (`extension/src/background/`):
 
-| 角色 | 模块 | 职责 |
+| Role | Module | Responsibility |
 |------|------|------|
-| **Strategy** | `page-backend.ts` | `PageBackend` 接口 + `selectBackend(cdpMode)`;两个实现:`ContentScriptBackend`(现有路径,原样抽取)与 `CdpBackend` |
-| **Facade** | `cdp/session.ts` | `CdpSession` 封装单个 tab 的 `chrome.debugger`;`attach/detach/send/evaluate/screenshot`;并导出 `dbgAttach/dbgDetach/dbgSend/isDebuggable` 供 precise.ts 复用(DRY) |
-| **Registry** | `cdp/registry.ts` | `CdpSessionRegistry` 单例,`Map<tabId, CdpSession>`;懒加载 attach 并**持久保持**(横幅在 CDP 模式期间常驻,by design);tab 关闭 / onDetach / `cdpMode` 关闭时 teardown |
-| **可移植页面函数** | `cdp/page-fns.ts` | 自包含函数(无 import、不闭包模块作用域),被 `toString()` 后经 `Runtime.evaluate` 在页面执行,逐一忠实移植 content 各 op 的 DOM 逻辑 |
+| **Strategy** | `page-backend.ts` | `PageBackend` interface + `selectBackend(cdpMode)`; two implementations: `ContentScriptBackend` (existing path, extracted as-is) and `CdpBackend` |
+| **Facade** | `cdp/session.ts` | `CdpSession` wraps `chrome.debugger` for a single tab; `attach/detach/send/evaluate/screenshot`; also exports `dbgAttach/dbgDetach/dbgSend/isDebuggable` for reuse by precise.ts (DRY) |
+| **Registry** | `cdp/registry.ts` | `CdpSessionRegistry` singleton, `Map<tabId, CdpSession>`; lazily attaches and **keeps the session alive** (the banner stays up for the duration of CDP mode, by design); tears down on tab close / onDetach / `cdpMode` disabled |
+| **Portable page functions** | `cdp/page-fns.ts` | Self-contained functions (no imports, no closures over module scope) that are `toString()`-ed and executed in the page via `Runtime.evaluate`, faithfully porting the DOM logic of each content op one by one |
 
-关键设计点:
+Key design points:
 
-- **统一 ref**:CDP 的 `page_snapshot` 跑与 `content/snapshot.ts` **相同的 DOM 遍历算法**(不是 AX 树 —— 那是 `page_snapshot_precise`),打**相同的 `data-zcb-ref="eN"`** 属性。因此 CDP 与 content 两条路径的 ref 完全互通,`page_click`/`page_fill` 通过 DOM 属性查找即可解析。
-- **无 content script 的确认**:高危 click 与 `page_eval` 的确认 Toast 通过 `Runtime.evaluate`(`awaitPromise:true`)在页面里构建并 resolve 用户选择;因为 CDP 模式下不注入 `toast.css`,Toast 样式内联。设置门槛(`confirmHighRiskClick`/`pageEvalEnabled`/`evalMask`)、60s 同源免确认宽限期(`confirmGraceMs`)、`isHighRiskClick` 判定,全部与 content 路径一致,宽限期状态保存在 SW。
-- **序列化/脱敏**:`page_eval` 用 CDP `returnByValue` 拿回值,再在 SW 复用 `shared/masking.ts` 脱敏;`storage_get` 在页面读原始值、在 SW 脱敏(始终开启,ADR-0010)。
-- **screenshot**:CDP 下优先用 `Page.captureScreenshot`,不走页面函数。
-- **DRY**:`precise.ts` 改为从 `cdp/session.ts` import `dbgAttach/dbgDetach/dbgSend/isDebuggable`,删除私有副本,行为不变。
-- **contracts 不变**:这是执行路径开关,不是工具契约变更,`contracts/` 与工具定义均无改动。
+- **Unified ref**: CDP's `page_snapshot` runs the **same DOM traversal algorithm** as `content/snapshot.ts` (not the AX tree — that is `page_snapshot_precise`), stamping the **same `data-zcb-ref="eN"`** attribute. As a result, the refs from the CDP and content paths are fully interchangeable, and `page_click`/`page_fill` can resolve them simply by looking up the DOM attribute.
+- **Confirmation without a content script**: the confirmation toasts for high-risk click and `page_eval` are built and resolved inside the page via `Runtime.evaluate` (`awaitPromise:true`), which resolves the user's choice; because CDP mode does not inject `toast.css`, the toast styling is inlined. The settings barriers (`confirmHighRiskClick`/`pageEvalEnabled`/`evalMask`), the 60s same-origin confirmation grace period (`confirmGraceMs`), and the `isHighRiskClick` determination all match the content path, with the grace-period state kept in the SW.
+- **Serialization/redaction**: `page_eval` retrieves the value via CDP `returnByValue`, then redacts it in the SW by reusing `shared/masking.ts`; `storage_get` reads the raw value in the page and redacts in the SW (always on, ADR-0010).
+- **screenshot**: under CDP, `Page.captureScreenshot` is preferred and the page function is not used.
+- **DRY**: `precise.ts` is changed to import `dbgAttach/dbgDetach/dbgSend/isDebuggable` from `cdp/session.ts`, removing the private copy, with no behavior change.
+- **contracts unchanged**: this is an execution-path switch, not a tool-contract change; neither `contracts/` nor the tool definitions are modified.
 
-## 考虑过的替代方案
+## Alternatives Considered
 
-### 方案 A:只让 `page_eval` 在 CSP 站点走 CDP(其余不变)
-- **优点**:改动最小,横幅只在 eval 时闪现
-- **缺点**:snapshot/click/fill 仍在 content world,ref 体系要在两条路径间来回;「CSP 站点」检测不可靠(需先失败再回退);用户对「什么时候走哪条路」不可预期
-- **未被选**:需求是**统一**的深控开关,而非单工具补丁
+### Option A: Only route `page_eval` through CDP on CSP sites (everything else unchanged)
+- **Pros**: minimal change, banner only flashes during eval
+- **Cons**: snapshot/click/fill still run in the content world, so the ref system has to shuttle back and forth between the two paths; "CSP site" detection is unreliable (requires failing first and then falling back); users cannot predict "when does which path get used"
+- **Not chosen**: the requirement is a **unified** deep-control switch, not a per-tool patch
 
-### 方案 B:默认就走 CDP(去掉 content script 路径)
-- **优点**:实现单一,无双路径
-- **缺点**:横幅**永久常驻**,访问面变大,违背 ADR-0003 的默认取舍;绝大多数站点并不需要 CSP 绕过
-- **未被选**:默认必须保持 content script、无横幅
+### Option B: Go through CDP by default (drop the content script path)
+- **Pros**: a single implementation, no dual paths
+- **Cons**: the banner is **permanently present**, the access surface grows, and it contradicts the default trade-off of ADR-0003; the vast majority of sites do not need a CSP bypass
+- **Not chosen**: the default must remain the content script, with no banner
 
-### 方案 C:把页面逻辑打包成一个大字符串手工维护
-- **缺点**:与 content 源码漂移风险高
-- **未被选**:改用「导出真实 TS 函数 + `toString()`」,由 tsc/eslint/prettier 校验,构建期验证自包含
+### Option C: Bundle the page logic into one big string maintained by hand
+- **Cons**: high risk of drifting away from the content source
+- **Not chosen**: instead we "export the real TS functions + `toString()`", validated by tsc/eslint/prettier, with self-containment verified at build time
 
-## 后果
+## Consequences
 
-### 正面
-- **CSP 绕过**:严格 CSP 站点(Bing 等)也能 `page_eval`
-- **统一深控**:所有页面 op 走 MAIN world;ref 与 content 路径互通
-- **DRY**:`chrome.debugger` 原语单点(`cdp/session.ts`),precise 复用
-- **默认零回归**:`cdpMode` 关闭时,dispatch 走原 `ContentScriptBackend`,逐字节等价
+### Positive
+- **CSP bypass**: strict-CSP sites (Bing, etc.) can also run `page_eval`
+- **Unified deep control**: all page ops go through MAIN world; refs are interchangeable with the content path
+- **DRY**: the `chrome.debugger` primitives live in a single place (`cdp/session.ts`), reused by precise
+- **Zero regression by default**: when `cdpMode` is disabled, dispatch goes through the original `ContentScriptBackend`, byte-for-byte equivalent
 
-### 负面(安全权衡)
-- **横幅常驻**:CDP 模式期间,session 持久 attach,「正在调试此浏览器」横幅一直显示(所有标签页可见)——这是刻意的知情信号
-- **访问面更大**:调试器全程附加,理论攻击面比「用完即走」的 precise 大
-- **CSP 被绕过**:page_eval 在严格 CSP 站点也能运行(这正是目的,但意味着少了一层纵深防御)
-- **序列化差异**:CDP `returnByValue` 的序列化与 content 的 `serializeResult` 不完全一致(见「风险」),但均经同一 `maskSensitive` 脱敏
-- **性能**:多次 `Runtime.evaluate` 往返比 content 的一次 `sendMessage` 略慢
+### Negative (security trade-offs)
+- **Persistent banner**: during CDP mode, the session stays attached and the "You are debugging this browser" banner is shown continuously (visible on all tabs) — this is a deliberate, informed signal
+- **Larger access surface**: the debugger is attached the whole time, so the theoretical attack surface is larger than precise's "attach-and-go"
+- **CSP is bypassed**: page_eval can run even on strict-CSP sites (this is exactly the goal, but it means one layer of defense-in-depth is removed)
+- **Serialization differences**: CDP `returnByValue`'s serialization is not fully identical to content's `serializeResult` (see "Risks"), but both are redacted through the same `maskSensitive`
+- **Performance**: multiple `Runtime.evaluate` round trips are slightly slower than content's single `sendMessage`
 
-### 中性
-- 默认关闭;仅在需要 CSP 绕过或统一深控时由用户在 Options 页显式开启
-- DevTools 已打开的 tab 无法 attach(与 precise 相同限制)
+### Neutral
+- Off by default; enabled explicitly by the user on the Options page only when a CSP bypass or unified deep control is needed
+- Tabs with DevTools already open cannot be attached (same limitation as precise)
 
-## 实施
+## Implementation
 
-- `extension/src/background/page-backend.ts`、`backends/content-script.ts`、`backends/cdp.ts`
+- `extension/src/background/page-backend.ts`, `backends/content-script.ts`, `backends/cdp.ts`
 - `extension/src/background/cdp/{session,registry,page-fns,click-risk}.ts`
-- `extension/src/background/dispatch.ts`:页面块改为 `selectBackend(cdpMode).run(op, args, tab)`
-- `extension/src/background/precise.ts`:复用 `cdp/session.ts` 原语
-- `extension/src/background.ts`:启动时 `installCdpLifecycleListeners()`
-- `extension/src/shared/{types,settings}.ts`:新增 `cdpMode`(默认 false)
-- `extension/options.html` + `options.ts`:新增「执行模式」设置卡
-- 单元测试:`selectBackend`、`isHighRiskClick`/`describeAction`/`describeForToast`、`isDebuggable`、`buildEvaluateExpression`、page-fn 自包含
+- `extension/src/background/dispatch.ts`: the page block is changed to `selectBackend(cdpMode).run(op, args, tab)`
+- `extension/src/background/precise.ts`: reuses the primitives from `cdp/session.ts`
+- `extension/src/background.ts`: calls `installCdpLifecycleListeners()` at startup
+- `extension/src/shared/{types,settings}.ts`: add `cdpMode` (default false)
+- `extension/options.html` + `options.ts`: add an "Execution Mode" settings card
+- Unit tests: `selectBackend`, `isHighRiskClick`/`describeAction`/`describeForToast`, `isDebuggable`, `buildEvaluateExpression`, page-fn self-containment

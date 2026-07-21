@@ -1,162 +1,162 @@
-# 需求文档:browser-bridge
+# Requirements Document: browser-bridge
 
-> 让 MCP 客户端(如 Claude Code、Codex)操作**用户正在使用的真实 Chrome**——
-> 真实的标签页、真实的登录态、真实的 Cookie——而不是启动一个空白模拟浏览器。
+> Let MCP clients (such as Claude Code, Codex) operate the **real Chrome the user is actively using**—
+> real tabs, real login state, real cookies—instead of launching a blank simulated browser.
 
-## 1. 背景与问题
+## 1. Background and Problem
 
-### 1.1 现状
-用户希望让 AI(通过 MCP 客户端)直接操作自己的浏览器:抓取登录后的页面、自动填表、跨标签处理信息。但 AI 默认没有这个能力——它能发起 HTTP 请求,但**看不到也不接管用户已打开、已登录的浏览器会话**。
+### 1.1 Current State
+Users want to let AI (via an MCP client) operate their own browser directly: scraping pages behind a login, auto-filling forms, processing information across tabs. But AI has no such capability by default—it can issue HTTP requests, but it **cannot see or take over the user's already-open, already-logged-in browser session**.
 
-### 1.2 已有方案的不足
+### 1.2 Shortcomings of Existing Approaches
 
-| 方案 | 问题 |
+| Approach | Problem |
 |------|------|
-| CDP(`--remote-debugging-port=9222` 特殊启动 Chrome) | 必须**重启浏览器**,违背日常使用习惯;端口一开,本机任何进程都能控制,无权限边界 |
-| Playwright/Puppeteer 启动新实例 | 不是用户的浏览器,没有登录态、Cookie、扩展;每次要重新登录 |
-| `chrome-devtools-mcp`(微软) | 走 CDP,仍需特殊启动 Chrome 或暴露调试端口 |
-| 纯 HTTP 抓取 | 看不到登录态,JS 渲染的页面拿不到 |
+| CDP (`--remote-debugging-port=9222` special launch of Chrome) | Must **restart the browser**, breaking daily usage habits; once the port is open, any process on the machine can control it, with no permission boundary |
+| Playwright/Puppeteer launching a new instance | Not the user's browser—no login state, cookies, or extensions; you have to log in again every time |
+| `chrome-devtools-mcp` (Microsoft) | Goes through CDP, still requires special launch of Chrome or exposing a debug port |
+| Pure HTTP scraping | Cannot see login state; JS-rendered pages are unreachable |
 
-### 1.3 我们要解决的核心问题
-**在不重启 Chrome、不暴露调试端口的前提下,让 AI 安全地操作用户真实浏览器的页面。**
+### 1.3 The Core Problem We Are Solving
+**Let AI safely operate the pages of the user's real browser, without restarting Chrome and without exposing a debug port.**
 
-## 2. 目标与非目标
+## 2. Goals and Non-Goals
 
-### 2.1 目标(v0.1)
-- **G1 真实浏览器**:操作用户当前正在用的 Chrome,保留所有登录态、扩展、Cookie
-- **G2 零特殊启动**:扩展一次安装长期生效,不需要每次 `--remote-debugging-port` 启动
-- **G3 安全可控**:新站点需用户授权;高危动作(提交、跳转)实时弹窗确认
-- **G4 MCP 集成**:作为标准 MCP server 接入 MCP 客户端,工具集稳定可组合
-- **G5 单二进制分发**:整个后端编译成一个 Rust 二进制,部署 = 拷贝一个文件
+### 2.1 Goals (v0.1)
+- **G1 Real browser**: operate the Chrome the user is currently using, preserving all login state, extensions, and cookies
+- **G2 Zero special launch**: install the extension once for lasting effect, no need to start with `--remote-debugging-port` every time
+- **G3 Secure and controllable**: new sites require user authorization; high-risk actions (submit, navigation) prompt real-time confirmation popups
+- **G4 MCP integration**: connect as a standard MCP server to MCP clients, with a stable and composable tool set
+- **G5 Single-binary distribution**: the entire backend compiles into a single Rust binary, deployment = copying one file
 
-### 2.2 非目标 / 已延后能力
-- ✅ **`page_eval` 已补齐**:早期 v0.1 不实现任意 JS 执行;阶段二已补,带高危确认通道 + 返回值脱敏。详见 [ADR-0008](./adr/0008-page-eval-confirmation-channel.md)(取代早期的 [ADR-0005](./adr/0005-page-eval-disabled-by-default.md))
-- ✅ **Cookie/Storage 只读已补齐**:阶段三补了 `cookie_get` / `storage_get`,严格只读且输出脱敏。详见 [ADR-0010](./adr/0010-cookie-storage-readonly.md)
-- ✅ **精确 snapshot 已补齐**:`page_snapshot_precise` 显式使用 chrome.debugger,调用前提示用户,调用期间会短暂显示 infobar。默认 `page_snapshot` 仍用 content script 近似。详见 [ADR-0003](./adr/0003-content-script-snapshot-vs-chrome-debugger.md) 和 [ADR-0009](./adr/0009-page-snapshot-precise-debugger.md)
-- ❌ **不做录制/回放、批量任务编排**。这是阶段三的玩法层
-- ❌ **不支持非 Chromium 系浏览器**。当前针对 macOS/Windows/Linux 上的
-  Google Chrome，以及 Linux 上的 Chromium
+### 2.2 Non-Goals / Deferred Capabilities
+- ✅ **`page_eval` now complete**: early v0.1 did not implement arbitrary JS execution; phase two added it, with a high-risk confirmation channel + redacted return values. See [ADR-0008](./adr/0008-page-eval-confirmation-channel.md) (supersedes the early [ADR-0005](./adr/0005-page-eval-disabled-by-default.md))
+- ✅ **Cookie/Storage read-only now complete**: phase three added `cookie_get` / `storage_get`, strictly read-only with redacted output. See [ADR-0010](./adr/0010-cookie-storage-readonly.md)
+- ✅ **Precise snapshot now complete**: `page_snapshot_precise` explicitly uses chrome.debugger, prompts the user before the call, and briefly shows an infobar during the call. The default `page_snapshot` still uses an approximate content script. See [ADR-0003](./adr/0003-content-script-snapshot-vs-chrome-debugger.md) and [ADR-0009](./adr/0009-page-snapshot-precise-debugger.md)
+- ❌ **No recording/replay or batch task orchestration**. That is the play layer of phase three
+- ❌ **No support for non-Chromium browsers**. Currently targets
+  Google Chrome on macOS/Windows/Linux, and Chromium on Linux
 
-## 3. 用户故事
+## 3. User Stories
 
-### US-1:抓取登录后页面
-> 作为开发者,我想让 AI 读取我**已登录**的内部系统页面内容,这样它能基于真实数据帮我分析。
+### US-1: Scrape pages behind a login
+> As a developer, I want AI to read the content of my **logged-in** internal system pages, so it can help me analyze based on real data.
 
-验收:AI 调 `page_snapshot` + `page_text`,首次访问时扩展弹授权 popup,我点 Allow;之后能读到脱敏后的页面文本。
+Acceptance: AI calls `page_snapshot` + `page_text`; on first visit the extension shows an authorization popup, I click Allow; afterwards it can read the redacted page text.
 
-### US-2:自动填表
-> 作为日常用户,我想让 AI 帮我在网页表单里填写一长串字段(地址、订单信息),减少手动输入。
+### US-2: Auto-fill forms
+> As an everyday user, I want AI to help me fill a long list of fields (address, order information) in a web form, reducing manual input.
 
-验收:AI 调 `page_snapshot` 拿到字段 ref,调 `page_fill` 逐个填入;密码字段在日志里脱敏。
+Acceptance: AI calls `page_snapshot` to get field refs, and calls `page_fill` to fill each one in; password fields are redacted in the logs.
 
-### US-3:多标签页处理
-> 作为研究者,我想让 AI 列出我所有打开的标签页,定位到某个,基于其内容回答问题。
+### US-3: Multi-tab processing
+> As a researcher, I want AI to list all my open tabs, locate a specific one, and answer questions based on its content.
 
-验收:AI 调 `tab_list` → `tab_focus` → `page_snapshot`,跨标签工作。
+Acceptance: AI calls `tab_list` → `tab_focus` → `page_snapshot`, working across tabs.
 
-### US-4:安全确认
-> 作为用户,当 AI 要点击"提交订单"或跳转链接时,我必须有机会拒绝,避免误操作。
+### US-4: Safety confirmation
+> As a user, when AI is about to click "Submit Order" or follow a link, I must have a chance to refuse, to avoid mistaken operations.
 
-验收:点击 submit 类按钮或链接时,页面右上角弹 Toast,30 秒不响应自动拒绝;批准后 60 秒同源同类动作免确认。
+Acceptance: when clicking a submit-type button or link, a Toast pops up in the top-right of the page, auto-rejecting after 30 seconds of no response; after approval, same-origin same-type actions skip confirmation for 60 seconds.
 
-### US-5:开发者扩展集成
-> 作为 MCP 客户端用户,我想把 browser-bridge 作为 MCP server 接入,在对话里直接说"列出我的标签页"就能用。
+### US-5: Developer extension integration
+> As an MCP client user, I want to connect browser-bridge as an MCP server, and just say "list my tabs" directly in the conversation to use it.
 
-验收:在客户端的 MCP server 配置中加入 browser-bridge 后,客户端的连接管理界面能看到 `browser-bridge` 已连接,工具可调用。
+Acceptance: after adding browser-bridge to the client's MCP server configuration, the client's connection management UI shows `browser-bridge` as connected, and the tools are callable.
 
-## 4. 功能需求
+## 4. Functional Requirements
 
-### FR-1 标签页管理
-- `tab_list` — 列出所有标签页(id/title/url/active)
-- `tab_focus` — 激活指定标签页
-- `tab_open(url)` — 打开新标签(域名受白名单约束)
-- `tab_close(tabId)` — 关闭 http(s) 标签前在页面内弹 Toast 确认
+### FR-1 Tab Management
+- `tab_list` — list all tabs (id/title/url/active)
+- `tab_focus` — activate a specified tab
+- `tab_open(url)` — open a new tab (domain constrained by the allowlist)
+- `tab_close(tabId)` — show an in-page Toast confirmation before closing an http(s) tab
 
-### FR-2 页面读取
-- `page_snapshot` — 返回交互元素的 a11y 风格树,每个节点有稳定 `ref`、role、accessible name、兜底 selector
-- `page_snapshot_precise` — **精确版**:用 chrome.debugger + CDP 取 Chrome 权威 a11y 树,覆盖 shadow DOM/复杂 ARIA;attach 前弹提示 Toast,期间 Chrome 顶部闪现调试横幅(~1秒);refs 用 `p` 前缀,page_click/fill 无需改动。详见 [ADR-0009](./adr/0009-page-snapshot-precise-debugger.md)
-- `page_text` — 返回正文文本(密码字段、疑似卡号脱敏)
-- `page_screenshot` — 返回可见视口 PNG(base64)
+### FR-2 Page Reading
+- `page_snapshot` — return an a11y-style tree of interactive elements, each node having a stable `ref`, role, accessible name, and fallback selector
+- `page_snapshot_precise` — **precise version**: uses chrome.debugger + CDP to obtain Chrome's authoritative a11y tree, covering shadow DOM / complex ARIA; shows a prompt Toast before attach, and a debug banner flashes at the top of Chrome during the call (~1 second); refs use the `p` prefix, and page_click/fill need no changes. See [ADR-0009](./adr/0009-page-snapshot-precise-debugger.md)
+- `page_text` — return body text (password fields and suspected card numbers redacted)
+- `page_screenshot` — return the visible viewport as PNG (base64)
 
-### FR-3 页面操作
-- `page_click(ref|selector)` — 点击;submit/链接类触发 Toast 确认
-- `page_fill(ref|selector, value)` — 填表;用 native setter 触发框架(React/Vue)的 change 检测;密码字段脱敏记录
-- `page_scroll(direction|pixels)` — 滚动
-- `page_wait_for(selector|text|nav, timeoutMs)` — 等待 selector/text,或等待页面 load 完成
-- `page_eval(code)` — **高危**:执行任意 JS。每次调用弹放大版 Toast 显示完整代码;同源 60s 免确认;返回值默认脱敏(JWT/长hex/长数字/敏感关键字),可在 popup 关闭。用 `new Function` 在全局作用域执行,支持 await/return。详见 [ADR-0008](./adr/0008-page-eval-confirmation-channel.md)
+### FR-3 Page Operations
+- `page_click(ref|selector)` — click; submit/link types trigger a Toast confirmation
+- `page_fill(ref|selector, value)` — fill a form; uses the native setter to trigger the change detection of frameworks (React/Vue); password fields are recorded redacted
+- `page_scroll(direction|pixels)` — scroll
+- `page_wait_for(selector|text|nav, timeoutMs)` — wait for a selector/text, or wait for the page load to complete
+- `page_eval(code)` — **high-risk**: execute arbitrary JS. Each call pops an enlarged Toast showing the full code; same-origin skips confirmation for 60s; return values are redacted by default (JWT/long hex/long numbers/sensitive keywords), which can be turned off in the popup. Uses `new Function` to execute in the global scope, supporting await/return. See [ADR-0008](./adr/0008-page-eval-confirmation-channel.md)
 
-### FR-4 安全控制
-- **FR-4.1 域名白名单**:新 origin 首次操作时,扩展弹 popup 请求授权;授权同时通过 `chrome.permissions.request` 申请该域名的 host 权限。白名单存 `chrome.storage.local`,可在 popup 撤销。详见 [ADR-0004](./adr/0004-allowlist-with-optional-host-permissions.md)
-- **FR-4.2 高危 Toast**:submit 点击、链接跳转触发页面 Toast,30 秒超时拒绝,批准后 60 秒同源同类免确认。详见 [ADR-0006](./adr/0006-toast-confirmation-for-high-risk.md)
-- **FR-4.3 host 鉴权**:native messaging manifest 的 `allowed_origins` 写死扩展 ID;桥接 socket 用 per-run secret + 用户目录锁文件鉴权(Unix mode 0600)
-- **FR-4.4 脱敏**:`page_text` 遮罩 `<input type=password>` 和长数字串;`page_fill` 密码字段值在参数回显中脱敏
+### FR-4 Security Controls
+- **FR-4.1 Domain allowlist**: on the first operation against a new origin, the extension shows a popup requesting authorization; authorization simultaneously requests the host permission for that domain via `chrome.permissions.request`. The allowlist is stored in `chrome.storage.local` and can be revoked in the popup. See [ADR-0004](./adr/0004-allowlist-with-optional-host-permissions.md)
+- **FR-4.2 High-risk Toast**: submit clicks and link navigations trigger an in-page Toast, rejecting on a 30-second timeout, and after approval skipping same-origin same-type confirmation for 60 seconds. See [ADR-0006](./adr/0006-toast-confirmation-for-high-risk.md)
+- **FR-4.3 Host authentication**: the native messaging manifest's `allowed_origins` hard-codes the extension ID; the bridge socket authenticates with a per-run secret + a lock file in the user directory (Unix mode 0600)
+- **FR-4.4 Redaction**: `page_text` masks `<input type=password>` and long numeric strings; `page_fill` redacts the password field value in the parameter echo
 
-### FR-5 Cookie/Storage 只读(阶段三)
-- **FR-5.1 `cookie_get`**:读 Cookie(含 httpOnly),受 host_permissions 自然约束(复用白名单);输出 value 脱敏,结构字段(name/domain/httpOnly)保留
-- **FR-5.2 `storage_get`**:读页面 localStorage/sessionStorage(content script,同源);输出始终脱敏(不受 evalMask 开关控制,因 token 泄露风险与 eval 等价)
-- **FR-5.3 不做写入**:无 cookie_set / cookie_remove / storage_set——cookie_set 能伪造 httpOnly Cookie(会话固定攻击),连 XSS 都做不到。详见 [ADR-0010](./adr/0010-cookie-storage-readonly.md)
+### FR-5 Cookie/Storage Read-Only (Phase Three)
+- **FR-5.1 `cookie_get`**: read cookies (including httpOnly), naturally constrained by host_permissions (reusing the allowlist); the output value is redacted, while structural fields (name/domain/httpOnly) are preserved
+- **FR-5.2 `storage_get`**: read the page's localStorage/sessionStorage (content script, same-origin); output is always redacted (not controlled by the evalMask toggle, since the token leakage risk is equivalent to eval)
+- **FR-5.3 No writes**: no cookie_set / cookie_remove / storage_set—cookie_set could forge httpOnly cookies (session fixation attacks), something even XSS cannot do. See [ADR-0010](./adr/0010-cookie-storage-readonly.md)
 
-## 5. 非功能需求
+## 5. Non-Functional Requirements
 
-| 维度 | 要求 |
+| Dimension | Requirement |
 |------|------|
-| **NFR-1 性能** | 单次工具调用往返(不含用户确认)< 500ms(本地链路) |
-| **NFR-2 资源** | release 二进制 < 1MB;常驻 MCP server 内存 < 20MB |
-| **NFR-3 零运行时依赖** | 用户机器只需 Rust 编译期;运行时不依赖 Python/Node/任何运行时;不引入 libc 之外的 native 依赖 |
-| **NFR-4 健壮性** | SW 5 分钟重启、native host 崩溃、Chrome 重启后能自动恢复连接 |
-| **NFR-5 可审计** | 所有安全相关决策(授权、确认、拒绝)有 ADR 记录;扩展权限声明最小化 |
-| **NFR-6 跨 PATH 独立** | host manifest 用绝对路径;不依赖用户 shell 的 PATH 配置(已知约束:用户 PATH 不含 `/opt/homebrew/bin`) |
+| **NFR-1 Performance** | single tool-call round trip (excluding user confirmation) < 500ms (local link) |
+| **NFR-2 Resources** | release binary < 1MB; resident MCP server memory < 20MB |
+| **NFR-3 Zero runtime dependencies** | the user's machine only needs Rust at compile time; the runtime depends on no Python/Node/any runtime; introduces no native dependencies beyond libc |
+| **NFR-4 Robustness** | can automatically recover the connection after a 5-minute SW restart, native host crash, or Chrome restart |
+| **NFR-5 Auditability** | all security-related decisions (authorization, confirmation, rejection) have an ADR record; extension permission declarations are minimized |
+| **NFR-6 PATH independence** | the host manifest uses absolute paths; does not depend on the user shell's PATH configuration (known constraint: the user's PATH does not include `/opt/homebrew/bin`) |
 
-## 6. 范围边界
+## 6. Scope Boundaries
 
-### 6.1 v0.1 包含
-- 11 个工具(见 FR-1~FR-3);**阶段二追加 `page_eval` + `page_snapshot_precise`**(共 13 个);**阶段三追加 `cookie_get` + `storage_get`**(共 15 个)
-- 白名单 + Toast 双层安全
-- content script 风格 snapshot
-- macOS/Windows/Linux + Chrome；Linux 同时支持 Chromium；WSL 支持 Windows
-  Chrome interop 与 WSLg Linux 浏览器两种模式
+### 6.1 Included in v0.1
+- 11 tools (see FR-1~FR-3); **phase two adds `page_eval` + `page_snapshot_precise`** (13 total); **phase three adds `cookie_get` + `storage_get`** (15 total)
+- Two-layer security of allowlist + Toast
+- content script-style snapshot
+- macOS/Windows/Linux + Chrome; Linux also supports Chromium; WSL supports both the Windows
+  Chrome interop mode and the WSLg Linux browser mode
 
-### 6.2 v0.1 不包含,后续阶段
-- **阶段二**:
-  - `page_snapshot_precise` — debugger 回退精确 snapshot(会闪现 infobar,需告知用户)
-  - ✅ `page_eval` — 高危确认通道(放大版 Toast + 同源 60s 免确认 + 可配脱敏)。**已完成**,详见 [ADR-0008](./adr/0008-page-eval-confirmation-channel.md)
-  - ✅ `page_snapshot_precise` — debugger 精确 snapshot(提示 Toast + infobar 闪现 + p 前缀 ref)。**已完成**,详见 [ADR-0009](./adr/0009-page-snapshot-precise-debugger.md)
-- **阶段三**:
-  - ✅ `cookie_get` / `storage_get`(只读,限白名单域名,输出脱敏)。**已完成**,详见 [ADR-0010](./adr/0010-cookie-storage-readonly.md)
-  - Skill 层(把高频玩法:抓列表页、表单填写、跨标签操作沉淀成 skill)
-  - 录制/回放、批量任务编排
+### 6.2 Not Included in v0.1, Later Phases
+- **Phase two**:
+  - `page_snapshot_precise` — debugger-fallback precise snapshot (flashes an infobar, requires notifying the user)
+  - ✅ `page_eval` — high-risk confirmation channel (enlarged Toast + same-origin 60s skip-confirmation + configurable redaction). **Complete**, see [ADR-0008](./adr/0008-page-eval-confirmation-channel.md)
+  - ✅ `page_snapshot_precise` — debugger precise snapshot (prompt Toast + infobar flash + p-prefixed ref). **Complete**, see [ADR-0009](./adr/0009-page-snapshot-precise-debugger.md)
+- **Phase three**:
+  - ✅ `cookie_get` / `storage_get` (read-only, limited to allowlisted domains, redacted output). **Complete**, see [ADR-0010](./adr/0010-cookie-storage-readonly.md)
+  - Skill layer (distilling high-frequency plays—scraping list pages, form filling, cross-tab operations—into skills)
+  - Recording/replay, batch task orchestration
 
-### 6.3 明确排除
-- 不做浏览器历史/书签/下载管理
-- 不做网络请求拦截/修改
-- 不做多浏览器同步支持
+### 6.3 Explicitly Excluded
+- No browser history/bookmarks/download management
+- No network request interception/modification
+- No multi-browser sync support
 
-## 7. 阶段划分
+## 7. Phasing
 
-| 阶段 | 范围 | 状态 |
+| Phase | Scope | Status |
 |------|------|------|
-| **阶段一:v0.1 最小可用** | FR-1~FR-4 + NFR-1~6 | ✅ 代码完成,协议层 e2e 测试 PASS,待用户加载扩展验收 |
-| **阶段二:精确化** | debugger 回退 snapshot、page_eval 高危通道 | ✅ 完成(page_eval + page_snapshot_precise) |
-| **阶段三:扩展能力** | cookie/storage、skill 层、编排 | 🔄 cookie/storage 已完成;skill 层/编排未开始 |
+| **Phase one: v0.1 minimum viable** | FR-1~FR-4 + NFR-1~6 | ✅ code complete, protocol-layer e2e tests PASS, awaiting user extension-load acceptance |
+| **Phase two: precision** | debugger-fallback snapshot, page_eval high-risk channel | ✅ complete (page_eval + page_snapshot_precise) |
+| **Phase three: extended capabilities** | cookie/storage, skill layer, orchestration | 🔄 cookie/storage complete; skill layer/orchestration not started |
 
-## 8. 验收标准(v0.1)
+## 8. Acceptance Criteria (v0.1)
 
-1. `install.sh`(macOS/Linux)或 `install.ps1`(Windows)跑通,扩展加载成功,host manifest 注册
-2. MCP 客户端能看到 `browser-bridge` 已连接
-3. AI 在对话里说"列出标签页" → 看到真实标签页列表
-4. AI 说"截当前页" → AI 能分析到截图
-5. AI 说"在搜索框填 XXX 并点搜索" → 真在用户浏览器执行;提交时弹 Toast 确认
-6. 访问未授权域名 → 扩展弹授权 popup
-7. 协议层端到端测试 PASS(NM 帧、MCP JSON-RPC、TCP 桥接)
+1. `install.sh` (macOS/Linux) or `install.ps1` (Windows) runs through, the extension loads successfully, and the host manifest registers
+2. The MCP client can see `browser-bridge` as connected
+3. AI says "list tabs" in the conversation → sees the real list of tabs
+4. AI says "screenshot the current page" → AI can analyze the screenshot
+5. AI says "fill XXX in the search box and click search" → it really executes in the user's browser; a Toast confirmation pops up on submit
+6. Visiting an unauthorized domain → the extension shows an authorization popup
+7. Protocol-layer end-to-end tests PASS (NM frames, MCP JSON-RPC, TCP bridge)
 
-## 9. 术语
+## 9. Glossary
 
-| 术语 | 含义 |
+| Term | Meaning |
 |------|------|
-| **MCP** | Model Context Protocol,AI 与工具之间的标准协议,基于 JSON-RPC 2.0 |
-| **Native Messaging** | Chrome 扩展与本地进程通信的官方机制,帧格式 = 4字节小端长度 + JSON |
-| **MV3** | Manifest V3,Chrome 扩展的最新标准,background 改用 Service Worker |
-| **SW** | Service Worker,MV3 的后台脚本,会被 Chrome 每 5 分钟强制重启 |
-| **CDP** | Chrome DevTools Protocol,通过调试端口控制 Chrome 的协议 |
-| **ref** | snapshot 给每个交互元素分配的稳定标识(如 `e3`),AI 用它定位元素 |
-| **a11y** | accessibility,可访问性树——页面元素的语义化结构 |
+| **MCP** | Model Context Protocol, the standard protocol between AI and tools, based on JSON-RPC 2.0 |
+| **Native Messaging** | Chrome's official mechanism for communication between an extension and a local process, frame format = 4-byte little-endian length + JSON |
+| **MV3** | Manifest V3, the latest standard for Chrome extensions, where background switches to a Service Worker |
+| **SW** | Service Worker, the MV3 background script, which Chrome force-restarts every 5 minutes |
+| **CDP** | Chrome DevTools Protocol, the protocol for controlling Chrome via a debug port |
+| **ref** | the stable identifier the snapshot assigns to each interactive element (such as `e3`), which AI uses to locate elements |
+| **a11y** | accessibility, the accessibility tree—the semantic structure of page elements |

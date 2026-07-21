@@ -27,7 +27,7 @@ programmatic handling), a `category`, a `retryable` flag, a user/model-facing
 `message`, and the Rust `CallError` variant(s) it maps from. Rust maps
 `CallError -> code` (verified by `cargo test` against this file); the extension
 maps its failures to the same codes. See
-[docs/architecture.md](../docs/architecture.md#11-协议边界错误分类与握手) for how it
+[docs/architecture.md](../docs/architecture.md#11-protocol-boundaries-error-classification-and-handshake) for how it
 fits the protocol.
 
 ## `capabilities.json`

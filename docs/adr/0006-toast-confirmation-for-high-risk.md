@@ -1,65 +1,65 @@
-# ADR-0006:高危动作用页面 Toast + 短时免确认
+# ADR-0006: In-Page Toast + Short-Lived Confirmation-Free Window for High-Risk Actions
 
-- **状态**:Accepted
-- **日期**:2026-07-07
+- **Status**: Accepted
+- **Date**: 2026-07-07
 
-## 背景
+## Context
 
-即使用户已通过白名单([ADR-0004](./0004-allowlist-with-optional-host-permissions.md))授权了某站点,在该站点内仍有"高危动作"——它们可能造成不可逆的副作用:
+Even after a user has authorized a site via the allowlist ([ADR-0004](./0004-allowlist-with-optional-host-permissions.md)), that site can still contain "high-risk actions" — actions that may cause irreversible side effects:
 
-- **表单提交**(点击 `type=submit` 按钮):下单、转账、发布、删除
-- **链接导航**(点击 `<a href>` / role=link):跳转到新页面,可能触发服务端操作(GET 请求也能改数据)
-- **关闭高危域名的标签页**:误关银行/管理后台
+- **Form submissions** (clicking a `type=submit` button): placing orders, transferring funds, publishing, deleting
+- **Link navigation** (clicking `<a href>` / role=link): navigating to a new page, which may trigger server-side operations (even GET requests can mutate data)
+- **Closing a tab on a high-risk domain**: accidentally closing a bank or admin console
 
-这些动作如果让 AI 静默执行,用户可能根本没意识到发生了什么。需要一个二次确认机制。
+If the AI executes these actions silently, the user may have no idea what happened. A secondary confirmation mechanism is needed.
 
-## 决策
+## Decision
 
-**用页面内 Toast 确认 + 60 秒同源同类免确认窗口:**
+**Use an in-page toast confirmation + a 60-second same-origin, same-type confirmation-free window:**
 
-1. **触发时机**:content script 在执行 click 前,若目标是 submit/链接类,调 `confirmWithToast()`
-2. **Toast UI**:页面右上角注入卡片,显示"Browser Bridge / Click 'xxx'?" + Allow/Deny 按钮
-3. **超时**:30 秒不响应自动 Deny(防止工具调用永久挂起)
-4. **免确认窗口**:用户 Allow 后,60 秒内同 origin + 同动作类型不再弹(避免连续确认烦人)
-5. **关闭标签**:在 background 的 `tab_close` 里先向目标页面发送确认 Toast,用户允许后才关闭
+1. **Trigger point**: before performing a click, the content script calls `confirmWithToast()` if the target is a submit/link-type element
+2. **Toast UI**: inject a card in the top-right corner of the page, showing "Browser Bridge / Click 'xxx'?" plus Allow/Deny buttons
+3. **Timeout**: automatically Deny after 30 seconds of no response (to prevent tool calls from hanging forever)
+4. **Confirmation-free window**: after the user clicks Allow, the same origin + same action type will not prompt again for 60 seconds (to avoid annoying back-to-back confirmations)
+5. **Closing tabs**: in the background's `tab_close`, first send a confirmation toast to the target page, and only close it after the user allows
 
-## 考虑过的替代方案
+## Alternatives Considered
 
-### 方案 A:专用确认窗口(独立 popup 窗口)
-- **机制**:每次高危动作弹独立窗口,列出动作详情
-- **优点**:安全度最高,UI 空间大可显示完整信息
-- **缺点**:体验重,每次高危动作要切去点确认;打断 AI 工作流
-- **未被选**:用户选了 Toast(轻量)。专用窗口留给未来 `page_eval` 的高危确认([ADR-0005](./0005-page-eval-disabled-by-default.md))
+### Option A: Dedicated confirmation window (standalone popup window)
+- **Mechanism**: pop up a standalone window for every high-risk action, listing the action details
+- **Pros**: highest level of safety; the large UI space can display complete information
+- **Cons**: heavyweight experience — every high-risk action requires switching over to click a confirmation, interrupting the AI workflow
+- **Not chosen**: the user chose the toast (lightweight). The dedicated window is reserved for future high-risk confirmation of `page_eval` ([ADR-0005](./0005-page-eval-disabled-by-default.md))
 
-### 方案 B:页面 Toast + 短时免确认(用户选择)
-- **优点**:体验轻;连续同类操作不烦人
-- **缺点**:可能看漏(Toast 在角落);60 秒窗口内 AI 连续高危动作不再确认
-- **v0.1 实现**
+### Option B: In-page toast + short-lived confirmation-free window (chosen by the user)
+- **Pros**: lightweight experience; back-to-back operations of the same type are not annoying
+- **Cons**: may be missed (the toast is in a corner); within the 60-second window, back-to-back high-risk AI actions are no longer confirmed
+- **v0.1 implementation**
 
-### 方案 C:按风险分级(低危静默 / 高危确认)
-- **机制**:已授权域名内,低危(普通点击/填表)静默;高危(eval、提交、跳转)才弹
-- **优点**:平衡点最好
-- **缺点**:实现复杂度高(要维护风险分级表)
-- **未被选**:用户当时选了方案 B,但方案 C 其实是方案 B 的自然演进(v0.1 的实现已经隐含分级——只有 submit/link 才弹 Toast,普通 click 静默)
+### Option C: Risk tiering (silent for low-risk / confirm for high-risk)
+- **Mechanism**: within an authorized domain, low-risk actions (ordinary clicks/form filling) are silent; only high-risk ones (eval, submit, navigation) prompt
+- **Pros**: best balance point
+- **Cons**: high implementation complexity (a risk-tiering table must be maintained)
+- **Not chosen**: the user chose Option B at the time, but Option C is actually the natural evolution of Option B (the v0.1 implementation already implies tiering — only submit/link triggers a toast, while ordinary clicks are silent)
 
-## 后果
+## Consequences
 
-### 正面
-- **体验轻量**:Toast 不抢焦点,用户可继续操作
-- **防永久挂起**:30 秒超时拒绝,工具调用不会卡死
-- **连续操作友好**:60 秒免确认窗口,比如连续点 5 个链接不会弹 5 次
+### Positive
+- **Lightweight experience**: the toast does not steal focus, so the user can keep working
+- **Prevents permanent hangs**: the 30-second timeout denial ensures tool calls do not lock up
+- **Friendly to back-to-back operations**: the 60-second confirmation-free window means, for example, clicking 5 links in a row will not prompt 5 times
 
-### 负面
-- **可能看漏**:Toast 在角落,用户注意力在别处可能错过
-- **60 秒窗口风险**:窗口内 AI 若被诱导连续做高危动作,只有第一次确认;这是体验/安全的折中
-- **仅 click 层**:当前只 gate click,没 gate 表单的 enter 提交、JS 触发的 submit(阶段二补充)
+### Negative
+- **May be missed**: the toast is in a corner, so a user whose attention is elsewhere may miss it
+- **60-second window risk**: within the window, if the AI is induced into performing high-risk actions back to back, only the first is confirmed; this is an experience/safety trade-off
+- **Click layer only**: currently only click is gated; there is no gating of a form's Enter submit or a JS-triggered submit (to be added in phase two)
 
-## 实施细节
+## Implementation Details
 
 `extension/content.js`:
 
 ```javascript
-// 判定高危
+// Determine high-risk
 function isHighRiskClick(el) {
   const role = roleOf(el);
   if (role === "button" && (el.getAttribute("type") || "").toLowerCase() === "submit") return true;
@@ -68,29 +68,29 @@ function isHighRiskClick(el) {
   return false;
 }
 
-// 免确认窗口
+// Confirmation-free window
 let lastConfirmed = { key: null, until: 0 };
 async function confirmWithToast(question, actionDesc) {
   const key = `${location.origin}:${actionDesc}`;
-  if (lastConfirmed.key === key && Date.now() < lastConfirmed.until) return; // 窗口内
+  if (lastConfirmed.key === key && Date.now() < lastConfirmed.until) return; // within window
   const approved = await showToast(question);
   if (!approved) throw new Error(`user denied: ${actionDesc}`);
   lastConfirmed = { key, until: Date.now() + 60_000 };
 }
 ```
 
-- `showToast()`:注入 DOM 卡片,Promise resolve true/false
-- 卡片样式见 `toast.css`,关键样式也 inline 在 `ensureToastHost()`(防 toast.css 没加载)
-- z-index 极高(2147483647)确保在最上层
+- `showToast()`: injects a DOM card, the Promise resolves true/false
+- The card styles are in `toast.css`; the key styles are also inlined in `ensureToastHost()` (in case toast.css did not load)
+- The z-index is extremely high (2147483647) to ensure it stays on top
 
-## 已知局限(阶段二改进)
+## Known Limitations (phase-two improvements)
 
-1. **只 gate click**:表单的 Enter 提交、`form.submit()` JS 调用没拦截
-2. **不感知 SPA 路由**:pushState/replaceState 的"软导航"不触发(用户感知是跳转,但没拦)
-3. **免确认 key 粒度**:当前是 `origin:actionType`,未来可考虑 `origin:actionType:targetSelector` 更细
-4. **Toast 可被页面 CSS 干扰**:虽然用了高 z-index + inline 关键样式,但极端情况页面可能用 `!important` 覆盖
+1. **Only gates click**: a form's Enter submit and `form.submit()` JS calls are not intercepted
+2. **Not aware of SPA routing**: "soft navigations" via pushState/replaceState do not trigger it (the user perceives a navigation, but it is not intercepted)
+3. **Confirmation-free key granularity**: currently `origin:actionType`; in the future `origin:actionType:targetSelector` could be considered for finer granularity
+4. **Toast can be interfered with by page CSS**: although a high z-index + inlined key styles are used, in extreme cases a page may override them with `!important`
 
-## 与其他 ADR 的关系
+## Relationship to Other ADRs
 
-- 配合 [ADR-0004](./0004-allowlist-with-optional-host-permissions.md):白名单是第一层(站点级),Toast 是第二层(动作级)
-- 区别于 [ADR-0005](./0005-page-eval-disabled-by-default.md):Toast 用于 UI 动作(click/fill),page_eval 若实现需更强确认(专用窗口)
+- Works together with [ADR-0004](./0004-allowlist-with-optional-host-permissions.md): the allowlist is the first layer (site level), and the toast is the second layer (action level)
+- Differs from [ADR-0005](./0005-page-eval-disabled-by-default.md): the toast is used for UI actions (click/fill), whereas page_eval, if implemented, would need stronger confirmation (a dedicated window)

@@ -1,86 +1,106 @@
-# ADR-0019:通过 Chrome Web Store 分发扩展(双 ID)
+# ADR-0019: Distributing the Extension via the Chrome Web Store (Dual ID)
 
-- **状态**:Accepted
-- **日期**:2026-07-19
+- **Status**: Accepted
+- **Date**: 2026-07-19
 
-## 背景
+## Context
 
-在此之前,唯一的扩展安装方式是「Load unpacked」——用户必须开启 `chrome://extensions`
-的开发者模式,手动选择 `extension/dist/`。这是最大的使用门槛:开发者模式对普通用户
-陌生、在受管控/企业 Chrome 上常被禁用、重启后还可能提示。
+Until now, the only way to install the extension was "Load unpacked" — users had to enable
+developer mode in `chrome://extensions` and manually select `extension/dist/`. This was the
+biggest barrier to use: developer mode is unfamiliar to ordinary users, is often disabled on
+managed/enterprise Chrome, and may re-prompt after a restart.
 
-整个安装链路依赖一个**固定扩展 ID** `mkjjlmjbcljpcfkfadfmhblmmddkdihf`(由
-[`extension/manifest.json`](../../extension/manifest.json) 的 `key` 派生),安装器把它
-写进 native messaging host 的 `allowed_origins`。
+The entire installation path depends on a **pinned extension ID** `mkjjlmjbcljpcfkfadfmhblmmddkdihf`
+(derived from the `key` in [`extension/manifest.json`](../../extension/manifest.json)), which the
+installer writes into the native messaging host's `allowed_origins`.
 
-**但 Chrome Web Store 上架时会分配一个由商店掌控的 ID**(忽略 manifest 的 `key`),
-本项目拿到的是 `dgccjfjjilfpkbdllclmkiicajndkfcd`——与钉死 ID 不同。若 host 只信任其中
-一个,另一条安装路径就会在 `connectNative` 处被 Chrome 拒绝,扩展装了也连不上。
+**However, when the extension is published to the Chrome Web Store it is assigned an ID controlled
+by the store** (ignoring the manifest's `key`). The one this project received is
+`dgccjfjjilfpkbdllclmkiicajndkfcd` — different from the pinned ID. If the host trusts only one of
+them, the other installation path gets rejected by Chrome at `connectNative`, and the extension will
+install but fail to connect.
 
-上架属**分发方式与安全边界**变更,按 [GOVERNANCE](../../GOVERNANCE.md) 为 ADR 级决策。
+Publishing to the store is a change to **the distribution method and security boundary**, and per
+[GOVERNANCE](../../GOVERNANCE.md) it is an ADR-level decision.
 
-## 决策
+## Decision
 
-**上架 Chrome Web Store,作为推荐安装方式;unpacked 保留为开发者路径。**
+**Publish to the Chrome Web Store as the recommended installation method; keep unpacked as the
+developer path.**
 
-1. **双 ID 信任(核心)**:native host 的 `allowed_origins` **默认同时信任**商店 ID +
-   钉死 ID,任一安装路径都能连接。`install.sh` / `install.ps1` 默认写两个 origin;
-   `--extension-id` / `-ExtensionId` 可收窄为单个。三处 ID 副本(两个安装器 +
-   [`extension-id.ts`](../../extension/src/shared/extension-id.ts))由
-   [`scripts/check-extension-id.mjs`](../../scripts/check-extension-id.mjs) 这个 CI
-   门禁保持一致,并校验商店 ID ≠ 钉死(key 派生)ID。
+1. **Dual-ID trust (core)**: the native host's `allowed_origins` **trusts both** the store ID and
+   the pinned ID **by default**, so either installation path can connect. `install.sh` /
+   `install.ps1` write both origins by default; `--extension-id` / `-ExtensionId` can narrow this to
+   a single one. The three copies of the ID (the two installers plus
+   [`extension-id.ts`](../../extension/src/shared/extension-id.ts)) are kept consistent by the CI gate
+   [`scripts/check-extension-id.mjs`](../../scripts/check-extension-id.mjs), which also verifies that
+   the store ID ≠ the pinned (key-derived) ID.
 
-2. **商店上传包去掉 `key`**:已发布条目的 manifest **不含 `key`**(经下载线上 CRX 核实)——商店在
-   首次上传时分配并掌管派生商店 ID 的签名密钥,不保存 manifest 里的 `key`。因此后续更新上传也
-   **必须不带 `key`**,否则报「清单中 key 字段的值与当前内容不符」。商店 zip = 源 `extension/dist`
-   去掉 `manifest.key`、`manifest.json` 置于 zip **根目录**、`description` ≤ 132 字符。发布流水线
-   产出**两份** zip:`browser-bridge-extension-<tag>-store.zip`(**去 `key`**,上传商店用)与
-   `browser-bridge-extension-<tag>.zip`(**保留 `key`**,供开发者 "Load unpacked" 得到钉死 ID)。
-   两条路径对 `key` 的需求相反,**不能合成一份**。
+2. **The store upload package drops the `key`**: the manifest of the published listing **does not
+   contain a `key`** (verified by downloading the live CRX) — the store assigns and controls the
+   signing key that derives the store ID on first upload, and does not preserve the `key` in the
+   manifest. Therefore subsequent update uploads **must also omit the `key`**, otherwise it reports
+   "The value of the 'key' field in the manifest does not match the current content." The store zip =
+   the source `extension/dist` with `manifest.key` removed, `manifest.json` placed at the **root** of
+   the zip, and `description` ≤ 132 characters. The release pipeline produces **two** zips:
+   `browser-bridge-extension-<tag>-store.zip` (**`key` removed**, for uploading to the store) and
+   `browser-bridge-extension-<tag>.zip` (**`key` retained**, so developers get the pinned ID via
+   "Load unpacked"). The two paths have opposite requirements for `key` and **cannot be merged into
+   one**.
 
-3. **隐私政策**:因扩展读取页面内容、cookie、web storage,商店要求隐私政策 URL——
-   见 [`docs/privacy-policy.md`](../privacy-policy.md)。
+3. **Privacy policy**: because the extension reads page content, cookies, and web storage, the store
+   requires a privacy policy URL — see [`docs/privacy-policy.md`](../privacy-policy.md).
 
-4. **发布方式:手动上传**。商店后台上传 `browser-bridge-extension-<tag>-store.zip`(**去 `key`**、
-   manifest 在根)、走审核上线,**不做自动化**。
-   (评估过用 CWS API 做 CI 自动发布,但 OAuth refresh-token 维护成本、`release: published`
-   触发器对 `GITHUB_TOKEN` 所建 release 不生效等问题,收益不抵复杂度,故选择手动。)
+4. **Release method: manual upload**. Upload `browser-bridge-extension-<tag>-store.zip` (**`key`
+   removed**, manifest at the root) through the store dashboard, go through review, and publish;
+   **no automation**.
+   (Automated CI publishing via the CWS API was evaluated, but the OAuth refresh-token maintenance
+   cost, the fact that the `release: published` trigger does not fire for releases created by
+   `GITHUB_TOKEN`, and similar issues meant the benefit did not outweigh the complexity, so manual
+   was chosen.)
 
-## 考虑过的替代方案
+## Alternatives Considered
 
-### 方案 A:把商店公钥回填到 manifest `key`,让两条路径同一个 ID
-- **优点**:只需信任一个 ID,`allowed_origins` 更简单
-- **缺点**:会改变当前钉死 ID,所有已装 unpacked 的开发者环境要重装
-- **未被选**:双 ID 信任成本更低,对现有用户零破坏
+### Option A: Backfill the store public key into the manifest `key` so both paths share one ID
+- **Pros**: only one ID needs to be trusted, making `allowed_origins` simpler
+- **Cons**: changes the current pinned ID, so every developer environment with unpacked installed
+  would need to reinstall
+- **Not chosen**: dual-ID trust is cheaper and causes zero breakage for existing users
 
-### 方案 B:开启「Verified CRX uploads」
-- **优点**:只接受用自有私钥签名的上传,多一层账号安全
-- **缺点**:每次更新都要签 `.crx`;私钥丢失需联系客服(最长一周);对单/少维护者是净负担
-- **未被选**:默认**不开**;将来多维护者担心账号被盗时再评估
+### Option B: Enable "Verified CRX uploads"
+- **Pros**: accepts only uploads signed with your own private key, adding a layer of account security
+- **Cons**: every update requires signing a `.crx`; a lost private key requires contacting support
+  (up to a week); for a single/small maintainer set this is a net burden
+- **Not chosen**: leave it **off** by default; reassess later if multiple maintainers become
+  concerned about account compromise
 
-### 方案 C:引第三方 Action(如 `chrome-webstore-upload-action`)做发布
-- **缺点**:又一个需固定 SHA 的第三方供应链依赖
-- **未被选**:CWS API 用 `curl` + `jq` 即可覆盖,零新增依赖,符合本项目最小依赖姿态
+### Option C: Bring in a third-party Action (e.g. `chrome-webstore-upload-action`) to publish
+- **Cons**: yet another third-party supply-chain dependency requiring a pinned SHA
+- **Not chosen**: the CWS API can be covered with `curl` + `jq` alone, adding zero new dependencies,
+  which fits this project's minimal-dependency posture
 
-## 后果
+## Consequences
 
-### 正面
-- 移除最大门槛「开发者模式 Load unpacked」;一键 Add to Chrome,对受管控 Chrome 友好
-- 双 ID 信任让商店用户与开发者共用同一套安装器,零破坏
+### Positive
+- Removes the biggest barrier, "developer mode Load unpacked"; one-click Add to Chrome, friendly to
+  managed Chrome
+- Dual-ID trust lets store users and developers share a single installer with zero breakage
 
-### 负面 / 权衡
-- **不移除安装器**:商店只分发**扩展**;用户仍需运行 `install.sh` / `install.ps1` 装
-  native host 二进制 + manifest
-- **失去即时更新控制**:每次商店更新都要走审核(数天到数周)
-- 权限/工具变更(如 `page_eval`、`chrome.debugger`、`tabGroups`)会触发商店重新审核与
-  用户重新授权
-- 多一个由商店掌控、无法自行派生的 ID,需靠 CI 门禁维持一致
+### Negative / Trade-offs
+- **Does not remove the installer**: the store distributes only the **extension**; users still need
+  to run `install.sh` / `install.ps1` to install the native host binary + manifest
+- **Loss of instant update control**: every store update must go through review (days to weeks)
+- Permission/tool changes (such as `page_eval`, `chrome.debugger`, `tabGroups`) trigger a store
+  re-review and re-authorization by users
+- One more ID that is controlled by the store and cannot be derived on your own, which must be kept
+  consistent via a CI gate
 
-## 与其他 ADR 的关系
+## Relationship to Other ADRs
 
-- 与 [ADR-0004](./0004-allowlist-with-optional-host-permissions.md) 正交:分发方式不改
-  白名单/授权模型
-- 与 [ADR-0005](./0005-page-eval-disabled-by-default.md)、[ADR-0009](./0009-page-snapshot-precise-debugger.md)
-  相关:`page_eval`、`chrome.debugger` 是商店审核的重点风险项
-- 发布流水线细节见 [release.md](../release.md);上架决策清单见
-  [chrome-web-store.md](../chrome-web-store.md)
+- Orthogonal to [ADR-0004](./0004-allowlist-with-optional-host-permissions.md): the distribution
+  method does not change the allowlist/authorization model
+- Related to [ADR-0005](./0005-page-eval-disabled-by-default.md) and
+  [ADR-0009](./0009-page-snapshot-precise-debugger.md): `page_eval` and `chrome.debugger` are the key
+  risk items in the store review
+- See [release.md](../release.md) for release pipeline details; see
+  [chrome-web-store.md](../chrome-web-store.md) for the publishing decision checklist

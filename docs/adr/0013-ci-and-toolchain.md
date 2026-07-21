@@ -1,92 +1,92 @@
-# ADR-0013:统一工具链与 CI(任务入口 + GitHub Actions + 版本单源)
+# ADR-0013: Unified Toolchain and CI (Task Entry Point + GitHub Actions + Single Version Source)
 
-- **状态**:Accepted(任务入口部分后续修订:justfile → Makefile-only)
-- **日期**:2026-07-10
-- **决策者**:用户 + AI 助手
+- **Status**: Accepted (task entry point later revised: justfile → Makefile-only)
+- **Date**: 2026-07-10
+- **Deciders**: User + AI assistant
 
-> **修订note**:本 ADR 原采用 **justfile** 作为任务入口,并曾为此加了一个 1:1 镜像的
-> `Makefile`(供无 `just` 环境使用)。两个任务运行器手工同步、存在漂移风险,后续**收敛为
-> 只保留 `Makefile`**(零安装、无需 `cargo install just`),`justfile` 已删除。下文凡提
-> `justfile` / `just <recipe>` 均改由 `Makefile` / `make <target>` 提供,recipe 名称与聚合
-> (`make ci` 等)不变;CI、门禁、版本同步等其余决策不受影响。
+> **Revision note**: This ADR originally used a **justfile** as the task entry point, and for a while also carried a 1:1 mirrored
+> `Makefile` (for environments without `just`). Keeping two task runners in sync manually carried a drift risk, so it was later **consolidated down to
+> only the `Makefile`** (zero install, no need for `cargo install just`), and the `justfile` has been deleted. Below, wherever
+> `justfile` / `just <recipe>` is mentioned, it is now provided by `Makefile` / `make <target>` instead; the recipe names and aggregates
+> (`make ci`, etc.) are unchanged, and the rest of the decisions — CI, gates, version syncing, and so on — are unaffected.
 
-## 背景
+## Context
 
-项目跨两条技术栈(Rust 后端 + TypeScript 扩展)和多种测试(Rust 单测、协议 e2e、DOM 层、smoke),但在整改前没有统一的开发者入口和自动化门禁:
+The project spans two tech stacks (a Rust backend + a TypeScript extension) and multiple kinds of tests (Rust unit tests, protocol e2e, the DOM layer, smoke), but before this cleanup there was no unified developer entry point or automated gate:
 
-- **命令散乱**:构建、测试、lint 各是一串要记的命令(`cargo ...`、`npm --prefix extension run ...`、`python3 tests/e2e.py`、`bun ...`),散在 README 和记忆里,新贡献者难以复现"什么算通过"。
-- **无 CI**:没有任何自动检查,格式、lint、测试全靠提交者自觉,回归容易溜进 main。
-- **版本会漂**:同一个版本号存在三处——`Cargo.toml`、`extension/manifest.json`、`extension/package.json`。手动改极易漏改其一,导致后端与扩展版本不一致。
+- **Scattered commands**: build, test, and lint were each a string of commands you had to memorize (`cargo ...`, `npm --prefix extension run ...`, `python3 tests/e2e.py`, `bun ...`), spread across the README and people's memory, making it hard for new contributors to reproduce "what counts as passing".
+- **No CI**: there were no automated checks at all — formatting, lint, and tests all relied on the committer's diligence, and regressions could easily slip into main.
+- **Version drift**: the same version number lived in three places — `Cargo.toml`, `extension/manifest.json`, and `extension/package.json`. Editing them by hand made it easy to miss one, leaving the backend and the extension on inconsistent versions.
 
-整改要给项目补上"一条命令跑全套 + CI 挡回归 + 版本不漂"的工程基线。
+This cleanup gives the project an engineering baseline of "one command runs everything + CI blocks regressions + no version drift".
 
-## 决策
+## Decision
 
-**采用 justfile 作为统一任务入口 + GitHub Actions CI + rustfmt/clippy/eslint/prettier 门禁 + 以 Cargo.toml 为单一真相源的版本同步机制。**
+**Adopt a justfile as the unified task entry point + GitHub Actions CI + rustfmt/clippy/eslint/prettier gates + a version-sync mechanism with Cargo.toml as the single source of truth.**
 
-### 1. justfile 任务入口
-`justfile` 把所有开发者动作收敛成命名 recipe:`build` / `fmt` / `lint` / `test-rust` / `test-e2e` / `ext-build` / `ext-typecheck` / `ext-lint` / `ext-format-check` / `test-browser` / `install` / `sync-version` / `check-version`,以及聚合 recipe **`just ci`**(= fmt-check + clippy + rust 单测 + 扩展 typecheck/lint/format-check/build + e2e)。贡献者提交前跑 `just ci` 就能本地复现 CI 大部分门禁(浏览器测试因需 Chrome 单列 `test-browser`)。
+### 1. justfile task entry point
+The `justfile` collapses all developer actions into named recipes: `build` / `fmt` / `lint` / `test-rust` / `test-e2e` / `ext-build` / `ext-typecheck` / `ext-lint` / `ext-format-check` / `test-browser` / `install` / `sync-version` / `check-version`, plus the aggregate recipe **`just ci`** (= fmt-check + clippy + Rust unit tests + extension typecheck/lint/format-check/build + e2e). By running `just ci` before committing, contributors can reproduce most of the CI gates locally (browser tests are broken out separately as `test-browser` because they require Chrome).
 
-### 2. GitHub Actions CI(`.github/workflows/ci.yml`)
-push 到 main / PR / 手动触发,含并发取消,分五个 job:
+### 2. GitHub Actions CI (`.github/workflows/ci.yml`)
+Triggered on push to main / PR / manual dispatch, with concurrency cancellation, split into five jobs:
 
-| job | 内容 |
+| job | Contents |
 |-----|------|
 | **rust** | `cargo fmt --check` → `clippy --all-targets -D warnings` → `cargo test` → `cargo build --release` |
-| **extension** | `npm ci` → `typecheck` → `lint` → `format:check` → `build`(在 `extension/`) |
+| **extension** | `npm ci` → `typecheck` → `lint` → `format:check` → `build` (in `extension/`) |
 | **version-consistency** | `./scripts/check-version.sh` |
-| **e2e** | 构建 release 二进制后 `python3 tests/e2e.py`(驱动真实二进制) |
-| **browser** | 装 Chrome + bun,构建扩展后跑 `dom_test.ts` + `ext_test.ts` |
+| **e2e** | builds the release binary, then `python3 tests/e2e.py` (drives the real binary) |
+| **browser** | installs Chrome + bun, builds the extension, then runs `dom_test.ts` + `ext_test.ts` |
 
-### 3. 质量门禁
-- **Rust**:`rustfmt`(`--check`)+ `clippy` 以 **`-D warnings`** 把所有 lint 警告升级为错误。
-- **扩展**:`tsc --noEmit`(strict 类型)+ **ESLint**(flat config,聚焦正确性)+ **Prettier**(`--check`,格式唯一裁判)。Prettier 管格式、ESLint 管正确性,职责不重叠。
+### 3. Quality gates
+- **Rust**: `rustfmt` (`--check`) + `clippy` with **`-D warnings`** to promote every lint warning to an error.
+- **Extension**: `tsc --noEmit` (strict types) + **ESLint** (flat config, focused on correctness) + **Prettier** (`--check`, the sole arbiter of formatting). Prettier owns formatting, ESLint owns correctness, and their responsibilities do not overlap.
 
-### 4. 版本单一真相源
-**`Cargo.toml` 是版本的唯一真相源**,两个脚本维持一致性:
-- `scripts/check-version.sh`:校验 `extension/manifest.json`、`extension/package.json` 与 `Cargo.toml` 一致,不一致 exit 1(CI 的 version-consistency job 跑它)。
-- `scripts/sync-version.sh`:把 Cargo 版本号传播到 manifest(sed 就地替换,避开 `manifest_version` 键)和 package.json(+ package-lock.json,走 `npm version`),末尾自动 check。
+### 4. Single source of truth for versions
+**`Cargo.toml` is the single source of truth for the version**, kept consistent by two scripts:
+- `scripts/check-version.sh`: verifies that `extension/manifest.json` and `extension/package.json` match `Cargo.toml`, and exits 1 on any mismatch (run by CI's version-consistency job).
+- `scripts/sync-version.sh`: propagates the Cargo version number into the manifest (in-place `sed` replacement, avoiding the `manifest_version` key) and into package.json (+ package-lock.json, via `npm version`), then runs check automatically at the end.
 
-版本升级流程:改 `Cargo.toml` → `just sync-version` → 提交。
+Version bump flow: edit `Cargo.toml` → `just sync-version` → commit.
 
-## 考虑过的替代方案
+## Alternatives Considered
 
-### 任务入口:Makefile vs npm scripts vs justfile
-- **Makefile**:通用但语法陷阱多(tab 敏感、`.PHONY`、变量转义),对"就是跑一串命令"偏重。
-- **npm scripts**:天然只属 Node 世界,把 Rust/Python 任务塞进 `package.json` 别扭,且要求根目录有 Node 工程。
-- **justfile(采用)**:专为"命名任务运行器"而生,语法直白、无 tab 陷阱、recipe 可依赖(`test-e2e: build`),同时统领 Rust/Node/Python 三栈命令,中立于语言。
+### Task entry point: Makefile vs npm scripts vs justfile
+- **Makefile**: general-purpose but full of syntax traps (tab sensitivity, `.PHONY`, variable escaping), and skewed toward "just run a string of commands".
+- **npm scripts**: inherently belong to the Node world; cramming Rust/Python tasks into `package.json` is awkward, and it requires a Node project at the root.
+- **justfile (adopted)**: purpose-built as a "named task runner" — straightforward syntax, no tab traps, recipes can depend on each other (`test-e2e: build`), and it orchestrates the Rust/Node/Python commands across all three stacks while staying language-neutral.
 
-### CI 平台:GitHub Actions
-项目托管在 GitHub,Actions 零额外接入成本,`dtolnay/rust-toolchain` / `Swatinem/rust-cache` / `browser-actions/setup-chrome` 等现成 action 覆盖了全部需求。未考虑外部 CI。
+### CI platform: GitHub Actions
+The project is hosted on GitHub, so Actions has zero extra onboarding cost, and off-the-shelf actions like `dtolnay/rust-toolchain` / `Swatinem/rust-cache` / `browser-actions/setup-chrome` cover all the requirements. No external CI was considered.
 
-### 版本源:Cargo 为源 vs 独立 VERSION 文件
-- **独立 VERSION 文件**:多一个需要各处读取的中间源,反而增加同步点。
-- **Cargo.toml 为源(采用)**:后端是项目主体,crate 版本天然是发布版本;扩展 manifest/package 是下游,单向传播即可,方向清晰。
+### Version source: Cargo as source vs a standalone VERSION file
+- **Standalone VERSION file**: adds one more intermediate source that everything has to read, which actually increases the number of sync points.
+- **Cargo.toml as source (adopted)**: the backend is the main body of the project, so the crate version is naturally the release version; the extension manifest/package are downstream, so one-way propagation suffices, keeping the direction clear.
 
-## 后果
+## Consequences
 
-### 正面
-- **一条命令复现**:`just ci` 让"什么算通过"可执行、可复现,贡献者本地即可自检。
-- **回归被挡在门外**:格式、lint(clippy `-D warnings`)、类型、单测、e2e、DOM/smoke 全部自动化,main 保持绿。
-- **版本不漂**:CI 强制三处一致,升级有明确单向流程(改 Cargo → sync)。
-- **职责清晰**:Prettier 管格式、ESLint/clippy 管正确性,各司其职。
+### Positive
+- **One-command reproduction**: `just ci` makes "what counts as passing" executable and reproducible, so contributors can self-check locally.
+- **Regressions blocked at the door**: formatting, lint (clippy `-D warnings`), types, unit tests, e2e, and DOM/smoke are all automated, keeping main green.
+- **No version drift**: CI enforces consistency across all three places, and bumps follow an explicit one-way flow (edit Cargo → sync).
+- **Clear responsibilities**: Prettier owns formatting, ESLint/clippy own correctness, each doing its own job.
 
-### 负面
-- **贡献者需装工具链**:本地完整自检要有 `just`、Rust(rustfmt/clippy)、Node、Python,浏览器测试还需 bun + Chrome。门槛比"随手改"高。
-- **版本升级须走 sync**:不能只改某一处版本号;漏跑 `sync-version` 会被 version-consistency job 拦下(这正是设计意图,但对不熟悉流程者是一次学习成本)。
-- **`-D warnings` 偏严**:任何新 clippy 警告都会红 CI,好处是不留技术债,代价是偶尔要为无害告警做处理或显式 allow。
+### Negative / Trade-offs
+- **Contributors must install the toolchain**: a full local self-check needs `just`, Rust (rustfmt/clippy), Node, and Python, and browser tests additionally need bun + Chrome. The barrier is higher than "just tweak something quickly".
+- **Version bumps must go through sync**: you can't just edit one version number in one place; forgetting to run `sync-version` gets caught by the version-consistency job (which is the intended design, but is a one-time learning cost for anyone unfamiliar with the flow).
+- **`-D warnings` is strict**: any new clippy warning turns CI red — the upside is no lingering tech debt, the cost is occasionally having to handle a harmless warning or add an explicit allow.
 
-### 中性
-- 浏览器测试(需 Chrome)未进 `just ci` 聚合,单列为 `test-browser` / CI 的 browser job——因其环境依赖重,与纯逻辑门禁分层。
+### Neutral
+- Browser tests (which need Chrome) are not part of the `just ci` aggregate and are broken out separately as `test-browser` / CI's browser job — because their environment dependencies are heavy, they are kept in a separate layer from the pure-logic gates.
 
-## 实施
+## Implementation
 
-- `justfile`:全部 recipe + `ci` / `test` 聚合。
-- `.github/workflows/ci.yml`:rust / extension / version-consistency / e2e / browser 五 job。
-- `scripts/check-version.sh` + `scripts/sync-version.sh`:Cargo 为源的版本校验与传播。
-- Rust:`cargo fmt` / `clippy -D warnings`;扩展:`eslint.config.js`(flat)+ Prettier。
+- `justfile`: all recipes + the `ci` / `test` aggregates.
+- `.github/workflows/ci.yml`: the five jobs rust / extension / version-consistency / e2e / browser.
+- `scripts/check-version.sh` + `scripts/sync-version.sh`: Cargo-as-source version verification and propagation.
+- Rust: `cargo fmt` / `clippy -D warnings`; extension: `eslint.config.js` (flat) + Prettier.
 
-## 与其他 ADR 的关系
+## Relationship to Other ADRs
 
-- **[ADR-0012](./0012-typescript-esbuild-extension-build.md)**:extension job 的 typecheck/lint/format/build 门禁正是为该 ADR 引入的 TS + esbuild 管线服务。
-- **[ADR-0014](./0014-leveled-logging.md)**:Rust 新增的日志/错误模块由 rust job 的 clippy + `cargo test` 覆盖。
+- **[ADR-0012](./0012-typescript-esbuild-extension-build.md)**: the extension job's typecheck/lint/format/build gates exist precisely to serve the TS + esbuild pipeline introduced by that ADR.
+- **[ADR-0014](./0014-leveled-logging.md)**: the newly added Rust logging/error modules are covered by the rust job's clippy + `cargo test`.

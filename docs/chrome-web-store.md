@@ -1,115 +1,114 @@
-# 上架 Chrome Web Store:决策清单
+# Publishing to the Chrome Web Store: Decision Checklist
 
-> **现状(2026-07-19):已上架并发布。** 决策记录见
-> [ADR-0019](./adr/0019-chrome-web-store-distribution.md);商店条目
-> [Browser Bridge](https://chromewebstore.google.com/detail/browser-bridge/dgccjfjjilfpkbdllclmkiicajndkfcd)。
-> 下文保留为当初的**决策清单**存档;发布方式见末尾「手动发布」。
+> **Current state (2026-07-19): published and live.** For the decision record see
+> [ADR-0019](./adr/0019-chrome-web-store-distribution.md); the store listing is
+> [Browser Bridge](https://chromewebstore.google.com/detail/browser-bridge/dgccjfjjilfpkbdllclmkiicajndkfcd).
+> The text below is kept as an archive of the original **decision checklist**; for the release method see "Manual release" at the end.
 
-> 本文是**决策清单**,不是"已经决定要做"。上架能移除当前最大的使用门槛(手动加载
-> unpacked 扩展),但它是一次**产品承诺**:开发者账号、隐私政策、审核风险、以及一处
-> 会影响现有"钉死扩展 ID"设计的迁移工作。是否上架属于 GOVERNANCE 里 RFC/ADR 级别的
-> 决策(涉及分发方式与安全边界),建议先开 issue/ADR 定夺,而非直接 PR。
+> This document is a **decision checklist**, not a statement that "we have decided to do it." Publishing removes the single largest current barrier to use (manually loading the
+> unpacked extension), but it is a **product commitment**: a developer account, a privacy policy, review risk, plus a migration effort that affects the current "pinned extension ID" design.
+> Whether to publish is an RFC/ADR-level decision under GOVERNANCE (it touches the distribution method and security boundaries); we recommend opening an issue/ADR to decide first,
+> rather than going straight to a PR.
 
-## ⚠️ 首要坑:上架会改变钉死的扩展 ID
+## ⚠️ The top pitfall: publishing changes the pinned extension ID
 
-整个安装流程都依赖一个**固定** ID —— `mkjjlmjbcljpcfkfadfmhblmmddkdihf`(由
-[`extension/manifest.json`](../extension/manifest.json) 的 `key` 派生),
+The entire install flow depends on a **fixed** ID — `mkjjlmjbcljpcfkfadfmhblmmddkdihf` (derived from
+the `key` in [`extension/manifest.json`](../extension/manifest.json)).
 [`install.sh`](../install/install.sh) / [`install.ps1`](../install/install.ps1)
-会把它写进 native host manifest 的 `allowed_origins`。
+write it into the native host manifest's `allowed_origins`.
 
-**但 Chrome Web Store 在首次上传时会分配一个由商店掌控的 ID,商店会忽略 manifest 里的
-`key`。** 因此上架后的扩展**几乎必然拿到一个不同的 ID**,Chrome 会因 `allowed_origins`
-不匹配而**拒绝 native messaging 连接**——即安装了二进制,扩展也连不上。
+**But on first upload the Chrome Web Store assigns an ID that the store controls, and the store ignores the `key` in the manifest.** As a result the published extension **almost certainly gets a different ID**, and Chrome will **reject the native messaging connection** because of an `allowed_origins`
+mismatch — meaning even with the binary installed, the extension cannot connect.
 
-**必须规划的缓解措施:**
+**Mitigations that must be planned for:**
 
-- 首次上传后拿到商店分配的 ID,把它加入 `allowed_origins`——最好**同时信任两个 ID**:
-  商店 ID(商店用户)+ 当前钉死 ID(unpacked / 开发者)。
-- 同步更新 [`install.sh`](../install/install.sh) 的 `PINNED_EXTENSION_ID`、
-  [`install.ps1`](../install/install.ps1)、以及
-  [`scripts/check-extension-id.mjs`](../scripts/check-extension-id.mjs) 使其信任两个 ID。
-- 可选:把商店条目的公钥回填到 manifest `key`,让 unpacked 加载也得到商店 ID——但这会
-  改变今天的钉死 ID,需权衡。
+- After the first upload, take the store-assigned ID and add it to `allowed_origins` — ideally **trust both IDs at once**:
+  the store ID (store users) + the current pinned ID (unpacked / developers).
+- Update [`install.sh`](../install/install.sh)'s `PINNED_EXTENSION_ID`,
+  [`install.ps1`](../install/install.ps1), and
+  [`scripts/check-extension-id.mjs`](../scripts/check-extension-id.mjs) in sync so they trust both IDs.
+- Optional: backfill the store listing's public key into the manifest `key` so that an unpacked load also gets the store ID — but this
+  changes today's pinned ID, so weigh the trade-off.
 
-## 能解决什么、不能解决什么
+## What it solves and what it does not
 
-- ✅ **移除"墙 1"**:不再需要开发者模式 "Load unpacked",一键 "Add to Chrome",
-  重启 Chrome 后仍在,对受管控/企业 Chrome 也友好得多。
-- ❌ **不移除安装器**:商店只分发**扩展**。用户仍需运行 `install.sh` / `install.ps1`
-  安装 **native host 二进制 + manifest**。所以这是"拆掉一堵墙,不是全部"。
+- ✅ **Removes "wall 1"**: no more developer-mode "Load unpacked" — one-click "Add to Chrome",
+  it persists across Chrome restarts, and it is far friendlier for managed/enterprise Chrome.
+- ❌ **Does not remove the installer**: the store only distributes the **extension**. Users still need to run `install.sh` / `install.ps1`
+  to install the **native host binary + manifest**. So this "tears down one wall, not all of them."
 
-## 前置条件
+## Prerequisites
 
-- [ ] Chrome Web Store **开发者账号**(一次性 **$5**;须由你注册,我无法创建账号)。
-- [ ] **隐私政策 URL**(本项目**必需**——扩展会读取页面内容、cookie、web storage)。
-      可放在 `docs/` 下。
-- [ ] 商店 listing 素材:1–5 张截图(1280×800 或 640×400)、128px 图标
-      (已有 `extension/icons/icon128.png`)、简短 + 详细描述、类目、支持/主页 URL。
+- [ ] A Chrome Web Store **developer account** (a one-time **$5**; you must register it — I cannot create the account).
+- [ ] A **privacy policy URL** (**required** for this project — the extension reads page content, cookies, and web storage).
+      It can live under `docs/`.
+- [ ] Store listing assets: 1–5 screenshots (1280×800 or 640×400), a 128px icon
+      (already present at `extension/icons/icon128.png`), short + detailed descriptions, a category, and support/homepage URLs.
 
-## 与本扩展相关的审核风险项
+## Review-risk items specific to this extension
 
-Google 审核会重点看以下几项,提前准备书面理由:
+Google's review will focus on the following; prepare a written justification in advance:
 
-- [ ] **`page_eval`(执行任意 JS)**——最高被拒风险。理由:每次调用都需用户确认的开发者
-      工具;可考虑商店版本**默认禁用**该工具。
-- [ ] **`chrome.debugger`**(`page_snapshot_precise` 使用)——敏感权限,需说明。
-- [ ] **较宽的 host / optional 权限 + native messaging**——说明 localhost-only、
-      per-run secret 的桥接与逐站点授权模型,链接[威胁模型](./security/threat-model.md)。
-- [ ] **是否"使用远程代码"**——如实回答:`page_eval` 执行的是**用户提供**的 JS,不是
-      远程拉取的代码;表单里措辞要精确。
+- [ ] **`page_eval` (executing arbitrary JS)** — the highest rejection risk. Rationale: it is a developer tool that requires user confirmation
+      on every call; consider **disabling it by default** in the store build.
+- [ ] **`chrome.debugger`** (used by `page_snapshot_precise`) — a sensitive permission that needs explanation.
+- [ ] **Broad host / optional permissions + native messaging** — explain the localhost-only,
+      per-run secret bridge and the per-site approval model, and link to the [threat model](./security/threat-model.md).
+- [ ] **Whether it "uses remote code"** — answer honestly: `page_eval` executes **user-provided** JS, not
+      code fetched remotely; word the form precisely.
 
-## 打包与提交
+## Packaging and submission
 
-- [x] 商店 zip:发布流水线产出的 **`browser-bridge-extension-<tag>-store.zip`**(注意 `-store`
-      后缀)已是可直接上传的形状(`manifest.json` 在 zip 根、**去掉 `key`**)。另一份
-      `browser-bridge-extension-<tag>.zip`(**保留 `key`**)是给 "Load unpacked" 开发者用的,
-      **不能**上传到商店。
-- [ ] 确认 `manifest.json` 版本与 Cargo 一致(`scripts/check-version.sh` 已强制)。
-- [x] `key` 字段:**去掉**——已发布条目的 manifest **不含 `key`**(商店自己掌管派生商店 ID 的
-      签名密钥),更新上传若携带 `key` 会被拒:「清单中 key 字段的值与当前内容不符」(见「手动发布」)。
-- [ ] 上传,填写数据使用披露 + 隐私政策,提交。审核延迟**数天到数周**,且**失去即时更新
-      控制**(每次更新都走审核)。
+- [x] Store zip: the **`browser-bridge-extension-<tag>-store.zip`** produced by the release pipeline (note the `-store`
+      suffix) is already in the shape you can upload directly (`manifest.json` at the zip root, **with `key` removed**). The other
+      `browser-bridge-extension-<tag>.zip` (**which keeps `key`**) is for developers using "Load unpacked" and
+      **must not** be uploaded to the store.
+- [ ] Confirm the `manifest.json` version matches Cargo (`scripts/check-version.sh` already enforces this).
+- [x] The `key` field: **remove it** — the manifest of the published listing does **not contain `key`** (the store manages the signing key that derives the store ID);
+      an update upload that carries `key` is rejected: "The value of the key field in the manifest does not match the current content" (see "Manual release").
+- [ ] Upload, fill in the data-usage disclosure + privacy policy, and submit. Review is delayed **days to weeks**, and you **lose instant-update
+      control** (every update goes through review).
 
-## 上架之后
+## After publishing
 
-- [ ] 把商店 ID 接入 `allowed_origins` + 两个安装器(见首要坑)。
-- [ ] 改写 README "Load the extension" → "从 Chrome Web Store 添加",unpacked 保留为
-      开发者/进阶路径。
-- [ ] 更新 `docs/`,并补一条 **ADR** 记录该决策(按 GOVERNANCE,分发方式属重大变更)。
-- [ ] 可选:用 CI 步骤(`chrome-webstore-upload` 之类)自动化发布,或保持手动。
+- [ ] Wire the store ID into `allowed_origins` + both installers (see the top pitfall).
+- [ ] Rewrite the README "Load the extension" → "Add from the Chrome Web Store", keeping unpacked as
+      the developer/advanced path.
+- [ ] Update `docs/`, and add an **ADR** recording the decision (per GOVERNANCE, the distribution method is a major change).
+- [ ] Optional: automate the release with a CI step (something like `chrome-webstore-upload`), or keep it manual.
 
-## 结论 / 建议
+## Conclusion / recommendation
 
-上架是**单点收益最大**的可用性改进,但它是一次产品承诺:$5 账号、隐私政策、
-`page_eval`/`chrome.debugger` 的审核风险、持续的审核延迟,以及上面的 ID 迁移工作。
-因为它触及分发方式与安全姿态,按本项目 [GOVERNANCE](../GOVERNANCE.md) 属 **RFC/ADR 级**
-决策——建议先开 issue 讨论定夺,再动手,而不是一个快速 PR。
+Publishing is the **single highest-payoff** usability improvement, but it is a product commitment: the $5 account, a privacy policy,
+the review risk of `page_eval`/`chrome.debugger`, ongoing review delays, and the ID migration work above.
+Because it touches the distribution method and security posture, under this project's [GOVERNANCE](../GOVERNANCE.md) it is an **RFC/ADR-level**
+decision — we recommend opening an issue to discuss and decide first, then acting, rather than a quick PR.
 
-## 手动发布(不做自动化)
+## Manual release (no automation)
 
-评估过用 CWS API 做 CI 自动发布,但 OAuth refresh-token 维护成本、`release: published`
-触发器对 `GITHUB_TOKEN` 所建 release 不生效等问题,收益不抵复杂度,**改为手动上传**:
+We evaluated CI auto-publishing via the CWS API, but issues like the maintenance cost of the OAuth refresh token and the fact that the `release: published`
+trigger does not fire for releases created by `GITHUB_TOKEN` mean the payoff does not justify the complexity, so we **switched to manual upload**:
 
-1. **拿到 zip**:下载 release 里的 **`browser-bridge-extension-<tag>-store.zip`**(带 `-store`
-   后缀)—— 它已经是商店要的形状(`manifest.json` 在 zip **根目录**、**去掉 `key`**)。也可本地打包:
+1. **Get the zip**: download **`browser-bridge-extension-<tag>-store.zip`** (with the `-store`
+   suffix) from the release — it is already in the shape the store wants (`manifest.json` at the zip **root**, **with `key` removed**). You can also build it locally:
    ```sh
    cp -r extension/dist store-pkg
    node -e 'const fs=require("fs");const f="store-pkg/manifest.json";const m=JSON.parse(fs.readFileSync(f,"utf8"));delete m.key;fs.writeFileSync(f,JSON.stringify(m,null,2));'
    (cd store-pkg && zip -rX ../browser-bridge-extension-store.zip . -x ".*")
    ```
-   ⚠️ **必须去掉 `key`**——已发布条目的 manifest **不含 `key`**(商店掌管派生商店 ID 的签名密钥),
-   更新上传若携带 `key` 会被拒:「清单中 key 字段的值与当前内容不符」。不含 `-store` 后缀的那份
-   zip 保留了 `key`(供开发者 "Load unpacked"),**不要**上传它。
-2. **上传**:[开发者后台](https://chrome.google.com/webstore/devconsole) → Browser Bridge
-   → **Package → Upload new package** → 选该 zip → **Submit for review**。
-3. **注意**:商店拒绝重复版本,发新版前先 bump(`scripts/check-version.sh` 保证
-   Cargo/manifest 一致);审核数天到数周,不可跳过。
+   ⚠️ **You must remove `key`** — the manifest of the published listing does **not contain `key`** (the store manages the signing key that derives the store ID);
+   an update upload that carries `key` is rejected: "The value of the key field in the manifest does not match the current content." The zip without the `-store` suffix
+   keeps `key` (for developers' "Load unpacked"), so **do not** upload it.
+2. **Upload**: [Developer Dashboard](https://chrome.google.com/webstore/devconsole) → Browser Bridge
+   → **Package → Upload new package** → select that zip → **Submit for review**.
+3. **Note**: the store rejects duplicate versions, so bump before publishing a new version (`scripts/check-version.sh` guarantees
+   Cargo/manifest consistency); review takes days to weeks and cannot be skipped.
 
-## 相关
+## See Also
 
-- 决策记录:[ADR-0019](./adr/0019-chrome-web-store-distribution.md)。
-- 安全边界与威胁模型:[SECURITY.md](../SECURITY.md) ·
+- Decision record: [ADR-0019](./adr/0019-chrome-web-store-distribution.md).
+- Security boundaries and threat model: [SECURITY.md](../SECURITY.md) ·
   [security/threat-model.md](./security/threat-model.md) ·
-  [security/trust-boundaries.md](./security/trust-boundaries.md)。
-- 钉死 ID 与安装产物:[architecture.md §4.3](./architecture.md#43-安装产物)。
-- 发布流水线与扩展 zip:[release.md](./release.md)。
+  [security/trust-boundaries.md](./security/trust-boundaries.md).
+- Pinned ID and install artifacts: [architecture.md §4.3](./architecture.md#43-installation-artifacts).
+- Release pipeline and extension zip: [release.md](./release.md).

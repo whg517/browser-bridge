@@ -1,37 +1,49 @@
-# ADR-0016: 支持 Linux 与 WSL 双运行模式
+# ADR-0016: Support Dual Run Modes for Linux and WSL
 
-- 状态:Accepted
-- 日期:2026-07-13
+- Status: Accepted
+- Date: 2026-07-13
 
-## 背景
+## Context
 
-Linux 原实现沿用了 macOS 的安装目录和锁文件路径，release workflow 也只生成
-macOS Apple Silicon 包。WSL 又同时存在 Windows Chrome 与 WSLg Linux 浏览器
-两种部署拓扑，若混用二进制、manifest 或锁文件，会导致 Native Messaging
-无法连接。
+The original Linux implementation reused the install directory and lock-file
+paths from macOS, and the release workflow only produced macOS Apple Silicon
+packages. WSL additionally has two deployment topologies at once — Windows
+Chrome and a WSLg Linux browser — and mixing binaries, manifests, or lock files
+across them prevents Native Messaging from connecting.
 
-## 决策
+## Decision
 
-1. Linux 锁文件优先放在 `$XDG_RUNTIME_DIR/browser-bridge/run.lock`，目录权限为
-   `0700`；缺少 runtime dir 时依次回退到 `$XDG_CACHE_HOME`、`~/.cache` 和按
-   UID 隔离的临时目录。锁文件仍保持 `0600`。
-2. Linux 安装遵循 XDG：二进制默认放在
-   `${XDG_DATA_HOME:-$HOME/.local/share}/browser-bridge`，Google Chrome 和
-   Chromium 的 Native Messaging manifest 分别写入各自的 XDG config 目录。
-3. `install.sh` 支持 `--browser chrome|chromium|both`，默认自动检测；通过
-   `--skip-extension-build` 可复用已构建的 `extension/dist`。
-4. WSL 使用两种明确拓扑：
-   - Windows Chrome：WSL MCP 客户端通过 interop 启动 Windows 安装的 `.exe`。
-   - WSLg Linux Chrome/Chromium：全部组件在 WSL 内原生安装和运行。
-5. 发布流水线增加 Linux x64 预编译包；CI 用隔离的 XDG 目录验证 Linux
-   安装器同时写入 Chrome 与 Chromium manifest。
-6. Shell、Python、YAML 等跨平台文本固定为 LF，PowerShell 脚本固定为 CRLF，
-   避免 Git 工作树配置改变脚本换行符。
+1. The Linux lock file is placed preferentially at
+   `$XDG_RUNTIME_DIR/browser-bridge/run.lock`, with directory permissions of
+   `0700`; when a runtime dir is missing, it falls back in order to
+   `$XDG_CACHE_HOME`, `~/.cache`, and a UID-isolated temporary directory. The
+   lock file itself stays `0600`.
+2. Linux installs follow XDG: the binary is installed by default to
+   `${XDG_DATA_HOME:-$HOME/.local/share}/browser-bridge`, and the Native
+   Messaging manifests for Google Chrome and Chromium are written into their
+   respective XDG config directories.
+3. `install.sh` supports `--browser chrome|chromium|both`, defaulting to
+   auto-detection; `--skip-extension-build` lets you reuse an already-built
+   `extension/dist`.
+4. WSL uses two explicit topologies:
+   - Windows Chrome: the WSL MCP client launches the Windows-installed `.exe`
+     via interop.
+   - WSLg Linux Chrome/Chromium: all components are installed and run natively
+     inside WSL.
+5. The release pipeline adds a Linux x64 prebuilt package; CI verifies with
+   isolated XDG directories that the Linux installer writes both the Chrome and
+   Chromium manifests.
+6. Cross-platform text such as Shell, Python, and YAML is fixed to LF, and
+   PowerShell scripts are fixed to CRLF, to prevent Git working-tree
+   configuration from changing script line endings.
 
-## 结果
+## Consequences
 
-- Linux 和 WSLg 用户可原生安装并运行 browser-bridge。
-- WSL 用户可以继续操作 Windows 日常 Chrome，而无需在 WSL 重装浏览器。
-- 三个运行组件必须位于同一操作系统边界；不支持 Windows Chrome 直接启动
-  Linux ELF，也不支持 Linux Chrome 读取 Windows Native Messaging 注册。
-- Linux 预编译发布目前覆盖 x64；其他 Linux 架构仍需从源码构建。
+- Linux and WSLg users can install and run browser-bridge natively.
+- WSL users can keep using their everyday Windows Chrome without reinstalling a
+  browser inside WSL.
+- The three runtime components must live within the same OS boundary; Windows
+  Chrome cannot directly launch a Linux ELF, and Linux Chrome cannot read a
+  Windows Native Messaging registration.
+- The Linux prebuilt release currently covers x64; other Linux architectures
+  still need to be built from source.

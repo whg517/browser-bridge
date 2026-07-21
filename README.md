@@ -214,7 +214,7 @@ browser-bridge call tab_open '{"url":"https://example.com"}'
 
 `tools` needs nothing running (it just self-describes). `call` shares the one
 bridge connection, so it refuses (exit 4) while your MCP client is active.
-Details + exit codes: [docs/cli.md](./docs/cli.md#call面向非-mcp-调用方的一次性工具调用).
+Details + exit codes: [docs/cli.md](./docs/cli.md#call-one-shot-tool-call-for-non-mcp-callers).
 
 ---
 
@@ -318,16 +318,16 @@ when you remove the extension.
 
 | Doc | What's in it |
 |-----|--------------|
-| [docs/requirements.md](./docs/requirements.md) | 目标、用户故事、功能/非功能需求、范围边界 |
-| [docs/architecture.md](./docs/architecture.md) | 组件、数据流、协议、安全模型、关键约束 |
-| [docs/security/](./docs/security/) | 威胁模型、信任边界、工具风险矩阵、事件响应 |
-| [docs/cli.md](./docs/cli.md) | `doctor`/`status` 自检、故障排查 |
-| [docs/operations.md](./docs/operations.md) | 两种二进制模式、日志/审计、锁文件、重连 |
-| [docs/compatibility.md](./docs/compatibility.md) | 版本纪律与能力/协议握手 |
-| [docs/release.md](./docs/release.md) | tag 驱动发布、预编译 tarball + 校验和、SBOM |
-| [docs/wsl.md](./docs/wsl.md) | Windows Chrome interop 与 WSLg 两种模式 |
-| [docs/adr/](./docs/adr/) | 架构决策记录 (ADR) — 每个"为什么这么选" |
-| [contracts/](./contracts/README.md) | 工具目录、错误码、能力、协议版本(跨进程契约信源) |
+| [docs/requirements.md](./docs/requirements.md) | Goals, user stories, functional/non-functional requirements, scope boundaries |
+| [docs/architecture.md](./docs/architecture.md) | Components, data flow, protocols, security model, key constraints |
+| [docs/security/](./docs/security/) | Threat model, trust boundaries, tool risk matrix, incident response |
+| [docs/cli.md](./docs/cli.md) | `doctor`/`status` self-check, troubleshooting |
+| [docs/operations.md](./docs/operations.md) | Two binary modes, logging/audit, lock file, reconnection |
+| [docs/compatibility.md](./docs/compatibility.md) | Version discipline and capability/protocol handshake |
+| [docs/release.md](./docs/release.md) | Tag-driven releases, prebuilt tarball + checksums, SBOM |
+| [docs/wsl.md](./docs/wsl.md) | The two modes — Windows Chrome interop and WSLg |
+| [docs/adr/](./docs/adr/) | Architecture Decision Records (ADR) — the "why" behind each choice |
+| [contracts/](./contracts/README.md) | Tool catalog, error codes, capabilities, protocol version (cross-process contract source of truth) |
 
 <details>
 <summary>Testing & project layout</summary>
