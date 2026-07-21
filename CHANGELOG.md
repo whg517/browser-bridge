@@ -6,6 +6,48 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-07-21
+
+Non-MCP CLI surface, one-command agent registration, and Windows automation
+support. No breaking changes — everything is additive over 0.1.0.
+
+### Added
+- **`browser-bridge tools [--json]`** and **`call <tool> [json]`** subcommands:
+  discover the tool catalogue (same shape as MCP `tools/list`) and run one tool
+  without an MCP handshake — for non-MCP agents and shell scripts. `tools`
+  starts no bridge; `call` prints the tool's raw JSON and refuses (exit 4) while
+  an MCP client owns the single bridge.
+- **Installer auto-registration for Codex and OpenClaw** — `--register-codex` /
+  `--register-openclaw` (and `--unregister-*`), mirroring `--register-claude-code`;
+  runs each client's own `mcp add`/`remove` CLI, never hand-edits configs.
+- **`docs/integrations.md`** — per-agent register-and-verify guide (Codex,
+  OpenClaw, Cursor, Windsurf, Cline, Claude Code/Desktop, LangChain, Hermes
+  Agent, and the Hermes/harmony format via the `tools`/`call` CLI).
+- **`install.ps1 -TargetUser <account>`** — install into a specific desktop
+  user's profile + hive when running as SYSTEM/elevated (automation agents);
+  running as SYSTEM without it is refused rather than silently mis-installing.
+- **`BB_LOCK_DIR`** env override — decouples the lock-file location from
+  `LOCALAPPDATA`/XDG so the server and native host can be pinned to one directory
+  when they run under different user contexts.
+- **Opt-in Chrome Web Store auto-publish workflow** (`cws-publish.yml`, decoupled
+  like `sbom.yml`), **ADR-0019** (dual-ID store distribution), and store-first
+  install docs.
+
+### Changed
+- README leads with **Add from Chrome Web Store** (the listing is live), with
+  load-unpacked demoted to an advanced path; the installer trusts both the store
+  id and the pinned unpacked id.
+
+### Fixed
+- Windows SYSTEM/elevated installs no longer misroute to the SYSTEM profile
+  (binary / manifest / registry key / lock landed where Chrome couldn't see them
+  → permanent `NOT_CONNECTED`).
+
+### Dependencies
+- Dependabot bumps: `thiserror`, `serde`, `serde_json` (Rust), `esbuild`
+  (extension), and pinned CI actions. Extension TypeScript stays on 5.x — TS7
+  (the native compiler) is blocked by the `typescript-eslint` peer range.
+
 ## [0.1.0] - 2026-07-19
 
 First stable release — a Rust single-binary MCP server + `--native-host` bridge
