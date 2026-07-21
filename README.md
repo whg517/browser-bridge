@@ -197,6 +197,22 @@ Grouped from the single source of truth,
 *No write tools by design — cookie/storage writes are out of scope
 ([ADR-0010](./docs/adr/0010-cookie-storage-readonly.md)).*
 
+### Non-MCP agents & scripts
+
+An agent or shell that doesn't speak MCP can **discover** the tools and
+**invoke** them without any handshake — no wrapper code:
+
+```sh
+browser-bridge tools --json          # discover: capabilities (== MCP tools/list)
+browser-bridge tools                 # …or a human-readable summary
+browser-bridge call tab_list         # invoke: runs one tool, raw JSON on stdout
+browser-bridge call tab_open '{"url":"https://example.com"}'
+```
+
+`tools` needs nothing running (it just self-describes). `call` shares the one
+bridge connection, so it refuses (exit 4) while your MCP client is active.
+Details + exit codes: [docs/cli.md](./docs/cli.md#call面向非-mcp-调用方的一次性工具调用).
+
 ---
 
 ## How it works
@@ -254,6 +270,7 @@ Environment variables read at launch (source: `src/log.rs`, [docs/cli.md](./docs
 |-----|--------|---------|--------|
 | `BB_LOG` | `error` \| `warn` \| `info` \| `debug` | `info` | stderr log / audit threshold. `warn`/`error` silences audit lines. |
 | `BB_LOG_FORMAT` | `text` \| `json` | `text` | Audit-line format; `json` emits one object per line for machine collection. |
+| `BB_LOCK_DIR` | absolute dir | per-user data dir | Overrides where the lock file lives. Set the **same** value on both the MCP server and the native host when they run under different user contexts (e.g. Windows automation as SYSTEM vs. Chrome as the desktop user), so both find the bridge. |
 
 ## Troubleshooting
 

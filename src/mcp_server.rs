@@ -27,71 +27,15 @@ pub fn run() -> i32 {
         ipc::LockFile::remove();
     });
 
-    // 1. Bind the bridge socket and publish the lock file.
-    let (listener, lock) = match ipc::listen() {
-        Ok(x) => x,
-        Err(e) => {
-            log_error!("mcp", "failed to bind bridge socket: {e}");
-            return 1;
-        }
+    // Bind the bridge, take over from any prior *live* MCP server (a fresh MCP
+    // client session legitimately replaces the old one), and start accepting the
+    // native host. See `start_bridge`.
+    let session = match start_bridge(true) {
+        Some(s) => s,
+        None => return 1,
     };
-    // Take over from any prior MCP server instance. The MCP client may spawn a
-    // fresh server per session; if the previous one is still alive, the native host
-    // will keep talking to IT (it doesn't follow lock-file changes), so the
-    // new server's tool calls report "extension not connected". Kill the old
-    // instance first so the native host's TCP connection drops, forcing the
-    // extension to reconnect against our new lock.
-    if let Ok(Some(prev)) = ipc::LockFile::read() {
-        if prev.pid != lock.pid && pid_is_alive(prev.pid) {
-            log_info!("mcp", "supplanting prior MCP server pid {}", prev.pid);
-            // SIGTERM → old server's stdin loop ends → it removes the lock and
-            // exits → its TCP listener closes → native host gets EOF → SW
-            // onDisconnect → reconnect spawns a fresh host → reads OUR lock.
-            terminate_process(prev.pid);
-            // Give it a moment to die and clean up its lock.
-            for _ in 0..50 {
-                if !pid_is_alive(prev.pid) {
-                    break;
-                }
-                std::thread::sleep(std::time::Duration::from_millis(100));
-            }
-            // Remove any stale lock the old instance didn't clean up.
-            ipc::LockFile::remove();
-        }
-    }
-    if let Err(e) = lock.write() {
-        log_error!("mcp", "failed to write lock file: {e}");
-        return 1;
-    }
-    log_info!(
-        "mcp",
-        "bridge listening on 127.0.0.1:{} (pid {}) lock at {}",
-        lock.port,
-        lock.pid,
-        ipc::LockFile::path().display()
-    );
 
-    let session = Session::new();
-
-    // 2. Background thread: accept the native host's connection(s).
-    {
-        let session = session.clone();
-        thread::spawn(move || loop {
-            match listener.accept() {
-                Ok((stream, _addr)) => {
-                    if let Err(e) = session.attach_connection(stream) {
-                        log_warn!("mcp", "accept handler error: {e}");
-                    }
-                }
-                Err(e) => {
-                    log_error!("mcp", "accept failed: {e}");
-                    break;
-                }
-            }
-        });
-    }
-
-    // 3. Main loop: read NDJSON JSON-RPC from stdin, respond on stdout.
+    // Main loop: read NDJSON JSON-RPC from stdin, respond on stdout.
     let stdin = io::stdin();
     let mut reader = BufReader::new(stdin.lock());
     let stdout = io::stdout();
@@ -122,6 +66,172 @@ pub fn run() -> i32 {
     // stdin EOF: the MCP client disconnected. Remove lock file.
     ipc::LockFile::remove();
     0
+}
+
+/// Bind the bridge socket, publish the lock file, and spawn the accept loop that
+/// attaches native-host connections to a [`Session`]. Returns the session, or
+/// `None` on a fatal bind/lock error.
+///
+/// `supplant_live`: when a *live* prior server owns the lock, kill it and take
+/// over (MCP server mode — a fresh client session replaces the old). `call` mode
+/// passes `false`: it refuses up front rather than interrupting a running client,
+/// so here it only ever overwrites a stale (dead-pid) lock.
+fn start_bridge(supplant_live: bool) -> Option<Session> {
+    let (listener, lock) = match ipc::listen() {
+        Ok(x) => x,
+        Err(e) => {
+            log_error!("mcp", "failed to bind bridge socket: {e}");
+            return None;
+        }
+    };
+    if supplant_live {
+        // The native host keeps talking to whichever server it's connected to (it
+        // doesn't follow lock-file changes), so kill the old one to force the
+        // extension to reconnect against our new lock.
+        if let Ok(Some(prev)) = ipc::LockFile::read() {
+            if prev.pid != lock.pid && pid_is_alive(prev.pid) {
+                log_info!("mcp", "supplanting prior MCP server pid {}", prev.pid);
+                terminate_process(prev.pid);
+                for _ in 0..50 {
+                    if !pid_is_alive(prev.pid) {
+                        break;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                }
+                ipc::LockFile::remove();
+            }
+        }
+    }
+    if let Err(e) = lock.write() {
+        log_error!("mcp", "failed to write lock file: {e}");
+        return None;
+    }
+    log_info!(
+        "mcp",
+        "bridge listening on 127.0.0.1:{} (pid {}) lock at {}",
+        lock.port,
+        lock.pid,
+        ipc::LockFile::path().display()
+    );
+
+    let session = Session::new();
+    {
+        let session = session.clone();
+        thread::spawn(move || loop {
+            match listener.accept() {
+                Ok((stream, _addr)) => {
+                    if let Err(e) = session.attach_connection(stream) {
+                        log_warn!("mcp", "accept handler error: {e}");
+                    }
+                }
+                Err(e) => {
+                    log_error!("mcp", "accept failed: {e}");
+                    break;
+                }
+            }
+        });
+    }
+    Some(session)
+}
+
+/// Validate a `call` invocation: parse the optional JSON args and confirm the
+/// tool exists. Pure, so it's unit-testable without a bridge. On failure returns
+/// `(exit_code, message)`.
+fn parse_call_args(tool: &str, args_json: Option<&str>) -> Result<Value, (i32, String)> {
+    let args = match args_json {
+        None => Value::Null,
+        Some(s) => {
+            serde_json::from_str(s).map_err(|e| (2, format!("invalid JSON arguments: {e}")))?
+        }
+    };
+    if !tools::all().iter().any(|t| t.name == tool) {
+        let names: Vec<&str> = tools::all().iter().map(|t| t.name).collect();
+        let msg = format!("unknown tool: {tool}\navailable: {}", names.join(", "));
+        return Err((2, msg));
+    }
+    Ok(args)
+}
+
+/// One-shot CLI: run a single tool against the extension and print its result,
+/// for callers that don't want to speak MCP. `browser-bridge call <tool> [json]`.
+///
+/// Prints the tool's raw JSON result to stdout (no MCP `{content:[{text}]}`
+/// wrapping). Exit codes: 0 ok · 1 tool error · 2 bad args/unknown tool ·
+/// 3 timed out waiting for the extension · 4 a live MCP server owns the bridge.
+pub fn run_call(tool: &str, args_json: Option<&str>) -> i32 {
+    install_stderr_panic_hook();
+    crate::protocol::ignore_sigpipe();
+
+    let args = match parse_call_args(tool, args_json) {
+        Ok(a) => a,
+        Err((code, msg)) => {
+            eprintln!("{msg}");
+            return code;
+        }
+    };
+
+    // Never interrupt a live MCP client: the bridge is a single connection, so
+    // taking over would drop that client. Refuse instead (only stale locks pass).
+    if let Ok(Some(prev)) = ipc::LockFile::read() {
+        if prev.pid != std::process::id() && pid_is_alive(prev.pid) {
+            eprintln!(
+                "a browser-bridge server is already running (pid {}). `call` shares the single\n\
+                 bridge connection and won't interrupt it — stop your MCP client first, or make\n\
+                 the call through that client.",
+                prev.pid
+            );
+            return 4;
+        }
+    }
+
+    // Own the bridge from here on, so clean up the lock on signals too.
+    install_signal_cleanup(ipc::LockFile::remove);
+    let session = match start_bridge(false) {
+        Some(s) => s,
+        None => return 1,
+    };
+
+    // Wait for the extension (native host) to attach before dispatching, else the
+    // call returns NOT_CONNECTED immediately. The extension's reconnect loop
+    // connects within a couple of seconds once our lock is published.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+    while session.current_generation().is_none() {
+        if std::time::Instant::now() >= deadline {
+            eprintln!(
+                "timed out waiting for the Chrome extension to connect. Is it loaded and is\n\
+                 Chrome running? Click the Browser Bridge toolbar icon to wake it, then retry."
+            );
+            ipc::LockFile::remove();
+            return 3;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+
+    let out = tools::dispatch(&session, tool, &args);
+    print_outcome(&out);
+    ipc::LockFile::remove();
+    if out.is_error {
+        1
+    } else {
+        0
+    }
+}
+
+/// Print a dispatched tool result for `call`: text blocks (the raw tool JSON) and
+/// image blocks (base64) go to stdout; an error's text goes to stderr.
+fn print_outcome(out: &tools::Outcome) {
+    let blocks = out.content.as_array().into_iter().flatten();
+    for block in blocks {
+        if let Some(text) = block.get("text").and_then(Value::as_str) {
+            if out.is_error {
+                eprintln!("{text}");
+            } else {
+                println!("{text}");
+            }
+        } else if let Some(data) = block.get("data").and_then(Value::as_str) {
+            println!("{data}"); // e.g. page_screenshot base64 PNG
+        }
+    }
 }
 
 fn handle(session: &Session, msg: &JsonRpc) -> Option<JsonRpc> {
@@ -286,6 +396,38 @@ fn terminate_process(pid: u32) {
     windows_process::terminate(pid);
     #[cfg(all(not(unix), not(windows)))]
     let _ = pid;
+}
+
+#[cfg(test)]
+mod call_tests {
+    use super::parse_call_args;
+    use serde_json::{json, Value};
+
+    #[test]
+    fn no_args_parse_to_null() {
+        assert_eq!(parse_call_args("tab_list", None).unwrap(), Value::Null);
+    }
+
+    #[test]
+    fn json_args_parse_through() {
+        assert_eq!(
+            parse_call_args("tab_open", Some(r#"{"url":"https://x"}"#)).unwrap(),
+            json!({ "url": "https://x" })
+        );
+    }
+
+    #[test]
+    fn invalid_json_is_rejected_with_code_2() {
+        let (code, _msg) = parse_call_args("tab_open", Some("{not json")).unwrap_err();
+        assert_eq!(code, 2);
+    }
+
+    #[test]
+    fn unknown_tool_is_rejected_with_code_2() {
+        let (code, msg) = parse_call_args("bogus_tool", None).unwrap_err();
+        assert_eq!(code, 2);
+        assert!(msg.contains("unknown tool"));
+    }
 }
 
 #[cfg(all(test, unix))]

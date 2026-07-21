@@ -9,7 +9,8 @@
 |------|------|------|
 | [requirements.md](./requirements.md) | 需求:目标、用户故事、功能/非功能需求、范围边界、阶段划分 | 所有人(先读这个) |
 | [architecture.md](./architecture.md) | 架构:组件、数据流、协议、安全模型、关键约束、技术选型 | 实现者、评审者 |
-| [cli.md](./cli.md) | CLI 子命令与故障排查:`doctor`/`status` 只读自检、"server not reachable" 解读 | 使用者、排查者 |
+| [cli.md](./cli.md) | CLI 子命令与故障排查:`doctor`/`status` 只读自检、`tools`/`call`、"server not reachable" 解读 | 使用者、排查者 |
+| [integrations.md](./integrations.md) | 接入各家 Agent(Codex/OpenClaw/Cursor/Windsurf/Cline/Claude/LangChain/Hermes):注册即被发现 | 使用者、集成者 |
 | [operations.md](./operations.md) | 运维:两种二进制模式、`doctor`/`status`、`BB_LOG`/审计、锁文件、native host 重连 | 使用者、运维者 |
 | [compatibility.md](./compatibility.md) | 兼容性:三种版本、内部协议版本、能力/版本握手(契约现状) | 实现者、评审者 |
 | [release.md](./release.md) | 发布:tag 驱动流水线、预编译 tarball + 校验和、双模式 `install.sh`、SBOM | 发布者、评审者 |

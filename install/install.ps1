@@ -1,5 +1,11 @@
 # install.ps1 — build browser-bridge and register the Chrome native messaging
 # host for the current Windows user.
+#
+# Running from an automation agent as SYSTEM/elevated? The current user's
+# LOCALAPPDATA/HKCU won't be the desktop user's, so pass -TargetUser <account>
+# to install into that user's profile + hive instead (issue #57). Running as
+# SYSTEM without -TargetUser is refused with a clear message rather than
+# silently installing to the wrong profile.
 
 [CmdletBinding()]
 param(
@@ -11,6 +17,12 @@ param(
     # just that one id.
     [ValidatePattern('^[a-p]{32}$')]
     [string]$StoreExtensionId = 'dgccjfjjilfpkbdllclmkiicajndkfcd',
+    # Install for (or uninstall from) a DIFFERENT user than the one running this
+    # script. Needed when an automation agent runs as SYSTEM/elevated but Chrome
+    # runs as the desktop user: without this, LOCALAPPDATA and HKCU resolve to
+    # the WRONG profile and Chrome never sees the host (permanent NOT_CONNECTED,
+    # see issue #57). Pass the desktop account name, e.g. -TargetUser Administrator.
+    [string]$TargetUser = '',
     # Remove exactly what this installer places (binary, native-host manifest,
     # HKCU registry key, run.lock) and leave Chrome and the extension untouched.
     [switch]$Uninstall
@@ -30,19 +42,77 @@ if ((Test-Path -LiteralPath (Join-Path $Here 'extension')) -or
     $Root = Split-Path -Parent $Here
 }
 $HostName = 'com.browser_bridge.host'
-$InstallDir = Join-Path $env:LOCALAPPDATA 'browser-bridge'
 $BinaryName = 'browser-bridge.exe'
+
+# ---- resolve which user we install FOR ------------------------------------
+# Default: the user running this script (its LOCALAPPDATA + HKCU). With
+# -TargetUser we install into another user's profile + registry hive instead —
+# the SYSTEM/elevated-automation case (issue #57).
+$currentIsSystem = ([System.Security.Principal.WindowsIdentity]::GetCurrent()).IsSystem
+$TargetSid = $null
+$TargetProfile = $null
+
+if ($TargetUser) {
+    $sid = ((New-Object System.Security.Principal.NTAccount($TargetUser)).Translate(
+            [System.Security.Principal.SecurityIdentifier])).Value
+    $profileKey = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\$sid"
+    $profilePath = (Get-ItemProperty -LiteralPath $profileKey -Name ProfileImagePath -ErrorAction SilentlyContinue).ProfileImagePath
+    if (-not $profilePath) { $profilePath = Join-Path 'C:\Users' $TargetUser }
+    $TargetSid = $sid
+    $TargetProfile = $profilePath
+    $InstallDir = Join-Path $profilePath 'AppData\Local\browser-bridge'
+    $registryRoot = "Registry::HKEY_USERS\$sid\Software\Google\Chrome\NativeMessagingHosts"
+    Write-Host "[install] target user: $TargetUser  (SID $sid)"
+    Write-Host "[install] target profile: $profilePath"
+} else {
+    if ($currentIsSystem) {
+        throw @"
+Running as SYSTEM without -TargetUser. LOCALAPPDATA and HKCU point to the SYSTEM
+profile ($env:LOCALAPPDATA), not the desktop user's, so Chrome (running as that
+user) would never see the host — a permanent NOT_CONNECTED. Either re-run this
+script AS the desktop user, or pass the desktop account explicitly:
+    -TargetUser <account>     e.g.  -TargetUser Administrator
+"@
+    }
+    $InstallDir = Join-Path $env:LOCALAPPDATA 'browser-bridge'
+    $registryRoot = 'HKCU:\Software\Google\Chrome\NativeMessagingHosts'
+}
+$registryPath = "$registryRoot\$HostName"
+
+# Run a registry action against the target user's hive. When installing for
+# another user we write under HKEY_USERS\<SID>; if that hive isn't already
+# mounted (user logged off) we reg-load NTUSER.DAT and unload afterwards. For
+# the default (current user) this just runs the action against HKCU.
+function Invoke-InTargetHive {
+    param([scriptblock]$Action)
+    if (-not $TargetSid) { & $Action; return }
+    $mounted = Test-Path -LiteralPath "Registry::HKEY_USERS\$TargetSid"
+    $loaded = $false
+    if (-not $mounted) {
+        $ntuser = Join-Path $TargetProfile 'NTUSER.DAT'
+        if (-not (Test-Path -LiteralPath $ntuser)) { throw "cannot find $ntuser (wrong profile path?)" }
+        & reg.exe load "HKU\$TargetSid" $ntuser | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "reg load failed for $TargetSid; run this script AS $TargetUser instead" }
+        $loaded = $true
+    }
+    try { & $Action }
+    finally {
+        if ($loaded) { [gc]::Collect(); Start-Sleep -Milliseconds 200; & reg.exe unload "HKU\$TargetSid" | Out-Null }
+    }
+}
 
 if ($Uninstall) {
     Write-Host '[uninstall] removing browser-bridge artifacts'
 
-    # Registry key this installer created (mirrors the Set-Item below).
-    $registryPath = "HKCU:\Software\Google\Chrome\NativeMessagingHosts\$HostName"
-    if (Test-Path -LiteralPath $registryPath) {
-        Remove-Item -LiteralPath $registryPath -Force
-        Write-Host "[uninstall] removed registry key: $registryPath"
-    } else {
-        Write-Host "[uninstall] not present: $registryPath"
+    # Registry key this installer created (mirrors the Set-Item below). Runs
+    # against the target user's hive when -TargetUser was given.
+    Invoke-InTargetHive -Action {
+        if (Test-Path -LiteralPath $registryPath) {
+            Remove-Item -LiteralPath $registryPath -Force
+            Write-Host "[uninstall] removed registry key: $registryPath"
+        } else {
+            Write-Host "[uninstall] not present: $registryPath"
+        }
     }
 
     # Files placed under $InstallDir: the manifest, the binary, and the run.lock
@@ -73,8 +143,9 @@ if ($Uninstall) {
     Write-Host '  1. The extension - remove it yourself at chrome://extensions (Browser Bridge).'
     Write-Host '  2. Any MCP client server entry pointing at the (now-deleted) binary:'
     Write-Host '     - Claude Code : claude mcp remove browser-bridge'
-    Write-Host '     - Claude Desktop / generic : delete the "browser-bridge" entry from mcpServers'
-    Write-Host '     - Codex : delete the [mcp_servers.browser-bridge] block from %USERPROFILE%\.codex\config.toml'
+    Write-Host '     - Codex       : codex mcp remove browser-bridge'
+    Write-Host '     - OpenClaw    : openclaw mcp remove browser-bridge'
+    Write-Host '     - Claude Desktop / Cursor / Windsurf / Cline : delete the "browser-bridge" entry from mcpServers'
     return
 }
 
@@ -147,9 +218,10 @@ $manifestJson = $manifest | ConvertTo-Json -Depth 4
     [System.Text.UTF8Encoding]::new($false)
 )
 
-$registryPath = "HKCU:\Software\Google\Chrome\NativeMessagingHosts\$HostName"
-New-Item -Path $registryPath -Force | Out-Null
-Set-Item -Path $registryPath -Value $manifestPath
+Invoke-InTargetHive -Action {
+    New-Item -Path $registryPath -Force | Out-Null
+    Set-Item -Path $registryPath -Value $manifestPath
+}
 Write-Host "[install] native host registered at $registryPath"
 Write-Host "[install] manifest written to $manifestPath"
 
@@ -165,13 +237,31 @@ Write-Host ''
 Write-Host '   - Claude Code (CLI):'
 Write-Host "       claude mcp add browser-bridge -- `"$installedBinary`""
 Write-Host ''
-Write-Host '   - Claude Desktop / generic MCP client (mcpServers JSON):'
-Write-Host "       `"browser-bridge`": { `"command`": `"$escapedBinary`", `"args`": [] }"
-Write-Host ''
-Write-Host '   - Codex (%USERPROFILE%\.codex\config.toml):'
+Write-Host '   - Codex (CLI, or %USERPROFILE%\.codex\config.toml):'
+Write-Host "       codex mcp add browser-bridge -- `"$installedBinary`""
 Write-Host '       [mcp_servers.browser-bridge]'
 Write-Host "       command = `"$escapedBinary`""
 Write-Host '       args = []'
-Write-Host '3. Restart Chrome, then ask your MCP client to list browser tabs.'
+Write-Host ''
+Write-Host '   - OpenClaw (CLI):'
+Write-Host "       openclaw mcp add browser-bridge --command `"$installedBinary`""
+Write-Host ''
+Write-Host '   - Hermes Agent (CLI):'
+Write-Host "       hermes mcp add browser-bridge --command `"$installedBinary`""
+Write-Host ''
+Write-Host '   - Claude Desktop / Cursor / Windsurf / Cline (mcpServers JSON):'
+Write-Host "       `"browser-bridge`": { `"command`": `"$escapedBinary`", `"args`": [] }"
+Write-Host ''
+Write-Host '   Every MCP host then auto-discovers the tools via tools/list.'
+Write-Host '   Per-agent config paths + verify commands: docs\integrations.md'
+Write-Host '3. Restart Chrome, then ask your agent to list browser tabs.'
+if ($TargetUser) {
+    Write-Host ''
+    Write-Host "NOTE: installed for $TargetUser. Start your MCP client (and thus the"
+    Write-Host '      browser-bridge server) AS THAT USER so its run.lock lands in the same'
+    Write-Host '      profile Chrome reads. If the server must run under a different account,'
+    Write-Host "      set BB_LOCK_DIR to a shared path for BOTH the server and Chrome."
+}
 Write-Host ''
 Write-Host 'To uninstall later: powershell -ExecutionPolicy Bypass -File .\install.ps1 -Uninstall'
+Write-Host '   (add -TargetUser <account> if you installed for another user)'
