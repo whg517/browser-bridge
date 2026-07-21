@@ -29,9 +29,10 @@ support. No breaking changes — everything is additive over 0.1.0.
 - **`BB_LOCK_DIR`** env override — decouples the lock-file location from
   `LOCALAPPDATA`/XDG so the server and native host can be pinned to one directory
   when they run under different user contexts.
-- **Opt-in Chrome Web Store auto-publish workflow** (`cws-publish.yml`, decoupled
-  like `sbom.yml`), **ADR-0019** (dual-ID store distribution), and store-first
-  install docs.
+- **Chrome Web Store distribution** — the extension is published on the store;
+  the installers trust both the store id and the pinned unpacked id (**ADR-0019**),
+  and the install docs lead with the store listing. Publishing is manual (upload
+  a key-stripped zip in the dashboard).
 
 ### Changed
 - README leads with **Add from Chrome Web Store** (the listing is live), with

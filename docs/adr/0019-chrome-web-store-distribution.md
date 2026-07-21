@@ -1,4 +1,4 @@
-# ADR-0019:通过 Chrome Web Store 分发扩展(双 ID + 自动发布)
+# ADR-0019:通过 Chrome Web Store 分发扩展(双 ID)
 
 - **状态**:Accepted
 - **日期**:2026-07-19
@@ -37,12 +37,9 @@
 3. **隐私政策**:因扩展读取页面内容、cookie、web storage,商店要求隐私政策 URL——
    见 [`docs/privacy-policy.md`](../privacy-policy.md)。
 
-4. **自动发布流水线(解耦、默认关闭)**:新增
-   [`.github/workflows/cws-publish.yml`](../../.github/workflows/cws-publish.yml),
-   在 `release: published`(正式版,非 prerelease)或手动触发时,用纯 `curl` 调 CWS API
-   上传并发布。仅在仓库变量 `CWS_AUTO_PUBLISH == 'true'` 且 OAuth secrets 齐备时运行,
-   否则安全跳过。仿照 [`sbom.yml`](../../.github/workflows/sbom.yml) 的解耦思路,**永不
-   阻塞二进制发布**。
+4. **发布方式:手动上传**。商店后台上传剥掉 `key` 的扩展 zip、走审核上线,**不做自动化**。
+   (评估过用 CWS API 做 CI 自动发布,但 OAuth refresh-token 维护成本、`release: published`
+   触发器对 `GITHUB_TOKEN` 所建 release 不生效等问题,收益不抵复杂度,故选择手动。)
 
 ## 考虑过的替代方案
 
@@ -65,7 +62,6 @@
 ### 正面
 - 移除最大门槛「开发者模式 Load unpacked」;一键 Add to Chrome,对受管控 Chrome 友好
 - 双 ID 信任让商店用户与开发者共用同一套安装器,零破坏
-- 自动发布可选开启;打正式 tag 即可发布更新(审核仍在,不可跳过)
 
 ### 负面 / 权衡
 - **不移除安装器**:商店只分发**扩展**;用户仍需运行 `install.sh` / `install.ps1` 装
