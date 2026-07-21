@@ -92,8 +92,9 @@ pub fn print_tools(as_json: bool) {
             Some(props) if !props.is_empty() => {
                 println!("    args:");
                 for (name, spec) in props {
-                    let ty = spec.get("type").and_then(Value::as_str).unwrap_or("any");
-                    let desc = spec.get("description").and_then(Value::as_str).unwrap_or("");
+                    let field = |k: &str| spec.get(k).and_then(Value::as_str);
+                    let ty = field("type").unwrap_or("any");
+                    let desc = field("description").unwrap_or("");
                     let req = if required.contains(name.as_str()) {
                         "required"
                     } else {

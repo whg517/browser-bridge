@@ -146,7 +146,8 @@ fn parse_call_args(tool: &str, args_json: Option<&str>) -> Result<Value, (i32, S
     };
     if !tools::all().iter().any(|t| t.name == tool) {
         let names: Vec<&str> = tools::all().iter().map(|t| t.name).collect();
-        return Err((2, format!("unknown tool: {tool}\navailable: {}", names.join(", "))));
+        let msg = format!("unknown tool: {tool}\navailable: {}", names.join(", "));
+        return Err((2, msg));
     }
     Ok(args)
 }
