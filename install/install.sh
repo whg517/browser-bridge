@@ -12,10 +12,13 @@
 #   ./install.sh --skip-extension-build Reuse an existing extension/dist. Useful
 #                                       in WSL when only the Rust toolchain is
 #                                       installed in Linux.
-#   ./install.sh --register-claude-code Also run `claude mcp add` to register the
-#                                       server with Claude Code (needs the claude
-#                                       CLI on PATH). Off by default; other clients
-#                                       get ready-to-paste config printed instead.
+#   ./install.sh --register-claude-code Also run the client's own `mcp add` to
+#   ./install.sh --register-codex       register the server with Claude Code /
+#   ./install.sh --register-openclaw    Codex / OpenClaw (needs that CLI on PATH).
+#                                       Off by default; every agent then discovers
+#                                       the tools via MCP tools/list. Other clients
+#                                       get ready-to-paste config printed instead
+#                                       (see docs/integrations.md).
 #   ./install.sh --uninstall            Remove what this installer placed (binary,
 #                                       run-host wrapper, native-host manifest,
 #                                       run.lock). Prints how to remove the
@@ -65,6 +68,10 @@ SKIP_EXTENSION_BUILD="${BB_SKIP_EXTENSION_BUILD:-0}"
 UNINSTALL=0
 REGISTER_CLAUDE=0
 UNREGISTER_CLAUDE=0
+REGISTER_CODEX=0
+UNREGISTER_CODEX=0
+REGISTER_OPENCLAW=0
+UNREGISTER_OPENCLAW=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -91,6 +98,22 @@ while [[ $# -gt 0 ]]; do
       UNREGISTER_CLAUDE=1
       shift
       ;;
+    --register-codex)
+      REGISTER_CODEX=1
+      shift
+      ;;
+    --unregister-codex)
+      UNREGISTER_CODEX=1
+      shift
+      ;;
+    --register-openclaw)
+      REGISTER_OPENCLAW=1
+      shift
+      ;;
+    --unregister-openclaw)
+      UNREGISTER_OPENCLAW=1
+      shift
+      ;;
     --uninstall)
       UNINSTALL=1
       shift
@@ -109,6 +132,50 @@ done
 [[ "$EXTENSION_ID" =~ ^[a-p]{32}$ ]] || {
   echo "error: extension id must be 32 characters in the range a-p" >&2
   exit 1
+}
+
+# ---- MCP client (un)registration helpers ----------------------------------
+# Every mainstream agent (Claude Code, Codex, OpenClaw, …) is an MCP host: it
+# discovers browser-bridge's tools via `tools/list` once its server entry is
+# registered. These run a client's OWN `mcp add`/`remove` CLI (the only safe
+# auto-writer — we never hand-edit a client's JSON/TOML). All opt-in.
+
+# try_register <cli> <do_register> <add-args...>
+#   Runs `<cli> mcp add browser-bridge <add-args...>` when the flag is set and the
+#   CLI is on PATH. Idempotent (skips if already present); degrades to a warning.
+try_register() {
+  local cli="$1" do_reg="$2"
+  shift 2
+  [[ "$do_reg" == "1" ]] || return 0
+  if ! command -v "$cli" >/dev/null 2>&1; then
+    echo "[install] --register-$cli given but '$cli' isn't on PATH — skipping" >&2
+    return 0
+  fi
+  if "$cli" mcp list 2>/dev/null | grep -q 'browser-bridge'; then
+    echo "[install] $cli already has 'browser-bridge' — left as is"
+  elif "$cli" mcp add browser-bridge "$@" >/dev/null 2>&1; then
+    echo "[install] registered 'browser-bridge' with $cli"
+  else
+    echo "[install] warning: '$cli mcp add' failed — register by hand (see NEXT STEPS)" >&2
+  fi
+}
+
+# try_unregister <cli> <do_unregister>
+#   Removes the entry via `<cli> mcp remove` when the flag is set; else just
+#   notes it's still there. No-op if the CLI is absent or has no entry.
+try_unregister() {
+  local cli="$1" do_unreg="$2"
+  command -v "$cli" >/dev/null 2>&1 || return 0
+  "$cli" mcp list 2>/dev/null | grep -q 'browser-bridge' || return 0
+  if [[ "$do_unreg" == "1" ]]; then
+    if "$cli" mcp remove browser-bridge >/dev/null 2>&1; then
+      echo "[uninstall] deregistered 'browser-bridge' from $cli"
+    else
+      echo "[uninstall] warning: '$cli mcp remove browser-bridge' failed — remove by hand" >&2
+    fi
+  else
+    echo "[uninstall] note: $cli still has a 'browser-bridge' entry — remove: $cli mcp remove browser-bridge"
+  fi
 }
 
 OS="$(uname -s)"
@@ -242,14 +309,20 @@ if [[ "$UNINSTALL" == "1" ]]; then
       echo "[uninstall]       (or re-run:  ./install.sh --uninstall --unregister-claude-code)"
     fi
   fi
+  # Same for the other MCP-host CLIs (add --unregister-codex / --unregister-openclaw
+  # to actually run their `mcp remove`; otherwise just a note).
+  try_unregister codex "$UNREGISTER_CODEX"
+  try_unregister openclaw "$UNREGISTER_OPENCLAW"
 
   cat <<TIP
 [uninstall] done. Host artifacts removed. Two things this script does NOT touch:
   1. The extension — remove it yourself at chrome://extensions (Browser Bridge).
   2. Any MCP client server entry pointing at the (now-deleted) binary:
      • Claude Code : claude mcp remove browser-bridge
-     • Claude Desktop / generic : delete the "browser-bridge" entry from mcpServers
-     • Codex : delete the [mcp_servers.browser-bridge] block from ~/.codex/config.toml
+     • Codex       : codex mcp remove browser-bridge
+     • OpenClaw    : openclaw mcp remove browser-bridge
+     • Claude Desktop / Cursor / Windsurf / Cline : delete the "browser-bridge"
+       entry from that client's mcpServers config
 TIP
   exit 0
 fi
@@ -384,6 +457,11 @@ else
   CLAUDE_HINT="(install the claude CLI to use --register-claude-code)"
 fi
 
+# Codex and OpenClaw are also MCP hosts with their own `mcp add` CLIs; register
+# through them when asked (opt-in), same safe pattern as Claude Code.
+try_register codex "$REGISTER_CODEX" -- "$SERVER_CMD"
+try_register openclaw "$REGISTER_OPENCLAW" --command "$SERVER_CMD"
+
 cat <<TIP
 
 ────────────────────────────────────────────────────────────────────
@@ -395,28 +473,33 @@ NEXT STEPS  (no extension-ID copying — it's pinned to $EXTENSION_ID)
    (Verify the ID under the name is $EXTENSION_ID — the manifest already
     trusts it, so nothing to patch.)
 
-2. Register the MCP server with your client. The binary is at:
+2. Register the MCP server with your agent. Every MCP host discovers the 15
+   tools automatically once it has this no-args stdio server entry pointing at:
      $SERVER_CMD
-   (run with no arguments; speaks MCP over stdio). Config below already has the
-   absolute path filled in — just paste:
 
-   • Claude Code (CLI):
-       claude mcp add browser-bridge -- "$SERVER_CMD"
-       $CLAUDE_HINT
+   Auto-register (opt-in; runs the client's own CLI when present):
+     ./install.sh --register-claude-code   $CLAUDE_HINT
+     ./install.sh --register-codex         (runs: codex mcp add …)
+     ./install.sh --register-openclaw      (runs: openclaw mcp add …)
 
-   • Claude Desktop / generic MCP client (mcpServers JSON):
-       "browser-bridge": { "command": "$SERVER_CMD", "args": [] }
-
+   Or wire it by hand — paste the block for your agent (path already filled in):
+   • Claude Code (CLI):  claude mcp add browser-bridge -- "$SERVER_CMD"
    • Codex (~/.codex/config.toml):
        [mcp_servers.browser-bridge]
        command = "$SERVER_CMD"
        args = []
+   • OpenClaw (CLI):  openclaw mcp add browser-bridge --command "$SERVER_CMD"
+   • Hermes Agent (CLI):  hermes mcp add browser-bridge --command "$SERVER_CMD"
+   • Claude Desktop / Cursor / Windsurf / Cline (mcpServers JSON):
+       "browser-bridge": { "command": "$SERVER_CMD", "args": [] }
+   (per-agent file paths + verify commands: docs/integrations.md)
 
 3. Restart Chrome (so it picks up the native messaging host manifest).
 
-4. In your MCP client, try "list my browser tabs". Approve new sites via the
+4. In your agent, try "list my browser tabs". Approve new sites via the
    Browser Bridge toolbar icon when prompted.
 
 To uninstall later: ./install.sh --uninstall
-   (add --unregister-claude-code to also remove the Claude Code server entry)
+   (add --unregister-claude-code / --unregister-codex / --unregister-openclaw
+    to also remove those clients' server entries)
 TIP
