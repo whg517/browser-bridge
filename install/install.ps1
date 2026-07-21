@@ -143,8 +143,9 @@ if ($Uninstall) {
     Write-Host '  1. The extension - remove it yourself at chrome://extensions (Browser Bridge).'
     Write-Host '  2. Any MCP client server entry pointing at the (now-deleted) binary:'
     Write-Host '     - Claude Code : claude mcp remove browser-bridge'
-    Write-Host '     - Claude Desktop / generic : delete the "browser-bridge" entry from mcpServers'
-    Write-Host '     - Codex : delete the [mcp_servers.browser-bridge] block from %USERPROFILE%\.codex\config.toml'
+    Write-Host '     - Codex       : codex mcp remove browser-bridge'
+    Write-Host '     - OpenClaw    : openclaw mcp remove browser-bridge'
+    Write-Host '     - Claude Desktop / Cursor / Windsurf / Cline : delete the "browser-bridge" entry from mcpServers'
     return
 }
 
@@ -236,14 +237,21 @@ Write-Host ''
 Write-Host '   - Claude Code (CLI):'
 Write-Host "       claude mcp add browser-bridge -- `"$installedBinary`""
 Write-Host ''
-Write-Host '   - Claude Desktop / generic MCP client (mcpServers JSON):'
-Write-Host "       `"browser-bridge`": { `"command`": `"$escapedBinary`", `"args`": [] }"
-Write-Host ''
-Write-Host '   - Codex (%USERPROFILE%\.codex\config.toml):'
+Write-Host '   - Codex (CLI, or %USERPROFILE%\.codex\config.toml):'
+Write-Host "       codex mcp add browser-bridge -- `"$installedBinary`""
 Write-Host '       [mcp_servers.browser-bridge]'
 Write-Host "       command = `"$escapedBinary`""
 Write-Host '       args = []'
-Write-Host '3. Restart Chrome, then ask your MCP client to list browser tabs.'
+Write-Host ''
+Write-Host '   - OpenClaw (CLI):'
+Write-Host "       openclaw mcp add browser-bridge --command `"$installedBinary`""
+Write-Host ''
+Write-Host '   - Claude Desktop / Cursor / Windsurf / Cline (mcpServers JSON):'
+Write-Host "       `"browser-bridge`": { `"command`": `"$escapedBinary`", `"args`": [] }"
+Write-Host ''
+Write-Host '   Every MCP host then auto-discovers the tools via tools/list.'
+Write-Host '   Per-agent config paths + verify commands: docs\integrations.md'
+Write-Host '3. Restart Chrome, then ask your agent to list browser tabs.'
 if ($TargetUser) {
     Write-Host ''
     Write-Host "NOTE: installed for $TargetUser. Start your MCP client (and thus the"
