@@ -18,6 +18,15 @@ fn main() {
         0
     } else if args.len() > 1 && (args[1] == "doctor" || args[1] == "status") {
         doctor::run()
+    } else if args.len() > 1 && args[1] == "call" {
+        // One-shot tool call for non-MCP callers: `call <tool> [json-args]`.
+        match args.get(2) {
+            Some(tool) => mcp_server::run_call(tool, args.get(3).map(String::as_str)),
+            None => {
+                eprintln!("usage: browser-bridge call <tool> [json-args]");
+                2
+            }
+        }
     } else {
         mcp_server::run()
     };

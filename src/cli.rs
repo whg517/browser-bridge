@@ -22,12 +22,15 @@ pub fn print_help() {
          Bridge an MCP client to a real Chrome via an extension + native host.\n\n\
          USAGE:\n    \
          browser-bridge              Run as MCP server (for your MCP client)\n    \
+         browser-bridge call <tool> [json]  Run one tool and print its result (no MCP)\n    \
          browser-bridge doctor       Print a read-only health report (alias: status)\n    \
          browser-bridge --native-host  Run as the Chrome native messaging host\n\n\
          Configure your MCP client (Claude Code, Codex, …) to launch this \
          binary with no arguments as an MCP server; Chrome launches it with \
-         --native-host via the host manifest. You normally never invoke either \
-         mode by hand.",
+         --native-host via the host manifest. `call` is a convenience for shells \
+         and non-MCP agents: e.g. `browser-bridge call tab_list` or \
+         `browser-bridge call tab_open '{{\"url\":\"https://example.com\"}}'`. It \
+         won't run while your MCP client is active (they share one bridge).",
         version = env!("CARGO_PKG_VERSION")
     );
 }

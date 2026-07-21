@@ -187,6 +187,19 @@ Grouped from the single source of truth,
 *No write tools by design — cookie/storage writes are out of scope
 ([ADR-0010](./docs/adr/0010-cookie-storage-readonly.md)).*
 
+### Scripting without MCP
+
+Non-MCP callers (shell scripts, agents) can run a single tool with the `call`
+subcommand — no MCP handshake, raw JSON on stdout:
+
+```sh
+browser-bridge call tab_list
+browser-bridge call tab_open '{"url":"https://example.com"}'
+```
+
+It shares the one bridge connection, so it refuses (exit 4) while your MCP
+client is active. Details + exit codes: [docs/cli.md](./docs/cli.md#call面向非-mcp-调用方的一次性工具调用).
+
 ---
 
 ## How it works
