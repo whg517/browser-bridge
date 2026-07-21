@@ -586,10 +586,10 @@ export function evalToast(
       "box-shadow:0 10px 30px rgba(0,0,0,.16);padding:14px 16px;width:360px;" +
       "font-family:-apple-system,system-ui,sans-serif;font-size:13px;line-height:1.5;";
     const title = document.createElement("div");
-    title.textContent = "⚠ Browser Bridge: 执行确认 (CDP)";
+    title.textContent = "⚠ Browser Bridge: Execution confirmation (CDP)";
     title.style.cssText = "font-weight:700;color:#b91c1c;margin-bottom:6px;";
     const meta = document.createElement("div");
-    meta.textContent = `${truncate(url || "", 60)} · 「${truncate(tabTitle || "无标题", 40)}」`;
+    meta.textContent = `${truncate(url || "", 60)} · "${truncate(tabTitle || "Untitled", 40)}"`;
     meta.style.cssText =
       "font-size:11px;color:#6b7280;margin-bottom:8px;font-family:ui-monospace,monospace;word-break:break-all;";
     const pre = document.createElement("pre");
@@ -599,16 +599,17 @@ export function evalToast(
       "border:1px solid #e5e7eb;border-radius:8px;font-family:ui-monospace,monospace;font-size:12px;" +
       "line-height:1.45;white-space:pre;color:#111827;";
     const warn = document.createElement("div");
-    warn.textContent = "上面的代码将在该页面以你的身份运行,可能读取 token / Cookie / 发起请求。";
+    warn.textContent =
+      "The code above will run on this page as you, and may read tokens / Cookies / make requests.";
     warn.style.cssText = "font-size:11px;color:#b91c1c;margin-bottom:12px;line-height:1.4;";
     const actions = document.createElement("div");
     actions.style.cssText = "display:flex;gap:8px;justify-content:flex-end;";
     const deny = document.createElement("button");
-    deny.textContent = "拒绝";
+    deny.textContent = "Deny";
     deny.style.cssText =
       "padding:6px 14px;border-radius:8px;border:1px solid #d1d5db;color:#374151;background:#fff;cursor:pointer;font-size:12px;font-weight:600;";
     const allow = document.createElement("button");
-    allow.textContent = "允许执行";
+    allow.textContent = "Allow";
     allow.style.cssText =
       "padding:6px 14px;border-radius:8px;border:1px solid #dc2626;background:#dc2626;color:#fff;cursor:pointer;font-size:12px;font-weight:600;";
     actions.appendChild(deny);
