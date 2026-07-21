@@ -15,6 +15,14 @@ updates:
       interval: weekly
     commit-message:
       prefix: "deps(ext)"
+    ignore:
+      # TypeScript 7 (the native/Go compiler) breaks `npm ci` here: typescript-eslint
+      # peer-requires `typescript <6.1.0`, so TS>=7 fails ERESOLVE (see PR #9). Skip
+      # major bumps to 7+ until typescript-eslint widens its peer range; 5.x/6.0
+      # patch+minor updates still flow. (tests/ has no typescript-eslint and is
+      # already on TS7, so this only applies to the extension.)
+      - dependency-name: "typescript"
+        versions: [">=7.0.0"]
 
   # Test harness (puppeteer-core / bun+chrome types / typescript)
   - package-ecosystem: npm
