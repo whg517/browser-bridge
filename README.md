@@ -244,6 +244,7 @@ Environment variables read at launch (source: `src/log.rs`, [docs/cli.md](./docs
 |-----|--------|---------|--------|
 | `BB_LOG` | `error` \| `warn` \| `info` \| `debug` | `info` | stderr log / audit threshold. `warn`/`error` silences audit lines. |
 | `BB_LOG_FORMAT` | `text` \| `json` | `text` | Audit-line format; `json` emits one object per line for machine collection. |
+| `BB_LOCK_DIR` | absolute dir | per-user data dir | Overrides where the lock file lives. Set the **same** value on both the MCP server and the native host when they run under different user contexts (e.g. Windows automation as SYSTEM vs. Chrome as the desktop user), so both find the bridge. |
 
 ## Troubleshooting
 

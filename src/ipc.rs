@@ -32,6 +32,20 @@ pub struct LockFile {
 impl LockFile {
     /// Path of the lock file in a per-user runtime/data directory.
     pub fn path() -> PathBuf {
+        // Explicit override. When the MCP server and the native host run under
+        // different user contexts (e.g. Windows automation as SYSTEM vs. Chrome
+        // as the desktop user), LOCALAPPDATA/XDG resolve differently and the two
+        // sides look for the lock in different places — a permanent
+        // NOT_CONNECTED. Setting BB_LOCK_DIR on both pins them to one directory.
+        if let Some(dir) = std::env::var_os("BB_LOCK_DIR") {
+            let dir = PathBuf::from(dir).join("browser-bridge");
+            #[cfg(unix)]
+            ensure_private_dir(&dir);
+            #[cfg(not(unix))]
+            let _ = fs::create_dir_all(&dir);
+            return dir.join("run.lock");
+        }
+
         #[cfg(windows)]
         {
             let base = std::env::var_os("LOCALAPPDATA")
@@ -308,5 +322,18 @@ mod tests {
     #[test]
     fn lock_path_has_expected_filename() {
         assert_eq!(LockFile::path().file_name().unwrap(), "run.lock");
+    }
+
+    #[test]
+    fn bb_lock_dir_overrides_path() {
+        // Only this test touches BB_LOCK_DIR; the other path() test asserts the
+        // filename, which stays "run.lock" under the override, so no race.
+        let tmp = std::env::temp_dir().join(format!("bb-lockdir-test-{}", std::process::id()));
+        std::env::set_var("BB_LOCK_DIR", &tmp);
+        let p = LockFile::path();
+        std::env::remove_var("BB_LOCK_DIR");
+        assert!(p.starts_with(&tmp), "path {p:?} should be under {tmp:?}");
+        assert_eq!(p.file_name().unwrap(), "run.lock");
+        let _ = fs::remove_dir_all(&tmp);
     }
 }

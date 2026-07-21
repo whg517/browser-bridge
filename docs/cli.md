@@ -57,6 +57,7 @@
 |------|------|------|
 | `BB_LOG` | `error` \| `warn` \| `info`(默认) \| `debug` | 日志阈值。`info` 及以上会打印审计行;设为 `warn`/`error` 可静默审计。 |
 | `BB_LOG_FORMAT` | `text`(默认) \| `json` | 审计行的格式。`json` 每行输出一个 JSON 对象,便于机器采集。 |
+| `BB_LOCK_DIR` | 绝对目录 | 覆盖锁文件所在目录。当 MCP server 与 native host 运行在**不同用户上下文**(如 Windows 自动化以 SYSTEM 运行、Chrome 以桌面用户运行)时,给两侧设**相同值**,让双方都能找到桥接锁文件(见 issue #57)。 |
 
 **审计事件**:MCP server 每处理一次 `tools/call` 就发一条审计行,字段包括每次调用的
 `req`(单调请求 id)、`tool`(工具名)、`outcome`(`ok`/`error`)、`code`(错误时为
