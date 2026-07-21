@@ -246,6 +246,9 @@ Write-Host ''
 Write-Host '   - OpenClaw (CLI):'
 Write-Host "       openclaw mcp add browser-bridge --command `"$installedBinary`""
 Write-Host ''
+Write-Host '   - Hermes Agent (CLI):'
+Write-Host "       hermes mcp add browser-bridge --command `"$installedBinary`""
+Write-Host ''
 Write-Host '   - Claude Desktop / Cursor / Windsurf / Cline (mcpServers JSON):'
 Write-Host "       `"browser-bridge`": { `"command`": `"$escapedBinary`", `"args`": [] }"
 Write-Host ''

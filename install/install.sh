@@ -489,6 +489,7 @@ NEXT STEPS  (no extension-ID copying — it's pinned to $EXTENSION_ID)
        command = "$SERVER_CMD"
        args = []
    • OpenClaw (CLI):  openclaw mcp add browser-bridge --command "$SERVER_CMD"
+   • Hermes Agent (CLI):  hermes mcp add browser-bridge --command "$SERVER_CMD"
    • Claude Desktop / Cursor / Windsurf / Cline (mcpServers JSON):
        "browser-bridge": { "command": "$SERVER_CMD", "args": [] }
    (per-agent file paths + verify commands: docs/integrations.md)
