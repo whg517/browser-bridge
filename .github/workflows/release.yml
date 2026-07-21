@@ -115,19 +115,36 @@ jobs:
         run: |
           TAG="${{ github.event.inputs.tag || github.ref_name }}"
           NAME="browser-bridge-extension-${TAG}"
-          # Zip the built bundle with a top-level `dist/` folder so users can
-          # point "Load unpacked" straight at the extracted directory.
-          (cd extension && zip -r "../$NAME.zip" dist)
-          if command -v shasum >/dev/null 2>&1; then
-            shasum -a 256 "$NAME.zip" > "$NAME.zip.sha256"
-          else
-            sha256sum "$NAME.zip" > "$NAME.zip.sha256"
-          fi
+          sha() {
+            if command -v shasum >/dev/null 2>&1; then shasum -a 256 "$1" > "$1.sha256"
+            else sha256sum "$1" > "$1.sha256"; fi
+          }
+          # Two zips with the SAME contents but DIFFERENT `key` handling — they
+          # cannot be merged, because the two install paths need opposite things:
+          #
+          # (1) $NAME.zip — "Load unpacked" (developers): manifest.json at the zip
+          #     root, `key` KEPT. The key derives the pinned extension ID the
+          #     native host's allowed_origins trusts; without it an unpacked load
+          #     gets a path-derived ID and native messaging is refused.
+          (cd extension/dist && zip -rX "../../$NAME.zip" . -x ".*")
+          sha "$NAME.zip"
+          # (2) $NAME-store.zip — Chrome Web Store upload: same files but the
+          #     manifest `key` is STRIPPED. The published store item's manifest
+          #     has no `key` (the store owns the signing key that derives the
+          #     store ID), so an update upload must NOT carry one — otherwise the
+          #     dashboard rejects it: "manifest key does not match current
+          #     content". The store ID is already trusted via dual-ID (ADR-0019).
+          rm -rf store-pkg && cp -r extension/dist store-pkg
+          node -e 'const fs=require("fs");const f="store-pkg/manifest.json";const m=JSON.parse(fs.readFileSync(f,"utf8"));delete m.key;fs.writeFileSync(f,JSON.stringify(m,null,2));'
+          (cd store-pkg && zip -rX "../$NAME-store.zip" . -x ".*")
+          sha "$NAME-store.zip"
           echo "name=$NAME" >> "$GITHUB_OUTPUT"
           {
             echo "assets<<EOF"
             echo "$NAME.zip"
             echo "$NAME.zip.sha256"
+            echo "$NAME-store.zip"
+            echo "$NAME-store.zip.sha256"
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
@@ -136,12 +153,14 @@ jobs:
         with:
           subject-path: ${{ steps.pkg.outputs.archive }}
 
-      # Attest the standalone extension zip on the same (macos) leg that built it.
+      # Attest both standalone extension zips on the same (macos) leg that built them.
       - name: Attest extension zip provenance
         if: matrix.platform == 'macos'
         uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
-          subject-path: ${{ steps.extzip.outputs.name }}.zip
+          subject-path: |
+            ${{ steps.extzip.outputs.name }}.zip
+            ${{ steps.extzip.outputs.name }}-store.zip
 
       - name: Publish to GitHub Release
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2

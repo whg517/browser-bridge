@@ -60,10 +60,13 @@ Google 审核会重点看以下几项,提前准备书面理由:
 
 ## 打包与提交
 
-- [ ] 生成商店 zip(已在发布流水线产出 `browser-bridge-extension-<tag>.zip`——确认它就是
-      可上传的 `dist/`)。
+- [x] 商店 zip:发布流水线产出的 **`browser-bridge-extension-<tag>-store.zip`**(注意 `-store`
+      后缀)已是可直接上传的形状(`manifest.json` 在 zip 根、**去掉 `key`**)。另一份
+      `browser-bridge-extension-<tag>.zip`(**保留 `key`**)是给 "Load unpacked" 开发者用的,
+      **不能**上传到商店。
 - [ ] 确认 `manifest.json` 版本与 Cargo 一致(`scripts/check-version.sh` 已强制)。
-- [ ] 决定 `key` 字段去留(保留以维持 unpacked ID 一致 vs 交给商店管理——见首要坑)。
+- [x] `key` 字段:**去掉**——已发布条目的 manifest **不含 `key`**(商店自己掌管派生商店 ID 的
+      签名密钥),更新上传若携带 `key` 会被拒:「清单中 key 字段的值与当前内容不符」(见「手动发布」)。
 - [ ] 上传,填写数据使用披露 + 隐私政策,提交。审核延迟**数天到数周**,且**失去即时更新
       控制**(每次更新都走审核)。
 
@@ -87,8 +90,16 @@ Google 审核会重点看以下几项,提前准备书面理由:
 评估过用 CWS API 做 CI 自动发布,但 OAuth refresh-token 维护成本、`release: published`
 触发器对 `GITHUB_TOKEN` 所建 release 不生效等问题,收益不抵复杂度,**改为手动上传**:
 
-1. **打包**:构建扩展后,把 `extension/dist` 打成 zip,并**剥掉 `manifest.json` 里的 `key`**
-   (商店拒绝带 `key` 的包、且自己分配 ID),`manifest.json` 需在 zip **根目录**。
+1. **拿到 zip**:下载 release 里的 **`browser-bridge-extension-<tag>-store.zip`**(带 `-store`
+   后缀)—— 它已经是商店要的形状(`manifest.json` 在 zip **根目录**、**去掉 `key`**)。也可本地打包:
+   ```sh
+   cp -r extension/dist store-pkg
+   node -e 'const fs=require("fs");const f="store-pkg/manifest.json";const m=JSON.parse(fs.readFileSync(f,"utf8"));delete m.key;fs.writeFileSync(f,JSON.stringify(m,null,2));'
+   (cd store-pkg && zip -rX ../browser-bridge-extension-store.zip . -x ".*")
+   ```
+   ⚠️ **必须去掉 `key`**——已发布条目的 manifest **不含 `key`**(商店掌管派生商店 ID 的签名密钥),
+   更新上传若携带 `key` 会被拒:「清单中 key 字段的值与当前内容不符」。不含 `-store` 后缀的那份
+   zip 保留了 `key`(供开发者 "Load unpacked"),**不要**上传它。
 2. **上传**:[开发者后台](https://chrome.google.com/webstore/devconsole) → Browser Bridge
    → **Package → Upload new package** → 选该 zip → **Submit for review**。
 3. **注意**:商店拒绝重复版本,发新版前先 bump(`scripts/check-version.sh` 保证

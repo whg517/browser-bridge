@@ -101,8 +101,11 @@ See [docs/development.md](./docs/development.md) for the full build/test loop.
 </details>
 
 > Only need the extension (binary already installed)? Grab
-> `browser-bridge-extension-<tag>.zip` from the same release and unzip it — it
-> contains a top-level `dist/` you can load directly.
+> `browser-bridge-extension-<tag>.zip` from the same release and unzip it — the
+> `manifest.json` sits at the root, so you can **Load unpacked** the extracted
+> folder directly. (To upload to the Chrome Web Store, use the separate
+> `…-store.zip` asset instead — it strips the manifest `key`, which the store
+> requires; the plain zip keeps the `key` so unpacked loads get the pinned ID.)
 
 ### 2. Add the extension
 
