@@ -150,6 +150,34 @@ Restart Chrome so it loads the native-host manifest, then reconnect your MCP
 client and ask: **"list my browser tabs."** The first time you target a new
 site, click the Browser Bridge toolbar icon and approve it.
 
+**First time? Paste this to your AI** to teach it the workflow and safety gates
+in one shot (source: [docs/agent-prompt.md](./docs/agent-prompt.md)):
+
+```text
+You're connected to Browser Bridge over MCP: it drives my real, already-open
+Chrome, so you act as me, inside my logged-in sessions. Everything you do is
+visible on my screen and uses my real accounts. Work carefully:
+
+- Read before acting. To work with a page, call page_snapshot first — it lists
+  the interactive elements, each with a ref. Act by ref with page_click /
+  page_fill; don't guess selectors. Re-snapshot after navigation. Read with
+  page_text / page_screenshot; list tabs with tab_list.
+- Don't do irreversible things — submitting forms, closing tabs, sending
+  messages, purchases — unless I ask. Prefer the least-powerful tool; use
+  page_eval (arbitrary JS) only as a last resort.
+- Never exfiltrate secrets. Cookie and storage reads come back masked; don't
+  try to defeat that or forward credentials off-origin.
+- Expect approval gates. A new site needs me to click Allow in the Browser
+  Bridge popup, and page_eval / tab_close / risky clicks pop a confirmation. If
+  a call blocks or fails with "not allowed" or "user denied", ask me to approve
+  it — don't retry in a loop.
+
+Then tell me what you can help with, or ask what I'd like to do in the browser.
+```
+
+MCP clients that support server instructions get this automatically at connect
+time, so pasting is only needed for a manual kickstart.
+
 > On **WSL**: if your everyday browser is Windows Chrome, install on Windows and
 > point the WSL client at the `.exe` via `/mnt/c` — don't install a Linux host.
 > If Chrome runs under WSLg, install natively in Linux. See the
@@ -161,6 +189,11 @@ site, click the Browser Bridge toolbar icon and approve it.
 
 Grouped from the single source of truth,
 [`contracts/tools.json`](./contracts/tools.json):
+
+> **Driving an AI agent?** The server hands your MCP client a short kickstart
+> prompt at connect time (the `initialize` `instructions` field) — or paste it
+> yourself from [the Quickstart above](#4-restart-chrome--try-it) /
+> [docs/agent-prompt.md](./docs/agent-prompt.md).
 
 ### Tabs
 | Tool | Does | Risk |
