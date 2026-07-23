@@ -255,7 +255,12 @@ fn handle(session: &Session, msg: &JsonRpc) -> Option<JsonRpc> {
                 "serverInfo": {
                     "name": "browser-bridge",
                     "version": env!("CARGO_PKG_VERSION"),
-                }
+                },
+                // A short kickstart prompt the MCP client hands to the model so
+                // an agent knows how to drive the browser safely. The same text
+                // is a copy-paste block in the README. docs/agent-prompt.md is
+                // the single source; embedded into the binary at build time.
+                "instructions": include_str!("../docs/agent-prompt.md"),
             }),
         )),
         "notifications/initialized" => {
@@ -427,6 +432,46 @@ mod call_tests {
         let (code, msg) = parse_call_args("bogus_tool", None).unwrap_err();
         assert_eq!(code, 2);
         assert!(msg.contains("unknown tool"));
+    }
+}
+
+#[cfg(test)]
+mod initialize_tests {
+    use super::JsonRpc;
+    use crate::session::Session;
+    use serde_json::json;
+
+    fn request(method: &str) -> JsonRpc {
+        JsonRpc {
+            jsonrpc: Some("2.0".into()),
+            id: Some(json!(1)),
+            method: Some(method.into()),
+            params: None,
+            result: None,
+            error: None,
+        }
+    }
+
+    #[test]
+    fn initialize_serves_the_embedded_agent_prompt() {
+        let resp = super::handle(&Session::new(), &request("initialize"))
+            .expect("initialize returns a response");
+        let result = resp.result.expect("initialize response has a result");
+
+        // serverInfo is unchanged...
+        assert_eq!(result["serverInfo"]["name"], "browser-bridge");
+        // ...and the kickstart prompt is handed to the client via `instructions`,
+        // anchored to stable content of docs/agent-prompt.md so the wiring can't
+        // silently drop the embedded prompt.
+        let instructions = result["instructions"]
+            .as_str()
+            .expect("instructions must be a string");
+        assert!(
+            !instructions.trim().is_empty(),
+            "instructions must not be empty"
+        );
+        assert!(instructions.contains("Browser Bridge"));
+        assert!(instructions.contains("page_eval"));
     }
 }
 
