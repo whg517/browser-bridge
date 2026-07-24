@@ -171,6 +171,12 @@ jobs:
             ${{ steps.pkg.outputs.sha256file }}
             ${{ steps.extzip.outputs.assets }}
           fail_on_unmatched_files: true
-          generate_release_notes: true
+          # Generate the auto "What's Changed" notes on ONE leg only. This step
+          # runs on every matrix leg (each uploads its own platform asset to the
+          # shared release), and generate_release_notes on each leg concatenates
+          # a fresh notes block into the body — three legs produced three
+          # duplicate "What's Changed" sections. The other legs pass no body, and
+          # softprops preserves the existing release body, so notes land once.
+          generate_release_notes: ${{ matrix.platform == 'macos' }}
           # any tag with a suffix (v0.1.0-dev, -rc.1, …) is a prerelease
           prerelease: ${{ contains(github.event.inputs.tag || github.ref_name, '-') }}
