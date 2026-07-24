@@ -16,7 +16,7 @@ checksum = "b4388bee8683e3d04af747c73422af53102d2bd24d9eadb6cbc100baef4b43f8"
 
 [[package]]
 name = "browser-bridge"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "libc",
  "proptest",

@@ -1,6 +1,6 @@
 [package]
 name = "browser-bridge"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 description = "Bridge an MCP client to your real Chrome via an extension + native messaging host"
 license = "Apache-2.0"

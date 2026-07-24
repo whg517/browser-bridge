@@ -6,6 +6,34 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-07-24
+
+Agent onboarding and a fully English project. Additive over 0.2.0 — no breaking
+changes.
+
+### Added
+- **Agent kickstart prompt served over MCP** — the `initialize` response now
+  carries an `instructions` field: a short, safety-first prompt that teaches the
+  model how to drive the browser (snapshot → act by `ref`, don't do irreversible
+  things unprompted, never exfiltrate secrets, and the per-site allowlist +
+  high-risk confirmation gates). MCP clients that support server instructions
+  hand it to the model automatically at connect time; the same prompt is a
+  copy-paste block in the README Quickstart for a manual first run. Single
+  source: `docs/agent-prompt.md`.
+
+### Changed
+- **The project is now entirely in English** — all documentation (README,
+  `docs/`, every ADR) plus the shipped extension's user-facing strings, tool
+  labels, and confirmation dialogs were translated from Chinese.
+- The release pipeline now emits **two** extension zips: `…-store.zip` (manifest
+  `key` stripped) for Chrome Web Store uploads, and the existing
+  `browser-bridge-extension-<tag>.zip` (`key` kept) for load-unpacked — the two
+  install paths need opposite `key` handling (**ADR-0019**).
+
+### Removed
+- The opt-in Chrome Web Store auto-publish workflow — store publishing is manual
+  (upload the key-stripped zip in the dashboard).
+
 ## [0.2.0] - 2026-07-21
 
 Non-MCP CLI surface, one-command agent registration, and Windows automation
