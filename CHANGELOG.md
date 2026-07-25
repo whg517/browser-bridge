@@ -6,21 +6,51 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-07-25
+
+Removes the interactive per-action confirmations and every confirmation /
+`page_eval` configuration toggle. The security boundary is now the standing
+controls only: the per-site allowlist (primary gate), per-tool enable/disable
+(the `page_eval` kill switch), and always-on masking of `page_eval` / cookie /
+storage results. **Breaking** — nine settings are removed; see below.
+
 ### Removed
-- **Interactive per-action confirmations**. High-risk clicks
-  (submit buttons / links), `page_eval`, and `tab_close` no longer show an in-page
-  confirmation prompt — they run directly. The security boundary is now the standing
-  controls: the per-site allowlist, the `page_eval` kill switch, `page_eval` result
-  masking, and per-tool enable/disable. Six settings are retired
-  (`confirmHighRiskClick`, `confirmPageEval`, `confirmTabClose`, `confirmGraceMs`,
-  `clickToastTimeoutMs`, `evalToastTimeoutMs`), and `tab_close` is no longer limited
-  to http(s) tabs.
+- **Interactive per-action confirmations.** High-risk clicks (submit buttons /
+  links), `page_eval`, and `tab_close` no longer show an in-page confirmation
+  prompt — they run directly. Six settings are retired (`confirmHighRiskClick`,
+  `confirmPageEval`, `confirmTabClose`, `confirmGraceMs`, `clickToastTimeoutMs`,
+  `evalToastTimeoutMs`), and `tab_close` is no longer limited to http(s) tabs.
+- **The `page_eval` / precise-snapshot Security toggles.** `pageEvalEnabled`,
+  `evalMask`, and `warnPreciseSnapshot` are removed; their protections are now
+  always-on and non-configurable — `page_eval` results are always masked and the
+  `page_snapshot_precise` on-page notice is always shown. To turn `page_eval`
+  off, disable it in the Options page's **Tool enablement** grid (now its kill
+  switch). The Options page now holds Execution mode, Tool enablement, and
+  Allowed sites.
+
+### Added
+- **`page_wait_for` gains an `until` option** — opt-in
+  `until: "domcontentloaded" | "load"` (default `"load"`, backward compatible);
+  `domcontentloaded` resolves once the DOM is parsed, for pages usable well
+  before the window `load` event.
 
 ### Changed
 - **Tab grouping is now unconditional.** The `groupTabs` toggle was removed —
   tabs the AI opens via `tab_open` are always collected into the "Browser Bridge"
   group ([ADR-0018](docs/adr/0018-tab-workspace-group.md)); grouping is
   best-effort, so a failure never fails `tab_open`.
+
+### Fixed
+- **`page_snapshot` no longer collapses onto a covering `<iframe>`** — the
+  interactive walk guards out `iframe`/`frame`/`object`/`embed`, so a full-page
+  marketing frame no longer hides the real, actionable tree.
+- **`page_text` no longer leaks hidden/script/style text** — both backends read
+  the live `document.body.innerText` (only rendered content) instead of a
+  detached `body.cloneNode()` that silently degraded to `textContent`.
+- **`tab_open` on an un-approved origin returns an actionable error** — it
+  distinguishes user-denied from timed-out, and the timeout message points to
+  the fix (retry to re-open the prompt, click the `!` badge, or pre-approve in
+  Settings).
 
 ## [0.3.0] - 2026-07-24
 
