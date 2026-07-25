@@ -9,7 +9,7 @@ EXT_NM := extension/node_modules
 
 .PHONY: help build fmt fmt-check lint lint-scripts audit gen gen-check \
 	test-rust test-e2e ext-deps ext-build ext-typecheck ext-lint \
-	ext-format-check ext-test test-browser test-integration test ci \
+	ext-format-check ext-test ext-package test-browser test-integration test ci \
 	install sync-version check-extension-id check-version release
 
 help: ## List available targets
@@ -73,6 +73,16 @@ ext-format-check: $(EXT_NM) ## Verify extension formatting
 
 ext-test: $(EXT_NM) ## Unit-test the extension's shared modules (bun; no browser)
 	$(NPM) test
+
+ext-package: ext-build ## Zip the built extension: load-unpacked + store zips (-> dist-artifacts/)
+	@mkdir -p dist-artifacts
+	@rm -f dist-artifacts/browser-bridge-extension.zip dist-artifacts/browser-bridge-extension-store.zip
+	(cd extension/dist && zip -qrX "$(CURDIR)/dist-artifacts/browser-bridge-extension.zip" . -x ".*")
+	@rm -rf dist-artifacts/store-pkg && cp -r extension/dist dist-artifacts/store-pkg
+	node -e 'const fs=require("fs");const f="dist-artifacts/store-pkg/manifest.json";const m=JSON.parse(fs.readFileSync(f,"utf8"));delete m.key;fs.writeFileSync(f,JSON.stringify(m,null,2));'
+	(cd dist-artifacts/store-pkg && zip -qrX "$(CURDIR)/dist-artifacts/browser-bridge-extension-store.zip" . -x ".*")
+	@rm -rf dist-artifacts/store-pkg
+	@echo "packaged in dist-artifacts/:  browser-bridge-extension.zip (key KEPT — Load unpacked)  +  browser-bridge-extension-store.zip (key STRIPPED — Chrome Web Store)"
 
 test-browser: ext-build ## DOM + smoke tests (needs bun + Chrome; builds first)
 	cd tests && bun dom_test.ts

@@ -41,11 +41,13 @@ it; `make lint-scripts` locally).
 With `make` (`make help` lists every target):
 
 ```sh
-make build          # cargo build --release
-make test           # rust unit tests + protocol e2e
+make build          # cargo build --release  → target/release/browser-bridge
+make test           # rust + extension unit tests + protocol e2e (no browser)
 make test-browser   # build the extension, then DOM + smoke tests (needs bun + Chrome)
-make ci             # everything CI runs, minus the browser job
+make ci             # every CI gate except the browser + installer-smoke jobs
 make ext-build      # bundle the extension (src/ → dist/)
+make ext-package    # zip the extension → dist-artifacts/ (load-unpacked + store zips)
+make gen            # regenerate ops.ts from contracts/ (run after editing tools.json)
 make fmt            # cargo fmt
 make install        # build + install binary + host manifest
 ```
@@ -80,6 +82,30 @@ npm run watch     # rebuild dist/ on change
 Load `extension/dist/` as an unpacked extension in `chrome://extensions`
 (Developer mode). Rebuild after editing `src/`, then hit the reload button on
 the extension card.
+
+## Building and packaging locally
+
+| Want | Command | Output |
+|------|---------|--------|
+| The extension bundle (to **Load unpacked**) | `make ext-build` | `extension/dist/` |
+| The two extension **zips** | `make ext-package` | `dist-artifacts/browser-bridge-extension.zip` + `…-store.zip` |
+| The release **binary** | `make build` | `target/release/browser-bridge` |
+
+`make ext-package` produces the same two zips the release pipeline uploads, so
+you can eyeball them before a Chrome Web Store upload:
+
+- `browser-bridge-extension.zip` — manifest `key` **kept**; this is the
+  **Load-unpacked** package (the `key` pins the extension ID).
+- `browser-bridge-extension-store.zip` — manifest `key` **stripped**; this is
+  the **Chrome Web Store** upload (the store owns the signing key and rejects an
+  upload that still carries a `key`). See
+  [chrome-web-store.md](./chrome-web-store.md) and
+  [ADR-0019](./adr/0019-chrome-web-store-distribution.md).
+
+Both land in `dist-artifacts/` (gitignored). The full per-platform release
+archives (binary + `dist/` + installer) are built by
+[`.github/workflows/release.yml`](../.github/workflows/release.yml) on a `v*`
+tag, not locally.
 
 ## Testing
 
@@ -121,8 +147,9 @@ make sync-version        # ./scripts/sync-version.sh
 # 4. gate on a clean tree
 make release             # check-version + full ci
 # 5. tag — pushing a v* tag triggers .github/workflows/release.yml, which
-#    builds macOS Apple Silicon and Linux x64 tarballs (binary + built
-#    extension + install.sh) and publishes them to GitHub Releases.
+#    builds macOS Apple Silicon, Linux x64, and Windows x64 archives (binary +
+#    built extension + installer) plus the two extension zips, and publishes
+#    them to GitHub Releases.
 git tag vX.Y.Z && git push --tags
 ```
 
