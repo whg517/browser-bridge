@@ -133,33 +133,6 @@
     </div>
   </div>
 
-  <div class="card" id="card-confirmHighRiskClick">
-    <input type="checkbox" id="confirmHighRiskClick" />
-    <div class="body">
-      <div class="title">Confirm high-risk clicks (submit buttons / link navigation)</div>
-      <div class="desc">When a form submit button or link is clicked, a confirmation toast appears and requires user approval. This is the key line of defense against the AI silently placing orders / transferring funds / navigating away (ADR-0006).</div>
-      <div class="warn" id="confirmHighRiskClick-warn" style="display:none">⚠ When disabled, the AI's clicks on submit buttons/links are no longer confirmed. Only disable this if you fully trust the AI.</div>
-    </div>
-  </div>
-
-  <div class="card" id="card-confirmPageEval">
-    <input type="checkbox" id="confirmPageEval" />
-    <div class="body">
-      <div class="title">Confirm page_eval (execute arbitrary JS)</div>
-      <div class="desc">Every page_eval call shows a confirmation toast displaying the full code and requires user approval (ADR-0008). page_eval can execute arbitrary JavaScript and is the highest-risk operation.</div>
-      <div class="warn" id="confirmPageEval-warn" style="display:none">⚠ When disabled, the AI executes arbitrary JS directly with no prompt. Only disable this if you fully trust the AI and need fully automated operation.</div>
-    </div>
-  </div>
-
-  <div class="card" id="card-confirmTabClose">
-    <input type="checkbox" id="confirmTabClose" />
-    <div class="body">
-      <div class="title">Confirm tab_close (close tab)</div>
-      <div class="desc">Before a tab is closed, an in-page "Close tab?" confirmation appears and requires user approval.</div>
-      <div class="warn" id="confirmTabClose-warn" style="display:none">⚠ When disabled, the AI closes tabs directly with no prompt.</div>
-    </div>
-  </div>
-
   <div class="card" id="card-warnPreciseSnapshot">
     <input type="checkbox" id="warnPreciseSnapshot" />
     <div class="body">
@@ -186,26 +159,6 @@
       <div class="title">Route all page operations through CDP (chrome.debugger)</div>
       <div class="desc">When enabled, all page operations use CDP (chrome.debugger) instead of injecting content scripts; this allows page_eval to run on strict-CSP sites (such as Bing). Disabled by default (ADR-0017).</div>
       <div class="warn" id="cdpMode-warn">⚠ When enabled, Chrome persistently displays a "Debugging this browser" banner at the top (the debugger stays attached the whole time), and the access surface is larger. Only enable this when you need to bypass CSP or want unified deep control.</div>
-    </div>
-  </div>
-
-  <!-- ===== Confirmation timeouts and grace period ===== -->
-  <h2>Confirmation timeouts and grace period</h2>
-  <div class="panel">
-    <div class="row">
-      <label for="confirmGraceMs">Grace period without re-confirming after approval</label>
-      <input type="number" id="confirmGraceMs" min="0" max="3600000" step="1000" />
-      <span class="unit">milliseconds (0 = confirm every time)</span>
-    </div>
-    <div class="row">
-      <label for="clickToastTimeoutMs">Click confirmation toast timeout</label>
-      <input type="number" id="clickToastTimeoutMs" min="5000" max="300000" step="1000" />
-      <span class="unit">milliseconds (auto-reject on timeout)</span>
-    </div>
-    <div class="row">
-      <label for="evalToastTimeoutMs">eval confirmation toast timeout</label>
-      <input type="number" id="evalToastTimeoutMs" min="10000" max="300000" step="1000" />
-      <span class="unit">milliseconds (auto-reject on timeout)</span>
     </div>
   </div>
 

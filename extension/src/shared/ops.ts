@@ -15,7 +15,7 @@ export const TOOLS: ToolInfo[] = [
   { op: "tab_list", desc: "List all tabs" },
   { op: "tab_focus", desc: "Switch to a tab" },
   { op: "tab_open", desc: "Open a new tab (allowlist required)" },
-  { op: "tab_close", desc: "Close a tab (with confirmation)" },
+  { op: "tab_close", desc: "Close a tab" },
   { op: "page_snapshot", desc: "Snapshot interactive elements" },
   { op: "page_click", desc: "Click an element" },
   { op: "page_fill", desc: "Fill a form field" },
@@ -37,7 +37,7 @@ export const OP_NAMES: string[] = TOOLS.map((t) => t.op);
 export type Risk = "critical" | "high" | "low" | "medium";
 export type Scope = "page" | "tab";
 export type Permission = "cookies" | "debugger" | "scripting" | "tabs";
-export type Confirmation = "every-call" | "high-risk" | "none" | "page-toast" | "warn";
+export type Confirmation = "none" | "warn";
 
 export interface ToolMeta {
   risk: Risk;
@@ -69,7 +69,7 @@ export const TOOL_META: Record<string, ToolMeta> = {
     risk: "high",
     scope: "tab",
     permission: "tabs",
-    confirmation: "page-toast",
+    confirmation: "none",
   },
   page_snapshot: {
     risk: "low",
@@ -81,7 +81,7 @@ export const TOOL_META: Record<string, ToolMeta> = {
     risk: "high",
     scope: "page",
     permission: "scripting",
-    confirmation: "high-risk",
+    confirmation: "none",
   },
   page_fill: {
     risk: "high",
@@ -117,7 +117,7 @@ export const TOOL_META: Record<string, ToolMeta> = {
     risk: "critical",
     scope: "page",
     permission: "scripting",
-    confirmation: "every-call",
+    confirmation: "none",
   },
   page_snapshot_precise: {
     risk: "medium",

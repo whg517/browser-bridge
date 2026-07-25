@@ -1,12 +1,12 @@
-// page_eval (high-risk, ADR-0008) — execute arbitrary JS in the page's global
-// scope after an enlarged confirmation toast. Result is safely serialized and
-// (by default) masked before returning.
+// page_eval (high-risk) — execute arbitrary JS in the page's global scope.
+// Result is safely serialized and (by default) masked before returning. Gated by
+// the pageEvalEnabled kill switch and the per-site allowlist; per-call
+// confirmation was removed in ADR-0020.
 
 import type { OpArgs } from "../shared/types";
 import { getSetting } from "../shared/settings";
 import { maskSensitive } from "../shared/masking";
 import { truncate } from "./util";
-import { confirmWithEvalToast } from "./toast";
 
 export async function runEval(args: OpArgs) {
   const code = args.code;
@@ -14,18 +14,10 @@ export async function runEval(args: OpArgs) {
     throw new Error("page_eval needs non-empty `code`");
   }
   // Global kill switch: if the user disabled page_eval in settings, refuse
-  // before any code runs (and before any confirmation prompt).
+  // before any code runs.
   const evalEnabled = await getSetting("pageEvalEnabled");
   if (evalEnabled === false) {
     throw new Error("page_eval disabled in settings");
-  }
-  // Confirm with the user via an enlarged Toast showing the full code, unless
-  // the user turned the eval confirmation off (confirmPageEval=false) for
-  // hands-off automation. Reuses lastConfirmed so same-origin eval within 60s of
-  // a prior approval does not re-prompt. NOTE: this confirmation is ADR-0008's
-  // guardrail — disabling it means arbitrary JS runs with no prompt.
-  if ((await getSetting("confirmPageEval")) !== false) {
-    await confirmWithEvalToast(code);
   }
   // Execute. Wrap as an async IIFE in the global scope so the code can use
   // await/return and see page globals. `new Function` (not eval) gives us

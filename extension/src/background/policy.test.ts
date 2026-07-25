@@ -18,19 +18,19 @@ describe("policy.decide", () => {
     expect(d.risk).toBe("low");
   });
 
-  test("page_eval requires confirmation (every-call, extension-ui)", () => {
+  test("page_eval no longer requires confirmation (ADR-0020)", () => {
     const d = decide("page_eval", { disabledTools: [] });
     expect(d.allowed).toBe(true);
     expect(d.risk).toBe("critical");
-    expect(d.requiresConfirmation).toBe(true);
-    expect(d.confirmationChannel).toBe("extension-ui");
+    expect(d.requiresConfirmation).toBe(false);
+    expect(d.confirmationChannel).toBe("none");
   });
 
-  test("a page-toast tool confirms via the in-page toast channel", () => {
-    const d = decide("tab_close", { disabledTools: [] });
+  test("page_snapshot_precise still notifies via the extension-ui channel (warn)", () => {
+    const d = decide("page_snapshot_precise", { disabledTools: [] });
     expect(d.allowed).toBe(true);
     expect(d.requiresConfirmation).toBe(true);
-    expect(d.confirmationChannel).toBe("page-toast");
+    expect(d.confirmationChannel).toBe("extension-ui");
   });
 
   test("an unknown op fails closed", () => {
@@ -41,7 +41,7 @@ describe("policy.decide", () => {
   });
 
   test("a disabled tool that would otherwise need confirmation still reports it", () => {
-    const d = decide("page_eval", { disabledTools: ["page_eval"] });
+    const d = decide("page_snapshot_precise", { disabledTools: ["page_snapshot_precise"] });
     expect(d.allowed).toBe(false);
     expect(d.reason).toBe("tool disabled in settings");
     expect(d.requiresConfirmation).toBe(true);

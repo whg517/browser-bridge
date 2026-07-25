@@ -1,6 +1,6 @@
 # ADR-0008: page_eval High-Risk Confirmation Channel
 
-- **Status**: Accepted
+- **Status**: Superseded by [ADR-0020](./0020-remove-interactive-confirmations.md) — the per-call confirmation was removed; the `pageEvalEnabled` kill switch and `evalMask` result masking are retained.
 - **Date**: 2026-07-07
 - **Supersedes**: [ADR-0005](./0005-page-eval-disabled-by-default.md) (the decision not to implement in v0.1)
 

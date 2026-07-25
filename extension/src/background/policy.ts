@@ -11,7 +11,7 @@
 
 import { TOOL_META, type Confirmation, type Risk } from "../shared/ops";
 
-export type ConfirmationChannel = "page-toast" | "extension-ui" | "none";
+export type ConfirmationChannel = "extension-ui" | "none";
 
 export interface PolicyDecision {
   allowed: boolean;
@@ -32,13 +32,12 @@ const UNKNOWN_RISK: Risk = "critical";
 
 /**
  * Map a tool's `confirmation` field to whether a call must be confirmed and via
- * which channel.
+ * which channel. After ADR-0020 the only non-"none" value in the contract is
+ * "warn" (page_snapshot_precise's on-page notice).
  *
- * - "none"                        → no confirmation
- * - "page-toast"                  → confirm, in-page toast
- * - "every-call" | "grace-window" → confirm, extension UI
- * - anything else (e.g. "high-risk", "warn") also requires confirmation and
- *   defaults to the extension UI channel (fail-safe for future contract values)
+ * - "none" → no confirmation
+ * - anything else (e.g. "warn", or a future contract value) → confirm via the
+ *   extension UI channel (fail-safe)
  */
 function confirmationFor(confirmation: Confirmation): {
   requiresConfirmation: boolean;
@@ -47,11 +46,9 @@ function confirmationFor(confirmation: Confirmation): {
   switch (confirmation) {
     case "none":
       return { requiresConfirmation: false, confirmationChannel: "none" };
-    case "page-toast":
-      return { requiresConfirmation: true, confirmationChannel: "page-toast" };
     default:
-      // "every-call", "grace-window", "high-risk", "warn", and any value added
-      // to the contract later: require confirmation via the extension UI.
+      // "warn" and any value added to the contract later: require confirmation
+      // via the extension UI.
       return { requiresConfirmation: true, confirmationChannel: "extension-ui" };
   }
 }

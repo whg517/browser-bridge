@@ -46,10 +46,21 @@ against. Pairs with [trust-boundaries.md](trust-boundaries.md) and the
 
 2. **Prompt injection: page content tricks the model into a dangerous tool
    call** (e.g. "run this eval", "read cookies and post them").
-   → Observed page content is *data*, not commands, to the agent. Independently,
-   high-risk actions (submit/link click, `page_eval`, tab close) require an
-   **in-page user confirmation** the page cannot forge or auto-dismiss, and
-   `page_eval` confirms **every call** showing the full code.
+   → Observed page content is *data*, not commands, to the agent. The standing
+   defenses are the **per-site allowlist** (the agent only acts on approved
+   origins — see threat 1), the **`pageEvalEnabled` kill switch** (disables
+   `page_eval` outright), **per-tool enable/disable** (any tool can be turned
+   off — "tool disabled in settings"), and **`evalMask`**, which masks
+   token-like values in `page_eval` results by default. `page_snapshot_precise`
+   also shows an on-page NOTICE (`warnPreciseSnapshot`), but this is
+   informational, not a blocking confirmation.
+   **Reduced protection:** as of
+   [ADR-0020](../adr/0020-remove-interactive-confirmations.md) there is **no**
+   per-action confirmation. On an already-allowlisted origin the agent can
+   submit forms / click navigating links, run JS (when `page_eval` is enabled),
+   and close tabs with **no prompt**. Injection resistance therefore rests on
+   the allowlist and on the model treating page content as data — not on a human
+   approving each individual action.
 
 3. **Credential/token exfiltration.**
    → Cookies/storage are **read-only** (no set), **allowlist-scoped**, and
@@ -78,8 +89,16 @@ against. Pairs with [trust-boundaries.md](trust-boundaries.md) and the
 
 ## Residual risks (accepted, tracked)
 
-- The `page_eval` **60s grace window** lets *unrelated* same-origin code run
-  without re-prompting (see [ADR-0008](../adr/0008-page-eval-confirmation-channel.md)).
+- With per-action confirmations removed
+  ([ADR-0020](../adr/0020-remove-interactive-confirmations.md), superseding
+  [ADR-0006](../adr/0006-toast-confirmation-for-high-risk.md) and the
+  confirmation half of
+  [ADR-0008](../adr/0008-page-eval-confirmation-channel.md)), high-risk clicks,
+  `page_eval` (when `pageEvalEnabled`), and `tab_close` run on any allowlisted
+  origin **without a prompt**. The allowlist and the `page_eval` kill switch are
+  the only gates, so a successful prompt injection on an approved origin can act
+  with the user's session until the user notices. (This also removes the earlier
+  60s same-origin grace window.)
 - Masking is heuristic — it can miss a novel secret format or over-mask benign
   data.
 - `page_snapshot_precise` briefly attaches the debugger (infobar flash).
@@ -87,7 +106,6 @@ against. Pairs with [trust-boundaries.md](trust-boundaries.md) and the
   [ADR-0017](../adr/0017-cdp-mode-all-ops.md)) routes all page ops through
   `chrome.debugger`. When enabled it **bypasses page CSP** (letting `page_eval`
   run on strict-CSP sites) and holds a **persistent debugger attach** for the
-  tab (the "Started debugging this browser" banner stays up). The allowlist,
-  per-action confirmation toasts, and masking are unchanged; the residual risk
-  is the wider surface and the removed CSP defense-in-depth layer, accepted as
-  the explicit price of the opt-in.
+  tab (the "Started debugging this browser" banner stays up). The allowlist and
+  masking are unchanged; the residual risk is the wider surface and the removed
+  CSP defense-in-depth layer, accepted as the explicit price of the opt-in.

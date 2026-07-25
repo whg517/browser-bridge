@@ -1,39 +1,18 @@
 // Direct DOM actions: click, fill, text, screenshot, scroll.
 
 import type { OpArgs } from "../shared/types";
-import { getSetting } from "../shared/settings";
 import { truncate } from "./util";
 import { resolveTarget } from "./refs";
 import { roleOf } from "./snapshot";
-import { confirmWithToast, describeForToast, describeAction } from "./toast";
 
 export async function click(args: OpArgs) {
   const el = resolveTarget(args);
-  const highRisk = isHighRiskClick(el);
-  if (highRisk) {
-    // The confirmation gate can be disabled by the user in settings. This is
-    // dangerous (ADR-0006) but offered as an explicit opt-in.
-    const confirmEnabled = await getSetting("confirmHighRiskClick");
-    if (confirmEnabled !== false) {
-      await confirmWithToast(`Click "${describeForToast(el)}"?`, describeAction(el, "click"));
-    }
-  }
+  // Clicks run directly — the high-risk-click confirmation was removed in
+  // ADR-0020; the per-site allowlist is the remaining gate.
   el.scrollIntoView({ block: "center" });
   el.focus?.();
   el.click();
   return { clicked: args.ref || args.selector, role: roleOf(el) };
-}
-
-function isHighRiskClick(el: HTMLElement) {
-  // Submit buttons, and links that navigate, are gated.
-  const role = roleOf(el);
-  if (role === "button") {
-    const type = (el.getAttribute("type") || "").toLowerCase();
-    if (type === "submit") return true;
-  }
-  if (el.tagName === "A" && el.hasAttribute("href")) return true;
-  if (role === "link") return true;
-  return false;
 }
 
 export async function fill(args: OpArgs) {

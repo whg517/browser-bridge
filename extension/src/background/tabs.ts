@@ -1,7 +1,6 @@
 // Tab resolution, content-script injection, and the tab-level tools
 // (tab_list / tab_focus / tab_open / tab_close).
 
-import type { PageResponse } from "../shared/types";
 import { getSetting } from "../shared/settings";
 import { ensureAllowed } from "./allowlist-store";
 
@@ -100,31 +99,10 @@ async function addToWorkspaceGroup(
 }
 
 export async function tabClose(tabId: number) {
-  const tab = await chrome.tabs.get(tabId);
-  // The "Close tab?" confirmation can be turned off (confirmTabClose=false) for
-  // hands-off automation; on by default.
-  if ((await getSetting("confirmTabClose")) !== false) {
-    await confirmTabClose(tab);
-  }
+  // Closes the tab directly — the "Close tab?" confirmation was removed in
+  // ADR-0020. `get` first so a bad id fails with Chrome's clear "No tab with
+  // id" error rather than a bare remove rejection.
+  await chrome.tabs.get(tabId);
   await chrome.tabs.remove(tabId);
   return { closed: tabId };
-}
-
-async function confirmTabClose(tab: chrome.tabs.Tab) {
-  if (!tab || !tab.id) throw new Error("tab not found");
-  if (!tab.url || !/^https?:\/\//i.test(tab.url)) {
-    throw new Error(
-      "tab_close can only close http(s) tabs because the close confirmation must be shown in the page"
-    );
-  }
-  await ensureAllowed(tab.url);
-  await injectIfNeeded(tab.id);
-  const resp = (await chrome.tabs.sendMessage(tab.id, {
-    op: "_confirm_toast",
-    args: { message: `Close tab "${tab.title || tab.url}"?` },
-  })) as PageResponse;
-  if (resp && resp.__error) throw new Error(resp.__error);
-  if (!resp || resp.approved !== true) {
-    throw new Error("user denied tab_close");
-  }
 }

@@ -59,12 +59,12 @@
     },
     {
       "name": "tab_close",
-      "uiLabel": "Close a tab (with confirmation)",
+      "uiLabel": "Close a tab",
       "risk": "high",
       "scope": "tab",
       "permission": "tabs",
-      "confirmation": "page-toast",
-      "description": "Close an http(s) tab after showing a user-confirmation prompt in that page.",
+      "confirmation": "none",
+      "description": "Close a browser tab by `tabId`.",
       "inputSchema": {
         "properties": {
           "tabId": {
@@ -98,8 +98,8 @@
       "risk": "high",
       "scope": "page",
       "permission": "scripting",
-      "confirmation": "high-risk",
-      "description": "Click an element on the active tab. Prefer passing `ref` (from page_snapshot); fall back to `selector`. Clicking a submit button or a link triggers a user-confirmation prompt.",
+      "confirmation": "none",
+      "description": "Click an element on the active tab. Prefer passing `ref` (from page_snapshot); fall back to `selector`.",
       "inputSchema": {
         "properties": {
           "ref": {
@@ -232,8 +232,8 @@
       "risk": "critical",
       "scope": "page",
       "permission": "scripting",
-      "confirmation": "every-call",
-      "description": "HIGH RISK — execute arbitrary JavaScript on the active tab. EVERY call shows the user the full code in a confirmation prompt and waits for approval; within 60s of an approval, same-origin evals run without re-prompting. The return value is masked (JWT / long hex / long numbers / token-like strings) by default. This is the most powerful tool: prefer page_click / page_fill / page_snapshot whenever possible, and only use page_eval when those cannot achieve the goal (custom events, reading framework state, SPA routing, canvas/WebGL, etc.). Code runs in the page's global scope, wrapped as `async`, so you can `await` and `return` a value. Async results are awaited. Errors are returned as {name, message}.",
+      "confirmation": "none",
+      "description": "HIGH RISK — execute arbitrary JavaScript on the active tab. The return value is masked (JWT / long hex / long numbers / token-like strings) by default. This is the most powerful tool: prefer page_click / page_fill / page_snapshot whenever possible, and only use page_eval when those cannot achieve the goal (custom events, reading framework state, SPA routing, canvas/WebGL, etc.). Code runs in the page's global scope, wrapped as `async`, so you can `await` and `return` a value. Async results are awaited. Errors are returned as {name, message}.",
       "inputSchema": {
         "properties": {
           "code": {

@@ -1,6 +1,6 @@
 # ADR-0006: In-Page Toast + Short-Lived Confirmation-Free Window for High-Risk Actions
 
-- **Status**: Accepted
+- **Status**: Superseded by [ADR-0020](./0020-remove-interactive-confirmations.md)
 - **Date**: 2026-07-07
 
 ## Context

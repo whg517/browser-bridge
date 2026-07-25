@@ -144,7 +144,7 @@ The extension source is written in **TypeScript** (strict) under `extension/src/
 | `content.ts` | `content.js` | content script **entry point** (about 30 lines): re-injection guard + onMessage listener → `handle`. The real logic is in `src/content/*` (see below) |
 | `options.ts` + `options.html` | `options.js` + `options.html` | Standalone Options configuration page (see [ADR-0011](./adr/0011-options-page-for-settings.md) for details) |
 | `popup.ts` + `popup.html` | `popup.js` + `popup.html` | Authorization UI: shows connection status, the allowlist (revocable), and Allow/Deny for pending authorization requests |
-| `toast.css` (static, copied into dist) | `toast.css` | Styles for the high-risk confirmation Toast |
+| `toast.css` (static, copied into dist) | `toast.css` | Styles for the on-page informational notice Toast (the `page_snapshot_precise` notice; the blocking high-risk confirmation Toast was removed by [ADR-0020](./adr/0020-remove-interactive-confirmations.md)) |
 
 **Modular structure**: the two giant files have been split into cohesive modules; esbuild re-bundles the imports back into a single IIFE, so the runtime behavior is unchanged (verified by dom_test 77 / smoke / e2e).
 
@@ -224,9 +224,9 @@ The extension itself is loaded **load-unpacked** from **`extension/dist/`** (the
 
 5. content.js handle()
    → resolveTarget({ref:"e3"}) // look up refMap → element
-   → isHighRiskClick(el)? // if submit/link → confirmWithToast()
-     → inject the Toast DOM; user clicks Allow → continue; Deny/timeout → throw
    → el.scrollIntoView() + el.click()
+     // high-risk clicks (submit/link) now run without any prompt; the
+     // interactive confirmation Toast was removed (see ADR-0020)
 
 6. The result returns the same way:
    content → chrome.runtime.sendMessage response
@@ -252,14 +252,18 @@ See the individual ADRs for details; here is the overview.
 
 | Boundary | Mechanism | ADR |
 |------|------|-----|
-| Domain allowlist | chrome.storage.local + popup authorization + permissions.request | [0004](./adr/0004-allowlist-with-optional-host-permissions.md) |
-| High-risk action confirmation | content script injects a Toast, rejects on 30s timeout, 60s confirmation-free window | [0006](./adr/0006-toast-confirmation-for-high-risk.md) |
-| page_eval | Enlarged Toast with per-call confirmation + short same-origin window + return value redacted by default | [0008](./adr/0008-page-eval-confirmation-channel.md) |
+| Domain allowlist (**primary gate**) | chrome.storage.local + popup authorization + permissions.request — the AI only acts on origins the user has approved | [0004](./adr/0004-allowlist-with-optional-host-permissions.md) |
+| Per-tool enable/disable | any tool can be turned off in the Options page (a disabled tool returns "tool disabled in settings") | [0011](./adr/0011-options-page-for-settings.md) |
+| page_eval kill switch | `pageEvalEnabled` can disable `page_eval` entirely (disabled by default) | [0005](./adr/0005-page-eval-disabled-by-default.md) |
+| page_eval redaction | `evalMask` masks token-like values in the return value by default; the call runs **without** any per-call confirmation | [0008](./adr/0008-page-eval-confirmation-channel.md), [0020](./adr/0020-remove-interactive-confirmations.md) |
+| page_snapshot_precise notice | `warnPreciseSnapshot` pops an on-page **informational** NOTICE before the debugger attaches — informational only, **not** a blocking confirmation | [0009](./adr/0009-page-snapshot-precise-debugger.md) |
 | host authentication | allowed_origins hardcoded with the extension ID | [0002](./adr/0002-three-process-architecture-localhost-tcp.md) |
 | bridge socket | per-run secret + lockfile in the user directory (Unix mode 0600) | [0002](./adr/0002-three-process-architecture-localhost-tcp.md) |
 | redaction | page_text masks passwords + long numbers; page_fill echoes back the password redacted | — |
 | protocol security | NM 1MB outbound limit; single-threaded writes + flush; stderr panic hook | — |
-| configuration management | Standalone Options page centrally manages security toggles/timeouts/tool enablement/allowlist/allowAllSites | [0011](./adr/0011-options-page-for-settings.md) |
+| configuration management | Standalone Options page centrally manages tool enablement / allowlist / allowAllSites / `pageEvalEnabled` / `evalMask` / `warnPreciseSnapshot` | [0011](./adr/0011-options-page-for-settings.md) |
+
+**Removed protections ([ADR-0020](./adr/0020-remove-interactive-confirmations.md), "Remove Interactive Per-Action Confirmations")**: the extension no longer interrupts the AI with an in-page confirmation for high-risk clicks (submit buttons / navigating links, formerly [ADR-0006](./adr/0006-toast-confirmation-for-high-risk.md)), `page_eval` (formerly a per-call Toast + 60s same-origin grace window, [ADR-0008](./adr/0008-page-eval-confirmation-channel.md)), or `tab_close`. The `confirmHighRiskClick` / `confirmPageEval` / `confirmTabClose` / `confirmGraceMs` / `clickToastTimeoutMs` / `evalToastTimeoutMs` settings no longer exist. **On an already-allowlisted site the AI can now submit forms, run JS (when `page_eval` is enabled), and close tabs with no per-action prompt** — the allowlist plus the per-tool / kill-switch controls above are the whole security boundary. ADR-0006 and the confirmation half of ADR-0008 are Superseded by ADR-0020.
 
 ## 7. Key Constraints (pitfalls hit and handled during implementation)
 
@@ -359,7 +363,7 @@ See [ADR-0010](./adr/0010-cookie-storage-readonly.md) for details.
 
 See [requirements.md §7 Phasing](./requirements.md#7-phasing). Extension points reserved in the architecture:
 - **Adding a new tool**: add a schema definition in `tools/catalogue.rs` + add a `HANDLERS` record in `tools/mod.rs` (the `build_payload` pure function), and extend background/content with handling for the corresponding op
-- **page_eval**: needs a new high-risk confirmation channel (a stronger confirmation than the Toast)
+- **page_eval**: gated by the `pageEvalEnabled` kill switch + `evalMask` redaction (the per-call confirmation channel was removed by [ADR-0020](./adr/0020-remove-interactive-confirmations.md))
 - **debugger fallback**: add the `page_snapshot_precise` tool, with the SW temporarily attaching/detaching
 - **Skill layer**: does not touch the architecture; purely adds skill files that teach the AI to combine existing tools
 

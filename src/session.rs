@@ -281,8 +281,8 @@ impl Session {
         }
 
         // Wait for the response. Generous timeout: the extension may need to
-        // prompt the user (Toast) for high-risk actions, which can take a
-        // while.
+        // wait on the user to approve a new site in the allowlist popup, which
+        // can take a while.
         let timeout = Duration::from_secs(120);
         match rx.recv_timeout(timeout) {
             Ok(resp) => {
