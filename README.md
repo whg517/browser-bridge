@@ -23,9 +23,10 @@ JavaScript in your pages. The guardrails that keep that safe:
 - **Approve every site.** A new origin triggers a popup prompt; nothing runs on
   a site you haven't approved (which also grants the host permission the content
   script needs).
-- **Kill switches, not per-action prompts.** `page_eval` (arbitrary JS) can be
-  turned off entirely, any tool can be disabled in settings, and `page_eval`
-  results are masked by default. Per-action confirmation prompts were removed in
+- **Kill switch + always-on masking, not per-action prompts.** Any tool can be
+  disabled in the Options page (including `page_eval`, arbitrary JS), and
+  `page_eval` results are always masked. Per-action confirmation prompts were
+  removed in
   [ADR-0020](./docs/adr/0020-remove-interactive-confirmations.md) — the allowlist
   above is the gate, so keep it tight.
 - **Read-only credentials.** Cookies and storage can be *read* (always masked —
@@ -228,7 +229,7 @@ Grouped from the single source of truth,
 ### Run code (highest risk)
 | Tool | Does | Risk |
 |------|------|------|
-| `page_eval` | ⚠ Execute arbitrary JS. Runs with no prompt; return value masked by default and the tool can be disabled entirely in settings. Prefer the tools above. | critical |
+| `page_eval` | ⚠ Execute arbitrary JS. Runs with no prompt; return value always masked; disable it in the Options page (Tool enablement). Prefer the tools above. | critical |
 
 ### Read credentials (read-only, always masked)
 | Tool | Does | Risk |

@@ -7,8 +7,12 @@
 > confirmation-related settings this ADR introduced — `confirmHighRiskClick`,
 > `confirmPageEval`, `confirmTabClose`, `confirmGraceMs`, `clickToastTimeoutMs`,
 > `evalToastTimeoutMs` — have since been **removed** along with the confirmations
-> themselves. The Options page and its remaining settings stand; treat the
-> confirmation rows below as historical.
+> themselves. Later, the whole **"Security" section** (`pageEvalEnabled`,
+> `evalMask`, `warnPreciseSnapshot`) was also removed: those protections are now
+> always-on (masking and the precise-snapshot notice are non-optional, and
+> `page_eval` is disabled via the general per-tool disable). The Options page now
+> holds tool enablement, the allowlist, and execution mode; treat the rows below
+> as historical.
 
 ## Context
 

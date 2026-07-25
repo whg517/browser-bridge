@@ -6,7 +6,6 @@
 
 import type { OpArgs } from "../../shared/types";
 import type { PageBackend } from "../page-backend";
-import { getSetting } from "../../shared/settings";
 import { maskSensitive, maskString } from "../../shared/masking";
 import { truncate } from "../../content/util";
 import { ensureAllowed } from "../allowlist-store";
@@ -126,15 +125,12 @@ export class CdpBackend implements PageBackend {
     return await session.evaluate(doClick, [REF_ATTR, { ref: args.ref, selector: args.selector }]);
   }
 
-  // page_eval: pageEvalEnabled gate, then run in the MAIN world. Per-call
-  // confirmation was removed in ADR-0020.
+  // page_eval: run in the MAIN world (gated by the per-tool disable + allowlist;
+  // the page_eval-specific toggle and per-call confirmation were removed).
   private async pageEval(session: CdpSession, args: OpArgs): Promise<unknown> {
     const code = args.code;
     if (typeof code !== "string" || !code.trim()) {
       throw new Error("page_eval needs non-empty `code`");
-    }
-    if ((await getSetting("pageEvalEnabled")) === false) {
-      throw new Error("page_eval disabled in settings");
     }
 
     // Run the code as an async IIFE in the MAIN world. Unlike the content path
@@ -152,8 +148,7 @@ export class CdpBackend implements PageBackend {
         stack: truncate(description, 2000),
       };
     }
-    const value = res.result?.value;
-    const mask = (await getSetting("evalMask")) !== false;
-    return mask ? maskSensitive(value) : value;
+    // Always mask token-like values (the mask toggle was removed).
+    return maskSensitive(res.result?.value);
   }
 }

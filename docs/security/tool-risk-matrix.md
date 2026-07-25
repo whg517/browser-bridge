@@ -22,8 +22,8 @@ content or navigates) · **High** (writes to the page, or reads credentials) ·
 | `page_screenshot` | Medium | viewport pixels | — | possibly (whatever's on screen) | `tabs` | — |
 | `page_scroll` | Low | scroll position | scrolls | no | `scripting` | — |
 | `page_wait_for` | Low | selector/text presence | — | no | `scripting` | — |
-| `page_eval` | **Critical** | anything the page can | **arbitrary JS** in the page | yes (can read tokens/cookies) | `scripting` (host) | `pageEvalEnabled` kill-switch; result masked (`evalMask`); allowlist-gated; per-tool disable — no per-action prompt |
-| `page_snapshot_precise` | Medium | authoritative a11y tree (CDP) | — | no | `debugger` | informational pre-warn notice (`warnPreciseSnapshot`, not a blocking confirm); "debugging" infobar flashes |
+| `page_eval` | **Critical** | anything the page can | **arbitrary JS** in the page | yes (can read tokens/cookies) | `scripting` (host) | result always masked; allowlist-gated; per-tool disable is the kill switch — no per-action prompt |
+| `page_snapshot_precise` | Medium | authoritative a11y tree (CDP) | — | no | `debugger` | always-on informational pre-warn notice (not a blocking confirm); "debugging" infobar flashes |
 | `cookie_get` | High | cookies incl. **httpOnly** | — (read-only) | **yes** | `cookies` | allowlist-scoped; values masked; no `cookie_set` by design |
 | `storage_get` | High | local/sessionStorage | — (read-only) | **yes** (tokens) | `scripting` | same-origin; values **always** masked |
 

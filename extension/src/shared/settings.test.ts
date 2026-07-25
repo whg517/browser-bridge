@@ -4,16 +4,8 @@ import { DEFAULTS, getSetting } from "./settings";
 describe("DEFAULTS", () => {
   test("has the expected keys and values", () => {
     expect(Object.keys(DEFAULTS).sort()).toEqual(
-      [
-        "allowAllSites",
-        "cdpMode",
-        "disabledTools",
-        "evalMask",
-        "pageEvalEnabled",
-        "warnPreciseSnapshot",
-      ].sort()
+      ["allowAllSites", "cdpMode", "disabledTools"].sort()
     );
-    expect(DEFAULTS.pageEvalEnabled).toBe(true);
     expect(DEFAULTS.disabledTools).toEqual([]);
     expect(DEFAULTS.allowAllSites).toBe(false);
     expect(DEFAULTS.cdpMode).toBe(false);
@@ -33,13 +25,13 @@ describe("getSetting", () => {
   }
 
   test("returns the stored value when present", async () => {
-    mockStorage({ pageEvalEnabled: false });
-    expect(await getSetting("pageEvalEnabled")).toBe(false);
+    mockStorage({ cdpMode: true });
+    expect(await getSetting("cdpMode")).toBe(true);
   });
 
   test("falls back to the default when absent", async () => {
     mockStorage({});
-    expect(await getSetting("pageEvalEnabled")).toBe(true);
+    expect(await getSetting("cdpMode")).toBe(false);
     expect(await getSetting("allowAllSites")).toBe(false);
   });
 });
