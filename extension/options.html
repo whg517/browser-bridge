@@ -39,6 +39,14 @@
     .card .warn { color: var(--danger-dark); font-size: 12px; margin-top: 6px; font-weight: 600; }
     .card input[type=checkbox] { margin-top: 2px; width: 17px; height: 17px; flex: none;
                                  accent-color: var(--brand); cursor: pointer; }
+    /* Direction tag: which way "On" points, so the safety axis is explicit even
+       though it differs per switch. safe = keep on; access = on grants power. */
+    .tag { display: inline-block; font-size: 10px; font-weight: 700; text-transform: uppercase;
+           letter-spacing: 0.04em; padding: 2px 7px; border-radius: 999px; margin-left: 8px;
+           vertical-align: middle; white-space: nowrap; }
+    .tag.safe   { color: var(--brand-dark);  background: rgba(46,139,87,0.15); }
+    .tag.access { color: var(--danger-dark); background: rgba(220,38,38,0.12); }
+    .tag.pref   { color: var(--faint);       background: var(--line-soft); }
 
     /* Number-input rows, grouped in a panel */
     .panel { border: 1px solid var(--line); border-radius: 10px; padding: 6px 14px; }
@@ -111,60 +119,73 @@
 <body>
   <header>
     <h1>Browser Bridge Settings</h1>
-    <div class="sub">All changes are saved instantly. Adjust security-related switches with care.</div>
+    <div class="sub">All changes save instantly. Each switch spells out what <strong>On</strong> and <strong>Off</strong> do, marks the recommended position, and carries a tag for which way “On” leans: <span class="tag safe">Protection</span> keep on for safety · <span class="tag access">More access</span> On grants the AI more power · <span class="tag pref">Convenience</span> no security impact.</div>
   </header>
 
+  <!--
+    TOGGLE COPY CONVENTION (keep new switches consistent):
+    1. Label the ON state, positively. The title says what becomes true when the
+       switch is On. Never label the Off state — no "Disable/Don't/Prevent…"
+       titles (On-of-a-negative is a double negative).
+    2. Description is always: "<strong>On</strong> …  <strong>Off</strong> …"
+       plus "(default, recommended)" — or "(default)"/"(safest)" when the
+       default isn't the safest choice.
+    3. Tag each card for the direction "On" leans: `safe` (on = safer, keep on),
+       `access` (on = grants the AI more power/reach), or `pref` (no security
+       impact). This is what lets a mix of guardrails and capabilities stay
+       positively framed without confusing the reader about on/off.
+  -->
   <!-- ===== Security ===== -->
   <h2>Security</h2>
   <div class="card" id="card-pageEvalEnabled">
     <input type="checkbox" id="pageEvalEnabled" />
     <div class="body">
-      <div class="title">Allow page_eval (execute arbitrary JavaScript)</div>
-      <div class="desc">When disabled, an AI call to page_eval is rejected outright and no code runs on the page. This is the most dangerous tool — even with a confirmation channel, disabling it completely eliminates the risk of silent code execution (ADR-0008).</div>
+      <div class="title">Allow page_eval (run arbitrary JavaScript)<span class="tag access">More access</span></div>
+      <div class="desc"><strong>On</strong> (default): page_eval is available to the AI — each call is still gated by the confirmation below. <strong>Off</strong> (safest): page_eval is refused outright, so no code can ever run on the page. This is the single most dangerous tool; turn it off if you never need it (ADR-0008).</div>
     </div>
   </div>
 
   <div class="card" id="card-evalMask">
     <input type="checkbox" id="evalMask" />
     <div class="body">
-      <div class="title">Redact page_eval return values</div>
-      <div class="desc">Apply regex masking to eval results: JWTs, long hex, long numbers, and strings that look like tokens/keys (ADR-0008).</div>
-      <div class="warn" id="evalMask-warn" style="display:none">⚠ When disabled, tokens / cookies / keys may leak to the AI verbatim.</div>
+      <div class="title">Redact secrets in page_eval results<span class="tag safe">Protection</span></div>
+      <div class="desc"><strong>On</strong> (default, recommended): mask token-like values in eval results — JWTs, long hex, long numbers, and strings that look like keys — before they reach the AI. <strong>Off</strong>: results are returned verbatim (ADR-0008).</div>
+      <div class="warn" id="evalMask-warn" style="display:none">⚠ Off: tokens, cookies, and keys in eval results can reach the AI unmasked.</div>
     </div>
   </div>
 
   <div class="card" id="card-confirmHighRiskClick">
     <input type="checkbox" id="confirmHighRiskClick" />
     <div class="body">
-      <div class="title">Confirm high-risk clicks (submit buttons / link navigation)</div>
-      <div class="desc">When a form submit button or link is clicked, a confirmation toast appears and requires user approval. This is the key line of defense against the AI silently placing orders / transferring funds / navigating away (ADR-0006).</div>
-      <div class="warn" id="confirmHighRiskClick-warn" style="display:none">⚠ When disabled, the AI's clicks on submit buttons/links are no longer confirmed. Only disable this if you fully trust the AI.</div>
+      <div class="title">Confirm high-risk clicks (submit buttons & links)<span class="tag safe">Protection</span></div>
+      <div class="desc"><strong>On</strong> (default, recommended): clicking a submit button or a link pops a confirmation you must approve — the main guard against the AI silently placing an order, transferring funds, or navigating away. <strong>Off</strong>: those clicks run with no prompt (ADR-0006).</div>
+      <div class="warn" id="confirmHighRiskClick-warn" style="display:none">⚠ Off: the AI's clicks on submit buttons and links are no longer confirmed. Turn off only if you fully trust the AI.</div>
     </div>
   </div>
 
   <div class="card" id="card-confirmPageEval">
     <input type="checkbox" id="confirmPageEval" />
     <div class="body">
-      <div class="title">Confirm page_eval (execute arbitrary JS)</div>
-      <div class="desc">Every page_eval call shows a confirmation toast displaying the full code and requires user approval (ADR-0008). page_eval can execute arbitrary JavaScript and is the highest-risk operation.</div>
-      <div class="warn" id="confirmPageEval-warn" style="display:none">⚠ When disabled, the AI executes arbitrary JS directly with no prompt. Only disable this if you fully trust the AI and need fully automated operation.</div>
+      <div class="title">Confirm every page_eval (arbitrary JS)<span class="tag safe">Protection</span></div>
+      <div class="desc"><strong>On</strong> (default, recommended): each page_eval shows the full code and waits for your approval. <strong>Off</strong>: the AI runs arbitrary JavaScript with no prompt. page_eval is the highest-risk operation (ADR-0008).</div>
+      <div class="warn" id="confirmPageEval-warn" style="display:none">⚠ Off: the AI executes arbitrary JS directly with no prompt. Turn off only if you fully trust the AI and want unattended automation.</div>
     </div>
   </div>
 
   <div class="card" id="card-confirmTabClose">
     <input type="checkbox" id="confirmTabClose" />
     <div class="body">
-      <div class="title">Confirm tab_close (close tab)</div>
-      <div class="desc">Before a tab is closed, an in-page "Close tab?" confirmation appears and requires user approval.</div>
-      <div class="warn" id="confirmTabClose-warn" style="display:none">⚠ When disabled, the AI closes tabs directly with no prompt.</div>
+      <div class="title">Confirm before closing a tab (tab_close)<span class="tag safe">Protection</span></div>
+      <div class="desc"><strong>On</strong> (default, recommended): a "Close tab?" prompt appears in the page and waits for your approval before tab_close runs. <strong>Off</strong>: tabs close with no prompt.</div>
+      <div class="warn" id="confirmTabClose-warn" style="display:none">⚠ Off: the AI closes tabs directly with no prompt.</div>
     </div>
   </div>
 
   <div class="card" id="card-warnPreciseSnapshot">
     <input type="checkbox" id="warnPreciseSnapshot" />
     <div class="body">
-      <div class="title">Warn before precise snapshot</div>
-      <div class="desc">Before page_snapshot_precise (which uses chrome.debugger) is called, show an informational prompt on the page. Chrome briefly displays a "Debugging" banner at the top (ADR-0009).</div>
+      <div class="title">Notify before a precise snapshot (page_snapshot_precise)<span class="tag safe">Protection</span></div>
+      <div class="desc"><strong>On</strong> (default, recommended): show a heads-up in the page before page_snapshot_precise runs (it uses chrome.debugger, so Chrome also briefly shows a "Debugging" banner at the top). <strong>Off</strong>: it runs with no heads-up (ADR-0009).</div>
     </div>
   </div>
 
@@ -173,8 +194,8 @@
   <div class="card" id="card-groupTabs">
     <input type="checkbox" id="groupTabs" />
     <div class="body">
-      <div class="title">Put AI-opened tabs into a "Browser Bridge" group</div>
-      <div class="desc">Tabs opened via tab_open are automatically placed into a named tab group, visually isolated from your own tabs, and can be collapsed/closed as a group. Enabled by default (ADR-0018).</div>
+      <div class="title">Group AI-opened tabs together<span class="tag pref">Convenience</span></div>
+      <div class="desc"><strong>On</strong> (default, recommended): tabs the AI opens via tab_open go into a named "Browser Bridge" group, kept visually separate from your own tabs so you can collapse or close them together. <strong>Off</strong>: they open loose among your tabs (ADR-0018).</div>
     </div>
   </div>
 
@@ -183,9 +204,9 @@
   <div class="card" id="card-cdpMode">
     <input type="checkbox" id="cdpMode" />
     <div class="body">
-      <div class="title">Route all page operations through CDP (chrome.debugger)</div>
-      <div class="desc">When enabled, all page operations use CDP (chrome.debugger) instead of injecting content scripts; this allows page_eval to run on strict-CSP sites (such as Bing). Disabled by default (ADR-0017).</div>
-      <div class="warn" id="cdpMode-warn">⚠ When enabled, Chrome persistently displays a "Debugging this browser" banner at the top (the debugger stays attached the whole time), and the access surface is larger. Only enable this when you need to bypass CSP or want unified deep control.</div>
+      <div class="title">Route all page actions through CDP (chrome.debugger)<span class="tag access">More access</span></div>
+      <div class="desc"><strong>Off</strong> (default, recommended): page actions inject a content script — the normal mode. <strong>On</strong>: everything runs through CDP (chrome.debugger) instead, which lets page_eval work on strict-CSP sites such as Bing (ADR-0017).</div>
+      <div class="warn" id="cdpMode-warn">⚠ On: Chrome shows a persistent "Debugging this browser" banner (the debugger stays attached the whole time) and the access surface is larger. Turn on only to bypass CSP or for unified deep control.</div>
     </div>
   </div>
 
@@ -220,9 +241,9 @@
   <div class="card" id="card-allowAllSites">
     <input type="checkbox" id="allowAllSites" />
     <div class="body">
-      <div class="title">Allow all sites (skip per-site approval)</div>
-      <div class="desc">When enabled, the AI can operate on any http(s) site directly, without a per-site authorization prompt for each new site. Enabling it requests the "&lt;all_urls&gt;" host permission. Suitable when you trust the AI to browse fully automatically; otherwise it's recommended to keep this off and use the per-site allowlist below.</div>
-      <div class="warn" id="allowAllSites-warn" style="display:none">⚠ When enabled, any site (including banking, email, and intranet sites) can be operated on without authorization. Use with care.</div>
+      <div class="title">Allow all sites (skip per-site approval)<span class="tag access">More access</span></div>
+      <div class="desc"><strong>Off</strong> (default, recommended): the AI needs your approval the first time it touches each new site — use the allowlist below. <strong>On</strong>: the AI can act on any http(s) site immediately with no per-site prompt (this requests the "&lt;all_urls&gt;" host permission). Only turn on if you trust the AI to browse fully automatically.</div>
+      <div class="warn" id="allowAllSites-warn" style="display:none">⚠ On: any site — including banking, email, and intranet — can be acted on without approval. Use with care.</div>
     </div>
   </div>
 
