@@ -44,8 +44,8 @@ MCP client ──①──▶ Rust MCP server ──②──▶ native host ─
   - **Allowlist**: page-level ops only run on origins the user approved; a new
     origin prompts the user and requests the host permission. The page cannot
     self-approve.
-  - **Confirmation**: submit/link clicks, `page_eval`, and tab close inject an
-    in-page toast the page cannot forge or auto-dismiss (30s auto-deny).
+  - **Per-tool disable**: any tool (including `page_eval`) can be turned off in
+    the Options page; a disabled tool is refused at dispatch.
   - **Masking**: page text, cookies, storage, and eval output are masked before
     crossing back toward the model.
   - **Isolation**: content scripts run in the isolated world; `page_eval` uses a

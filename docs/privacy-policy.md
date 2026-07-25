@@ -1,6 +1,6 @@
 # Privacy Policy — Browser Bridge
 
-_Last updated: 2026-07-15_
+_Last updated: 2026-07-25_
 
 Browser Bridge is an open-source Chrome extension that connects an MCP client
 (such as Claude Code, Claude Desktop, or Codex) to your local Chrome through a
@@ -11,8 +11,8 @@ the extension accesses and what it does — and does not — do with that data.
 
 **Browser Bridge does not collect, transmit, or sell any personal data.** It has
 no analytics, no telemetry, and no remote servers. Everything the extension does
-happens on your own machine, and every sensitive action requires your explicit
-approval.
+happens on your own machine, and it only operates on sites you have explicitly
+approved.
 
 ## What the extension can access
 
@@ -46,9 +46,9 @@ being returned.
 
 - **Per-site approval.** A site does nothing until you approve its origin in a
   popup prompt.
-- **Per-action confirmation.** High-risk actions — form submissions, link
-  navigations, tab close, and every JavaScript evaluation — require an on-page
-  confirmation that you must approve.
+- **Per-tool control.** Any tool — including JavaScript evaluation (`page_eval`)
+  — can be disabled in the extension's Options page, and a disabled tool is
+  refused. Credential-bearing reads (cookies, web storage) are always masked.
 
 ## What the extension stores locally
 

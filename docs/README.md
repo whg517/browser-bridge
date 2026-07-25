@@ -10,10 +10,17 @@ This directory is the **single source of truth** for the browser-bridge project.
 | [architecture.md](./architecture.md) | Architecture: components, data flow, protocol, security model, key constraints, technology choices | Implementers, reviewers |
 | [cli.md](./cli.md) | CLI subcommands and troubleshooting: `doctor`/`status` read-only self-checks, `tools`/`call`, interpreting "server not reachable" | Users, troubleshooters |
 | [integrations.md](./integrations.md) | Integrating various agents (Codex/OpenClaw/Cursor/Windsurf/Cline/Claude/LangChain/Hermes): register and get discovered | Users, integrators |
+| [agent-prompt.md](./agent-prompt.md) | The copy-paste kickstart prompt for first-time agent use — also served over MCP `initialize` instructions | Users, integrators |
+| [wsl.md](./wsl.md) | WSL usage guide: Windows-Chrome (interop) vs WSLg-Linux-Chrome topologies, install paths, don't-mix rules | WSL users |
 | [operations.md](./operations.md) | Operations: the two binary modes, `doctor`/`status`, `BB_LOG`/auditing, lock files, native host reconnection | Users, operators |
 | [compatibility.md](./compatibility.md) | Compatibility: the three version types, internal protocol version, capability/version handshake (current state of the contract) | Implementers, reviewers |
 | [release.md](./release.md) | Release: tag-driven pipeline, precompiled tarball + checksums, dual-mode `install.sh`, SBOM | Releasers, reviewers |
-| [chrome-web-store.md](./chrome-web-store.md) | Decision checklist for listing on the Chrome Web Store: pinned-ID migration, review risks, prerequisites | Maintainers (decision) |
+| [development.md](./development.md) | Development guide: local dev loop, build/test toolchain, prerequisites, the `Makefile` tasks | Contributors |
+| [chrome-web-store.md](./chrome-web-store.md) | Chrome Web Store release runbook: build the key-stripped store zip and upload a new version (decision in ADR-0019) | Maintainers |
+| [privacy-policy.md](./privacy-policy.md) | Privacy policy for the store listing: what the extension accesses, no data collection, read-only masked credentials | Users, store reviewers |
+| [security/threat-model.md](./security/threat-model.md) | Threat model: assets, adversaries, per-threat mitigations, residual risks | Maintainers, reviewers |
+| [security/tool-risk-matrix.md](./security/tool-risk-matrix.md) | Per-tool risk matrix: blast radius and gating for each tool | Maintainers, reviewers |
+| [security/trust-boundaries.md](./security/trust-boundaries.md) | Trust boundaries across the three processes / four protocol hops, plus invariants that must not regress | Maintainers, reviewers |
 | [security/incident-response.md](./security/incident-response.md) | Security incident response runbook: reporting, triage, mitigation (disabling tools/revoking the allowlist/master switch), disclosure | Maintainers, reporters |
 | [adr/](./adr/) | Architecture Decision Records (ADRs): a traceable record of every "why this choice was made" | Reviewers, future contributors |
 
@@ -44,6 +51,11 @@ An ADR (Architecture Decision Record) documents decisions where **there were mul
 | [0009](./adr/0009-page-snapshot-precise-debugger.md) | page_snapshot_precise uses chrome.debugger to obtain the authoritative a11y tree | Accepted |
 | [0010](./adr/0010-cookie-storage-readonly.md) | Read-only Cookie/Storage access | Accepted |
 | [0011](./adr/0011-options-page-for-settings.md) | Manage configuration through a dedicated Options page | Accepted |
+| [0012](./adr/0012-typescript-esbuild-extension-build.md) | Write the extension in TypeScript, bundle to dist/ with esbuild | Accepted |
+| [0013](./adr/0013-ci-and-toolchain.md) | Unified toolchain + CI (task runner, GitHub Actions, single version source) | Accepted |
+| [0014](./adr/0014-leveled-logging.md) | Leveled logging (BB_LOG) + typed errors with thiserror | Accepted |
+| [0015](./adr/0015-windows-support.md) | Run and install locally on Windows | Accepted |
+| [0016](./adr/0016-linux-wsl-support.md) | Dual run modes for Linux and WSL | Accepted |
 | [0017](./adr/0017-cdp-mode-all-ops.md) | CDP mode: all page operations can optionally go through chrome.debugger | Accepted |
 | [0018](./adr/0018-tab-workspace-group.md) | Group AI tabs into the "Browser Bridge" group (workspace) | Accepted |
 | [0019](./adr/0019-chrome-web-store-distribution.md) | Distribute via the Chrome Web Store (dual ID) | Accepted |
