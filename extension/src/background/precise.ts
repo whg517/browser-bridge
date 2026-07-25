@@ -6,7 +6,6 @@
 // warned via an informational toast before attach. See ADR-0009.
 
 import type { OpArgs, PageResponse } from "../shared/types";
-import { getSetting } from "../shared/settings";
 import { ensureAllowed } from "./allowlist-store";
 import { resolveTargetTab, injectIfNeeded } from "./tabs";
 // The chrome.debugger primitives + the non-debuggable URL filter now live in
@@ -80,22 +79,18 @@ export async function snapshotPrecise(maybeTabId: number | undefined, _args: OpA
     );
   }
 
-  // Warn the user via an informational toast in the page. Proceed unless
-  // they actively cancel within the timeout. Skippable via settings.
-  const warnPrecise = await getSetting("warnPreciseSnapshot");
+  // Warn the user via an informational toast in the page. Proceed unless they
+  // actively cancel within the timeout. (Always shown — the toggle was removed.)
   await injectIfNeeded(tab.id!);
-  let proceed: boolean | PageResponse = true; // default: proceed (skip warning)
-  if (warnPrecise) {
-    proceed = await chrome.tabs
-      .sendMessage(tab.id!, {
-        op: "_info_toast",
-        args: {
-          message:
-            "About to run a precise page scan — Chrome will show a 'Debugging' banner at the top that disappears automatically after the scan (about 1 second).",
-        },
-      })
-      .catch(() => true /* content script missing → proceed anyway */);
-  }
+  const proceed: boolean | PageResponse = await chrome.tabs
+    .sendMessage(tab.id!, {
+      op: "_info_toast",
+      args: {
+        message:
+          "About to run a precise page scan — Chrome will show a 'Debugging' banner at the top that disappears automatically after the scan (about 1 second).",
+      },
+    })
+    .catch(() => true /* content script missing → proceed anyway */);
   if (proceed === false || (proceed && (proceed as PageResponse).__cancelled)) {
     return { cancelled: true };
   }

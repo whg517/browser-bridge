@@ -104,8 +104,8 @@ function escapeAttr(s: string) {
   return escapeHtml(s);
 }
 
-// Open the full settings page (options_ui). The evalMask toggle and all other
-// security/tool/timeout settings now live there.
+// Open the full settings page (options_ui): tool enablement, the allowlist, and
+// execution mode.
 $("open-settings").addEventListener("click", () => {
   chrome.runtime.openOptionsPage();
 });

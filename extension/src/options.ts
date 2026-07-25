@@ -38,20 +38,6 @@ function flashToast(msg: string) {
   toastTimer = setTimeout(() => el.classList.remove("show"), 1200);
 }
 
-// ---- render: boolean cards ------------------------------------------------
-
-function renderBool(key: string) {
-  const input = $(key);
-  const warn = $(`${key}-warn`);
-  const card = $(`card-${key}`);
-  input.addEventListener("change", (e: Event) => {
-    const checked = (e.target as HTMLInputElement).checked;
-    if (warn) warn.style.display = checked ? "none" : "block";
-    if (card) card.classList.toggle("danger", !!warn && !checked);
-    saveSetting(key, checked);
-  });
-}
-
 // The "allow all sites" toggle is special: enabling it MUST also grant the
 // <all_urls> optional host permission (via a user-gesture permissions.request),
 // otherwise content-script injection silently fails on non-allowlisted origins.
@@ -204,19 +190,6 @@ function escapeAttr(s: string) {
 
 (async function init() {
   const s = await loadSettings();
-
-  // Boolean toggles. The protections (safe on / warned off) show danger styling
-  // while UNCHECKED via their `<key>-warn` element; benign toggles like
-  // warnPreciseSnapshot simply have no `-warn` element, so no styling fires.
-  for (const key of ["pageEvalEnabled", "evalMask", "warnPreciseSnapshot"] as (keyof Settings)[]) {
-    const input = $<HTMLInputElement>(key);
-    input.checked = s[key] !== false;
-    const warn = $(`${key}-warn`);
-    if (warn) warn.style.display = input.checked ? "none" : "block";
-    const card = $(`card-${key}`);
-    if (card && warn) card.classList.toggle("danger", !input.checked);
-    renderBool(key);
-  }
 
   // cdpMode is the inverse: DANGEROUS when ON (persistent debugger attach, CSP
   // bypassed), so its warning/danger styling shows while CHECKED. Default off.

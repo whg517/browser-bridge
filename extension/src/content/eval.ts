@@ -1,10 +1,10 @@
 // page_eval (high-risk) — execute arbitrary JS in the page's global scope.
-// Result is safely serialized and (by default) masked before returning. Gated by
-// the pageEvalEnabled kill switch and the per-site allowlist; per-call
-// confirmation was removed in ADR-0020.
+// Result is safely serialized and always masked before returning. Gated by the
+// per-tool enable/disable (Tool enablement) and the per-site allowlist; the
+// page_eval-specific enable/mask toggles were removed, and per-call
+// confirmation earlier (ADR-0020).
 
 import type { OpArgs } from "../shared/types";
-import { getSetting } from "../shared/settings";
 import { maskSensitive } from "../shared/masking";
 import { truncate } from "./util";
 
@@ -12,12 +12,6 @@ export async function runEval(args: OpArgs) {
   const code = args.code;
   if (typeof code !== "string" || !code.trim()) {
     throw new Error("page_eval needs non-empty `code`");
-  }
-  // Global kill switch: if the user disabled page_eval in settings, refuse
-  // before any code runs.
-  const evalEnabled = await getSetting("pageEvalEnabled");
-  if (evalEnabled === false) {
-    throw new Error("page_eval disabled in settings");
   }
   // Execute. Wrap as an async IIFE in the global scope so the code can use
   // await/return and see page globals. `new Function` (not eval) gives us
@@ -36,9 +30,8 @@ export async function runEval(args: OpArgs) {
       stack: truncate(String(e?.stack || ""), 2000),
     };
   }
-  const serialized = serializeResult(result);
-  const mask = await getMaskSetting();
-  return mask ? maskSensitive(serialized) : serialized;
+  // Always mask token-like values before returning (the mask toggle was removed).
+  return maskSensitive(serializeResult(result));
 }
 
 // Safe serialization: handles cycles, DOM nodes, errors, exotic types, and
@@ -107,20 +100,4 @@ function serializeResult(value: any, seen = new WeakSet(), depth = 0): any {
     }
   }
   return String(value);
-}
-
-// Read the eval mask toggle from storage. Default true (mask on). Cached after
-// the first read.
-let _maskCache = true;
-let _maskLoaded = false;
-function getMaskSetting() {
-  if (_maskLoaded) return Promise.resolve(_maskCache);
-  return new Promise((resolve) => {
-    chrome.storage.local.get("evalMask", (r) => {
-      // undefined → default true (mask on)
-      _maskCache = r.evalMask !== false;
-      _maskLoaded = true;
-      resolve(_maskCache);
-    });
-  });
 }

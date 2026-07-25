@@ -114,33 +114,6 @@
     <div class="sub">All changes are saved instantly. Adjust security-related switches with care.</div>
   </header>
 
-  <!-- ===== Security ===== -->
-  <h2>Security</h2>
-  <div class="card" id="card-pageEvalEnabled">
-    <input type="checkbox" id="pageEvalEnabled" />
-    <div class="body">
-      <div class="title">Allow page_eval (execute arbitrary JavaScript)</div>
-      <div class="desc">When disabled, an AI call to page_eval is rejected outright and no code runs on the page. This is the most dangerous tool — even with a confirmation channel, disabling it completely eliminates the risk of silent code execution (ADR-0008).</div>
-    </div>
-  </div>
-
-  <div class="card" id="card-evalMask">
-    <input type="checkbox" id="evalMask" />
-    <div class="body">
-      <div class="title">Redact page_eval return values</div>
-      <div class="desc">Apply regex masking to eval results: JWTs, long hex, long numbers, and strings that look like tokens/keys (ADR-0008).</div>
-      <div class="warn" id="evalMask-warn" style="display:none">⚠ When disabled, tokens / cookies / keys may leak to the AI verbatim.</div>
-    </div>
-  </div>
-
-  <div class="card" id="card-warnPreciseSnapshot">
-    <input type="checkbox" id="warnPreciseSnapshot" />
-    <div class="body">
-      <div class="title">Warn before precise snapshot</div>
-      <div class="desc">Before page_snapshot_precise (which uses chrome.debugger) is called, show an informational prompt on the page. Chrome briefly displays a "Debugging" banner at the top (ADR-0009).</div>
-    </div>
-  </div>
-
   <!-- ===== Execution mode ===== -->
   <h2>Execution mode</h2>
   <div class="card" id="card-cdpMode">

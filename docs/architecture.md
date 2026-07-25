@@ -254,14 +254,14 @@ See the individual ADRs for details; here is the overview.
 |------|------|-----|
 | Domain allowlist (**primary gate**) | chrome.storage.local + popup authorization + permissions.request — the AI only acts on origins the user has approved | [0004](./adr/0004-allowlist-with-optional-host-permissions.md) |
 | Per-tool enable/disable | any tool can be turned off in the Options page (a disabled tool returns "tool disabled in settings") | [0011](./adr/0011-options-page-for-settings.md) |
-| page_eval kill switch | `pageEvalEnabled` can disable `page_eval` entirely (disabled by default) | [0005](./adr/0005-page-eval-disabled-by-default.md) |
-| page_eval redaction | `evalMask` masks token-like values in the return value by default; the call runs **without** any per-call confirmation | [0008](./adr/0008-page-eval-confirmation-channel.md), [0020](./adr/0020-remove-interactive-confirmations.md) |
-| page_snapshot_precise notice | `warnPreciseSnapshot` pops an on-page **informational** NOTICE before the debugger attaches — informational only, **not** a blocking confirmation | [0009](./adr/0009-page-snapshot-precise-debugger.md) |
+| page_eval kill switch | disable `page_eval` in the Options page (Tool enablement) — that per-tool disable is the kill switch | [0011](./adr/0011-options-page-for-settings.md) |
+| page_eval redaction | `page_eval` return values are always masked (token-like values); the call runs **without** any per-call confirmation | [0008](./adr/0008-page-eval-confirmation-channel.md), [0020](./adr/0020-remove-interactive-confirmations.md) |
+| page_snapshot_precise notice | an on-page **informational** NOTICE (always shown) before the debugger attaches — informational only, **not** a blocking confirmation | [0009](./adr/0009-page-snapshot-precise-debugger.md) |
 | host authentication | allowed_origins hardcoded with the extension ID | [0002](./adr/0002-three-process-architecture-localhost-tcp.md) |
 | bridge socket | per-run secret + lockfile in the user directory (Unix mode 0600) | [0002](./adr/0002-three-process-architecture-localhost-tcp.md) |
 | redaction | page_text masks passwords + long numbers; page_fill echoes back the password redacted | — |
 | protocol security | NM 1MB outbound limit; single-threaded writes + flush; stderr panic hook | — |
-| configuration management | Standalone Options page centrally manages tool enablement / allowlist / allowAllSites / `pageEvalEnabled` / `evalMask` / `warnPreciseSnapshot` | [0011](./adr/0011-options-page-for-settings.md) |
+| configuration management | Standalone Options page centrally manages tool enablement / allowlist / allowAllSites / execution mode | [0011](./adr/0011-options-page-for-settings.md) |
 
 **Removed protections ([ADR-0020](./adr/0020-remove-interactive-confirmations.md), "Remove Interactive Per-Action Confirmations")**: the extension no longer interrupts the AI with an in-page confirmation for high-risk clicks (submit buttons / navigating links, formerly [ADR-0006](./adr/0006-toast-confirmation-for-high-risk.md)), `page_eval` (formerly a per-call Toast + 60s same-origin grace window, [ADR-0008](./adr/0008-page-eval-confirmation-channel.md)), or `tab_close`. The `confirmHighRiskClick` / `confirmPageEval` / `confirmTabClose` / `confirmGraceMs` / `clickToastTimeoutMs` / `evalToastTimeoutMs` settings no longer exist. **On an already-allowlisted site the AI can now submit forms, run JS (when `page_eval` is enabled), and close tabs with no per-action prompt** — the allowlist plus the per-tool / kill-switch controls above are the whole security boundary. ADR-0006 and the confirmation half of ADR-0008 are Superseded by ADR-0020.
 
@@ -332,7 +332,7 @@ See the individual ADRs for details; here is the overview.
 **Mitigation**:
 - cookie_get lives in background, storage_get lives in content (each determined by its own data source)
 - **Read-only**: no set/remove — cookie_set could forge httpOnly+Secure cookies (a session-fixation attack, something even XSS cannot do)
-- Redaction: cookie values use the compact maskCookieValue; storage values use maskString. **storage_get always redacts** (not controlled by the evalMask toggle, because the token-leak risk of silent reads is equivalent to eval)
+- Redaction: cookie values use the compact maskCookieValue; storage values use maskString. **storage_get always redacts** — masking is not optional (like `page_eval` results), because the token-leak risk of silent reads is equivalent to eval
 - Values are redacted but structural fields such as name/domain/httpOnly are preserved (diagnostic value)
 
 See [ADR-0010](./adr/0010-cookie-storage-readonly.md) for details.
@@ -363,7 +363,7 @@ See [ADR-0010](./adr/0010-cookie-storage-readonly.md) for details.
 
 See [requirements.md §7 Phasing](./requirements.md#7-phasing). Extension points reserved in the architecture:
 - **Adding a new tool**: add a schema definition in `tools/catalogue.rs` + add a `HANDLERS` record in `tools/mod.rs` (the `build_payload` pure function), and extend background/content with handling for the corresponding op
-- **page_eval**: gated by the `pageEvalEnabled` kill switch + `evalMask` redaction (the per-call confirmation channel was removed by [ADR-0020](./adr/0020-remove-interactive-confirmations.md))
+- **page_eval**: gated by the per-tool disable (Tool enablement) + always-on result masking (the per-call confirmation channel was removed by [ADR-0020](./adr/0020-remove-interactive-confirmations.md))
 - **debugger fallback**: add the `page_snapshot_precise` tool, with the SW temporarily attaching/detaching
 - **Skill layer**: does not touch the architecture; purely adds skill files that teach the AI to combine existing tools
 

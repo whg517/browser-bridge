@@ -129,7 +129,7 @@ pub fn all() -> Vec<Tool> {
             name: "page_eval",
             description:
                 "HIGH RISK — execute arbitrary JavaScript on the active tab. The return value is \
-                 masked (JWT / long hex / long numbers / token-like strings) by default. This is \
+                 masked (JWT / long hex / long numbers / token-like strings). This is \
                  the most powerful tool: prefer page_click / page_fill / page_snapshot whenever \
                  possible, and only use page_eval when those cannot achieve the goal (custom \
                  events, reading framework state, SPA routing, canvas/WebGL, etc.). Code runs in \

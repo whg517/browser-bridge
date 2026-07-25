@@ -90,7 +90,7 @@ Reading covers 90% of scenarios (grabbing the login state for use elsewhere), wh
 
 ### Negative
 - **Empty-result ambiguity**: not authorized vs. genuinely no data — Chrome doesn't distinguish, so we can only hint
-- **Redaction may over-mask**: normal long values such as base64 config get masked (shares the evalMask switch; can be refined later)
+- **Redaction may over-mask**: normal long values such as base64 config get masked (masking is always on for both page_eval and cookie/storage; can be refined later)
 - **No IndexedDB support**: some frameworks (Airbnb LiteSet, etc.) store tokens in IndexedDB, which this approach doesn't cover
 
 ### Neutral
@@ -100,7 +100,7 @@ Reading covers 90% of scenarios (grabbing the login state for use elsewhere), wh
 
 1. **localStorage is subject to same-origin restrictions**: a content script can only read the origin of the page it's currently injected into; cross-origin iframes can't be read
 2. **Empty-result ambiguity**: the Chrome cookies API returns an empty array rather than an error when not authorized
-3. **Redaction switch granularity**: currently `evalMask` affects both page_eval and cookie/storage; in the future it can be split into independent switches
+3. **Redaction granularity**: masking currently applies to both page_eval and cookie/storage (always on); in the future it could be split into independent controls
 
 ## Relationship to Other ADRs
 

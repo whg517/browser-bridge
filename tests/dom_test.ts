@@ -199,8 +199,7 @@ class Page {
 
 /** Inject chrome.* stubs into the page before content.js loads.
  * Captures the onMessage listener so tests can drive it. */
-async function injectStub(page: Page, opts: { evalMask?: boolean } = {}): Promise<void> {
-  const evalMask = opts.evalMask ?? true;
+async function injectStub(page: Page): Promise<void> {
   await page.evaluate(`
     (function(){
       window.__bbListeners = [];
@@ -218,7 +217,8 @@ async function injectStub(page: Page, opts: { evalMask?: boolean } = {}): Promis
       chrome.storage = {
         local: {
           get: function(key, cb){
-            if (cb) cb({ evalMask: ${JSON.stringify(evalMask)} });
+            // content ops no longer read settings; return empty.
+            if (cb) cb({});
           },
         },
       };
@@ -322,17 +322,14 @@ async function runAllTests(page: Page): Promise<void> {
 
 /** Re-inject content.js fresh for each test so refCounter / refMap reset.
  * `fixture` selects which HTML file to load (default page.html). */
-async function freshLoad(
-  page: Page,
-  opts: { evalMask?: boolean; fixture?: string } = {}
-): Promise<void> {
+async function freshLoad(page: Page, opts: { fixture?: string } = {}): Promise<void> {
   const name = opts.fixture || "page.html";
   const url = fixtureUrl(name);
   // Navigate (or reload) to wipe all DOM mutations (toasts, data-zcb-ref
   // attrs, onclick counts). Navigate works for about:blank→fixture and
   // also reloads if already on the same URL.
   await page.navigate(url);
-  await injectStub(page, opts);
+  await injectStub(page);
   await loadContentJs(page);
 }
 
@@ -455,8 +452,8 @@ async function invokeWithEvalApproval(
 
 // ── test: page_eval (masked) ───────────────────────────────────────────────
 async function test_eval_masked(page: Page): Promise<void> {
-  console.log("\n[test] page_eval — masked return (default)");
-  await freshLoad(page, { evalMask: true });
+  console.log("\n[test] page_eval — masked return (always on)");
+  await freshLoad(page);
   const resp = await invokeWithEvalApproval(page, "page_eval", {
     code: 'return localStorage.getItem("token");',
   });
@@ -466,21 +463,21 @@ async function test_eval_masked(page: Page): Promise<void> {
   check(resp.includes("••••"), "masked: result contains mask marker");
 }
 
-// ── test: page_eval (unmasked) ─────────────────────────────────────────────
+// ── test: page_eval (non-sensitive value passes masking unchanged) ─────────
 async function test_eval_unmasked(page: Page): Promise<void> {
-  console.log("\n[test] page_eval — unmasked return (evalMask: false)");
-  await freshLoad(page, { evalMask: false });
+  console.log("\n[test] page_eval — non-sensitive value passes masking unchanged");
+  await freshLoad(page);
   const resp = await invokeWithEvalApproval(page, "page_eval", {
     code: "return 6 * 7;",
   });
   check(!resp.__evalError, "eval runs without JS error");
-  check(resp === 42, "unmasked eval returns computed value 42 (got " + resp + ")");
+  check(resp === 42, "non-sensitive eval returns computed value 42 (got " + resp + ")");
 }
 
 // ── test: page_eval error + serialization ──────────────────────────────────
 async function test_eval_error_and_serialize(page: Page): Promise<void> {
   console.log("\n[test] page_eval — error handling + serialization");
-  await freshLoad(page, { evalMask: false });
+  await freshLoad(page);
 
   // Thrown error → structured __evalError, not a throw.
   const errResp = await invokeWithEvalApproval(page, "page_eval", {

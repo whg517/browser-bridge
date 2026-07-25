@@ -25,9 +25,11 @@ Changing the confirmation model is a security-boundary change, so per [GOVERNANC
 The security boundary is now the set of **standing** controls, not per-action prompts:
 
 1. **Per-site allowlist ([ADR-0004](./0004-allowlist-with-optional-host-permissions.md))** — the AI can only act on origins the user has approved (or all sites, if the user explicitly opts in). This is the primary gate and is unchanged.
-2. **`page_eval` kill switch + result masking ([ADR-0008](./0008-page-eval-confirmation-channel.md)'s other half, retained)** — `pageEvalEnabled` can disable arbitrary JS entirely, and `evalMask` redacts token-like values from results by default.
-3. **Per-tool enable/disable** — any tool can be turned off in settings; a disabled tool is refused with "tool disabled in settings".
-4. **`page_snapshot_precise` notice (`warnPreciseSnapshot`)** — still shows an on-page notice before attaching the debugger; this is an informational heads-up, not a blocking confirmation, and is retained.
+2. **Per-tool enable/disable (the kill switch)** — any tool can be turned off in the Options page; a disabled tool is refused with "tool disabled in settings". This is how `page_eval` (the highest-risk tool) is disabled.
+3. **Always-on `page_eval` result masking** — token-like values (JWTs, long hex, long numbers, key-like strings) are redacted from every `page_eval` return value.
+4. **`page_snapshot_precise` notice** — always shows an on-page notice before attaching the debugger; an informational heads-up, not a blocking confirmation.
+
+> **Update (later):** the dedicated `pageEvalEnabled` / `evalMask` / `warnPreciseSnapshot` toggles (and the Options "Security" section) were removed. The protections above are unchanged in effect — masking and the precise-snapshot notice are now **always on** (non-optional), and `page_eval` is disabled via the general per-tool disable rather than its own switch.
 
 `tab_close` no longer needs to render a prompt in the page, so it is no longer restricted to http(s) tabs.
 

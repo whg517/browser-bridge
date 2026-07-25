@@ -7,9 +7,6 @@
 import type { Settings } from "./types";
 
 export const DEFAULTS: Settings = {
-  pageEvalEnabled: true,
-  evalMask: true,
-  warnPreciseSnapshot: true,
   disabledTools: [], // string[] of tool/op names that are blocked
   allowAllSites: false,
   cdpMode: false, // route ALL page ops through chrome.debugger (CDP). See ADR-0017.

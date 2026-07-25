@@ -26,9 +26,9 @@ In scope: the Rust binary (MCP server + native host), the native-messaging
 bridge and its auth, the MV3 extension (background/content), the allowlist,
 per-tool enable/disable and kill switches, masking, and the installer.
 
-Examples of in-scope issues: bypassing the site allowlist, a per-tool kill
-switch, or the `pageEvalEnabled` switch; exfiltrating cookies/storage/page
-content past the mask; a page influencing the extension into acting on a
+Examples of in-scope issues: bypassing the site allowlist or a per-tool
+disable; exfiltrating cookies/storage/page content past the mask; a page
+influencing the extension into acting on a
 non-approved origin; the bridge socket accepting an unauthenticated peer;
 privilege escalation via the native messaging host.
 
@@ -56,12 +56,12 @@ Key invariants:
 - **Approve-per-origin** — page ops need an allowlisted origin (ADR-0004); this
   is the primary gate. Once an origin is approved there are **no per-action
   prompts**: the AI can submit forms, click navigating links, run `page_eval`
-  (when enabled), and close tabs without interrupting the user. The old
-  interactive confirmations were removed in
+  and close tabs without interrupting the user. The old interactive
+  confirmations were removed in
   [ADR-0020](docs/adr/0020-remove-interactive-confirmations.md). Residual
-  controls scope this down: the `pageEvalEnabled` kill switch can disable
-  `page_eval` entirely, `evalMask` masks token-like values in its results, and
-  any tool can be turned off per-tool.
+  controls scope this down: any tool can be turned off in the Options page
+  (including `page_eval`) — that per-tool disable is the kill switch — and
+  `page_eval` results are always masked (token-like values redacted).
 - **Bridge auth** — the localhost TCP bridge authenticates each connection with
   a per-run secret from a 0600 lock file.
 

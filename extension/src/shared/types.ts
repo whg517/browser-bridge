@@ -10,9 +10,6 @@ import type { BridgeCommand } from "./ops";
 // objects in background.ts, options.ts (full) and content.ts (a subset, via
 // Pick) must stay in sync with these keys.
 export interface Settings {
-  pageEvalEnabled: boolean;
-  evalMask: boolean;
-  warnPreciseSnapshot: boolean;
   disabledTools: string[];
   allowAllSites: boolean;
   cdpMode: boolean;
