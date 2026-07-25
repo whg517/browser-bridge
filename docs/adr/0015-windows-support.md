@@ -36,7 +36,7 @@ not be compiled or installed on Windows.
 - The Rust backend can be compiled and run natively on Windows.
 - Windows users can run `install.ps1` from source to complete a local
   installation.
-- A prebuilt Windows release package has not yet been added to the release
-  workflow; the current release still only publishes the macOS Apple Silicon
-  package.
+- A prebuilt Windows x64 package was later added to the release matrix (with a
+  `.sha256` checksum and build-provenance attestation), alongside the macOS
+  Apple Silicon and Linux x64 packages.
 - Edge is not within the scope of support.
