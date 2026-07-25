@@ -3,6 +3,13 @@
 - **Status**: Accepted
 - **Date**: 2026-07-09
 
+> **Update (2026-07-24, [ADR-0020](./0020-remove-interactive-confirmations.md)):** the
+> confirmation-related settings this ADR introduced — `confirmHighRiskClick`,
+> `confirmPageEval`, `confirmTabClose`, `confirmGraceMs`, `clickToastTimeoutMs`,
+> `evalToastTimeoutMs` — have since been **removed** along with the confirmations
+> themselves. The Options page and its remaining settings stand; treat the
+> confirmation rows below as historical.
+
 ## Context
 
 As phases two and three landed incrementally, the design accumulated a large number of configurable security policies and behavior switches scattered across the codebase:

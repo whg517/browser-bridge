@@ -30,8 +30,7 @@ pub fn all() -> Vec<Tool> {
         },
         Tool {
             name: "tab_close",
-            description:
-                "Close an http(s) tab after showing a user-confirmation prompt in that page.",
+            description: "Close a browser tab by `tabId`.",
             input_schema: schema(&["tabId"], &[("tabId", "integer", "Tab id from tab_list")]),
         },
         Tool {
@@ -46,8 +45,7 @@ pub fn all() -> Vec<Tool> {
             name: "page_click",
             description:
                 "Click an element on the active tab. Prefer passing `ref` (from page_snapshot); \
-                 fall back to `selector`. Clicking a submit button or a link triggers a \
-                 user-confirmation prompt.",
+                 fall back to `selector`.",
             input_schema: schema(
                 &[],
                 &[
@@ -123,9 +121,7 @@ pub fn all() -> Vec<Tool> {
         Tool {
             name: "page_eval",
             description:
-                "HIGH RISK — execute arbitrary JavaScript on the active tab. EVERY call shows the \
-                 user the full code in a confirmation prompt and waits for approval; within 60s of \
-                 an approval, same-origin evals run without re-prompting. The return value is \
+                "HIGH RISK — execute arbitrary JavaScript on the active tab. The return value is \
                  masked (JWT / long hex / long numbers / token-like strings) by default. This is \
                  the most powerful tool: prefer page_click / page_fill / page_snapshot whenever \
                  possible, and only use page_eval when those cannot achieve the goal (custom \

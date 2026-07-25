@@ -25,14 +25,14 @@ Users want to let AI (via an MCP client) operate their own browser directly: scr
 ### 2.1 Goals (v0.1)
 - **G1 Real browser**: operate the Chrome the user is currently using, preserving all login state, extensions, and cookies
 - **G2 Zero special launch**: install the extension once for lasting effect, no need to start with `--remote-debugging-port` every time
-- **G3 Secure and controllable**: new sites require user authorization; high-risk actions (submit, navigation) prompt real-time confirmation popups
+- **G3 Secure and controllable**: new sites require user authorization (per-site allowlist); `page_eval` can be disabled entirely and masks token-like values by default; any tool can be turned off individually. Interactive per-action confirmations have been removed — see [ADR-0020](./adr/0020-remove-interactive-confirmations.md)
 - **G4 MCP integration**: connect as a standard MCP server to MCP clients, with a stable and composable tool set
 - **G5 Single-binary distribution**: the entire backend compiles into a single Rust binary, deployment = copying one file
 
 ### 2.2 Non-Goals / Deferred Capabilities
-- ✅ **`page_eval` now complete**: early v0.1 did not implement arbitrary JS execution; phase two added it, with a high-risk confirmation channel + redacted return values. See [ADR-0008](./adr/0008-page-eval-confirmation-channel.md) (supersedes the early [ADR-0005](./adr/0005-page-eval-disabled-by-default.md))
+- ✅ **`page_eval` now complete**: early v0.1 did not implement arbitrary JS execution; phase two added it. The interactive per-call confirmation has since been removed ([ADR-0020](./adr/0020-remove-interactive-confirmations.md) supersedes the confirmation half of [ADR-0008](./adr/0008-page-eval-confirmation-channel.md)); the remaining protections are the `pageEvalEnabled` kill switch and `evalMask` (token-like return values masked by default). See [ADR-0008](./adr/0008-page-eval-confirmation-channel.md) (supersedes the early [ADR-0005](./adr/0005-page-eval-disabled-by-default.md))
 - ✅ **Cookie/Storage read-only now complete**: phase three added `cookie_get` / `storage_get`, strictly read-only with redacted output. See [ADR-0010](./adr/0010-cookie-storage-readonly.md)
-- ✅ **Precise snapshot now complete**: `page_snapshot_precise` explicitly uses chrome.debugger, prompts the user before the call, and briefly shows an infobar during the call. The default `page_snapshot` still uses an approximate content script. See [ADR-0003](./adr/0003-content-script-snapshot-vs-chrome-debugger.md) and [ADR-0009](./adr/0009-page-snapshot-precise-debugger.md)
+- ✅ **Precise snapshot now complete**: `page_snapshot_precise` explicitly uses chrome.debugger, shows an on-page informational notice before the call (`warnPreciseSnapshot`, not a blocking confirmation), and briefly shows an infobar during the call. The default `page_snapshot` still uses an approximate content script. See [ADR-0003](./adr/0003-content-script-snapshot-vs-chrome-debugger.md) and [ADR-0009](./adr/0009-page-snapshot-precise-debugger.md)
 - ❌ **No recording/replay or batch task orchestration**. That is the play layer of phase three
 - ❌ **No support for non-Chromium browsers**. Currently targets
   Google Chrome on macOS/Windows/Linux, and Chromium on Linux
@@ -54,10 +54,10 @@ Acceptance: AI calls `page_snapshot` to get field refs, and calls `page_fill` to
 
 Acceptance: AI calls `tab_list` → `tab_focus` → `page_snapshot`, working across tabs.
 
-### US-4: Safety confirmation
-> As a user, when AI is about to click "Submit Order" or follow a link, I must have a chance to refuse, to avoid mistaken operations.
+### US-4: Safety boundary
+> As a user, I want AI to act only on origins I have explicitly authorized, and I want to be able to disable risky tools, so I stay in control.
 
-Acceptance: when clicking a submit-type button or link, a Toast pops up in the top-right of the page, auto-rejecting after 30 seconds of no response; after approval, same-origin same-type actions skip confirmation for 60 seconds.
+Acceptance: AI can only operate an origin after I add it to the allowlist; I can disable `page_eval` entirely (`pageEvalEnabled`) or turn off any individual tool. Note the reduced protection: on an already-allowlisted site, submit clicks, `page_eval`, and `tab_close` run **without** any per-action confirmation prompt. See [ADR-0020](./adr/0020-remove-interactive-confirmations.md).
 
 ### US-5: Developer extension integration
 > As an MCP client user, I want to connect browser-bridge as an MCP server, and just say "list my tabs" directly in the conversation to use it.
@@ -70,24 +70,24 @@ Acceptance: after adding browser-bridge to the client's MCP server configuration
 - `tab_list` — list all tabs (id/title/url/active)
 - `tab_focus` — activate a specified tab
 - `tab_open(url)` — open a new tab (domain constrained by the allowlist)
-- `tab_close(tabId)` — show an in-page Toast confirmation before closing an http(s) tab
+- `tab_close(tabId)` — close a tab; no per-action confirmation, and no longer restricted to http(s) tabs. See [ADR-0020](./adr/0020-remove-interactive-confirmations.md)
 
 ### FR-2 Page Reading
 - `page_snapshot` — return an a11y-style tree of interactive elements, each node having a stable `ref`, role, accessible name, and fallback selector
-- `page_snapshot_precise` — **precise version**: uses chrome.debugger + CDP to obtain Chrome's authoritative a11y tree, covering shadow DOM / complex ARIA; shows a prompt Toast before attach, and a debug banner flashes at the top of Chrome during the call (~1 second); refs use the `p` prefix, and page_click/fill need no changes. See [ADR-0009](./adr/0009-page-snapshot-precise-debugger.md)
+- `page_snapshot_precise` — **precise version**: uses chrome.debugger + CDP to obtain Chrome's authoritative a11y tree, covering shadow DOM / complex ARIA; shows an on-page informational notice before attach (`warnPreciseSnapshot`, not a blocking confirmation), and a debug banner flashes at the top of Chrome during the call (~1 second); refs use the `p` prefix, and page_click/fill need no changes. See [ADR-0009](./adr/0009-page-snapshot-precise-debugger.md)
 - `page_text` — return body text (password fields and suspected card numbers redacted)
 - `page_screenshot` — return the visible viewport as PNG (base64)
 
 ### FR-3 Page Operations
-- `page_click(ref|selector)` — click; submit/link types trigger a Toast confirmation
+- `page_click(ref|selector)` — click; submit/link (high-risk) types run without a confirmation prompt (per-action confirmations removed, see [ADR-0020](./adr/0020-remove-interactive-confirmations.md))
 - `page_fill(ref|selector, value)` — fill a form; uses the native setter to trigger the change detection of frameworks (React/Vue); password fields are recorded redacted
 - `page_scroll(direction|pixels)` — scroll
 - `page_wait_for(selector|text|nav, timeoutMs)` — wait for a selector/text, or wait for the page load to complete
-- `page_eval(code)` — **high-risk**: execute arbitrary JS. Each call pops an enlarged Toast showing the full code; same-origin skips confirmation for 60s; return values are redacted by default (JWT/long hex/long numbers/sensitive keywords), which can be turned off in the popup. Uses `new Function` to execute in the global scope, supporting await/return. See [ADR-0008](./adr/0008-page-eval-confirmation-channel.md)
+- `page_eval(code)` — **high-risk**: execute arbitrary JS. Runs without a per-call confirmation prompt ([ADR-0020](./adr/0020-remove-interactive-confirmations.md)); gated instead by the `pageEvalEnabled` kill switch (which can disable `page_eval` entirely) and by the per-site allowlist. Return values are masked by default via `evalMask` (JWT/long hex/long numbers/sensitive keywords). Uses `new Function` to execute in the global scope, supporting await/return. See [ADR-0008](./adr/0008-page-eval-confirmation-channel.md)
 
 ### FR-4 Security Controls
 - **FR-4.1 Domain allowlist**: on the first operation against a new origin, the extension shows a popup requesting authorization; authorization simultaneously requests the host permission for that domain via `chrome.permissions.request`. The allowlist is stored in `chrome.storage.local` and can be revoked in the popup. See [ADR-0004](./adr/0004-allowlist-with-optional-host-permissions.md)
-- **FR-4.2 High-risk Toast**: submit clicks and link navigations trigger an in-page Toast, rejecting on a 30-second timeout, and after approval skipping same-origin same-type confirmation for 60 seconds. See [ADR-0006](./adr/0006-toast-confirmation-for-high-risk.md)
+- **FR-4.2 Tool controls (no per-action confirmations)**: high-risk clicks (submit/navigation), `page_eval`, and `tab_close` no longer trigger an in-page confirmation. The remaining controls are the `pageEvalEnabled` kill switch (disable `page_eval` entirely), per-tool enable/disable (any tool can be turned off — "tool disabled in settings"), `evalMask` (mask token-like values in `page_eval` results), and the `warnPreciseSnapshot` on-page notice for `page_snapshot_precise` (informational, not blocking). [ADR-0006](./adr/0006-toast-confirmation-for-high-risk.md) is superseded by [ADR-0020](./adr/0020-remove-interactive-confirmations.md)
 - **FR-4.3 Host authentication**: the native messaging manifest's `allowed_origins` hard-codes the extension ID; the bridge socket authenticates with a per-run secret + a lock file in the user directory (Unix mode 0600)
 - **FR-4.4 Redaction**: `page_text` masks `<input type=password>` and long numeric strings; `page_fill` redacts the password field value in the parameter echo
 
@@ -100,7 +100,7 @@ Acceptance: after adding browser-bridge to the client's MCP server configuration
 
 | Dimension | Requirement |
 |------|------|
-| **NFR-1 Performance** | single tool-call round trip (excluding user confirmation) < 500ms (local link) |
+| **NFR-1 Performance** | single tool-call round trip (excluding first-visit allowlist authorization) < 500ms (local link) |
 | **NFR-2 Resources** | release binary < 1MB; resident MCP server memory < 20MB |
 | **NFR-3 Zero runtime dependencies** | the user's machine only needs Rust at compile time; the runtime depends on no Python/Node/any runtime; introduces no native dependencies beyond libc |
 | **NFR-4 Robustness** | can automatically recover the connection after a 5-minute SW restart, native host crash, or Chrome restart |
@@ -111,7 +111,7 @@ Acceptance: after adding browser-bridge to the client's MCP server configuration
 
 ### 6.1 Included in v0.1
 - 11 tools (see FR-1~FR-3); **phase two adds `page_eval` + `page_snapshot_precise`** (13 total); **phase three adds `cookie_get` + `storage_get`** (15 total)
-- Two-layer security of allowlist + Toast
+- Per-site allowlist as the primary security gate (the earlier high-risk Toast confirmation has been removed — see [ADR-0020](./adr/0020-remove-interactive-confirmations.md))
 - content script-style snapshot
 - macOS/Windows/Linux + Chrome; Linux also supports Chromium; WSL supports both the Windows
   Chrome interop mode and the WSLg Linux browser mode
@@ -119,8 +119,8 @@ Acceptance: after adding browser-bridge to the client's MCP server configuration
 ### 6.2 Not Included in v0.1, Later Phases
 - **Phase two**:
   - `page_snapshot_precise` — debugger-fallback precise snapshot (flashes an infobar, requires notifying the user)
-  - ✅ `page_eval` — high-risk confirmation channel (enlarged Toast + same-origin 60s skip-confirmation + configurable redaction). **Complete**, see [ADR-0008](./adr/0008-page-eval-confirmation-channel.md)
-  - ✅ `page_snapshot_precise` — debugger precise snapshot (prompt Toast + infobar flash + p-prefixed ref). **Complete**, see [ADR-0009](./adr/0009-page-snapshot-precise-debugger.md)
+  - ✅ `page_eval` — arbitrary JS execution. The interactive confirmation channel has since been removed ([ADR-0020](./adr/0020-remove-interactive-confirmations.md)); now gated by the `pageEvalEnabled` kill switch + `evalMask` redaction. **Complete**, see [ADR-0008](./adr/0008-page-eval-confirmation-channel.md)
+  - ✅ `page_snapshot_precise` — debugger precise snapshot (informational on-page notice + infobar flash + p-prefixed ref). **Complete**, see [ADR-0009](./adr/0009-page-snapshot-precise-debugger.md)
 - **Phase three**:
   - ✅ `cookie_get` / `storage_get` (read-only, limited to allowlisted domains, redacted output). **Complete**, see [ADR-0010](./adr/0010-cookie-storage-readonly.md)
   - Skill layer (distilling high-frequency plays—scraping list pages, form filling, cross-tab operations—into skills)
@@ -136,7 +136,7 @@ Acceptance: after adding browser-bridge to the client's MCP server configuration
 | Phase | Scope | Status |
 |------|------|------|
 | **Phase one: v0.1 minimum viable** | FR-1~FR-4 + NFR-1~6 | ✅ code complete, protocol-layer e2e tests PASS, awaiting user extension-load acceptance |
-| **Phase two: precision** | debugger-fallback snapshot, page_eval high-risk channel | ✅ complete (page_eval + page_snapshot_precise) |
+| **Phase two: precision** | debugger-fallback snapshot, page_eval (arbitrary JS) | ✅ complete (page_eval + page_snapshot_precise) |
 | **Phase three: extended capabilities** | cookie/storage, skill layer, orchestration | 🔄 cookie/storage complete; skill layer/orchestration not started |
 
 ## 8. Acceptance Criteria (v0.1)
@@ -145,7 +145,7 @@ Acceptance: after adding browser-bridge to the client's MCP server configuration
 2. The MCP client can see `browser-bridge` as connected
 3. AI says "list tabs" in the conversation → sees the real list of tabs
 4. AI says "screenshot the current page" → AI can analyze the screenshot
-5. AI says "fill XXX in the search box and click search" → it really executes in the user's browser; a Toast confirmation pops up on submit
+5. AI says "fill XXX in the search box and click search" → it really executes in the user's browser (on an already-allowlisted site, no per-action confirmation is shown)
 6. Visiting an unauthorized domain → the extension shows an authorization popup
 7. Protocol-layer end-to-end tests PASS (NM frames, MCP JSON-RPC, TCP bridge)
 

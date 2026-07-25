@@ -7,25 +7,16 @@ describe("DEFAULTS", () => {
       [
         "allowAllSites",
         "cdpMode",
-        "clickToastTimeoutMs",
-        "confirmGraceMs",
-        "confirmHighRiskClick",
-        "confirmPageEval",
-        "confirmTabClose",
         "disabledTools",
         "evalMask",
-        "evalToastTimeoutMs",
-        "groupTabs",
         "pageEvalEnabled",
         "warnPreciseSnapshot",
       ].sort()
     );
     expect(DEFAULTS.pageEvalEnabled).toBe(true);
-    expect(DEFAULTS.confirmGraceMs).toBe(60000);
     expect(DEFAULTS.disabledTools).toEqual([]);
     expect(DEFAULTS.allowAllSites).toBe(false);
     expect(DEFAULTS.cdpMode).toBe(false);
-    expect(DEFAULTS.groupTabs).toBe(true);
   });
 });
 
@@ -48,7 +39,7 @@ describe("getSetting", () => {
 
   test("falls back to the default when absent", async () => {
     mockStorage({});
-    expect(await getSetting("confirmGraceMs")).toBe(60000);
+    expect(await getSetting("pageEvalEnabled")).toBe(true);
     expect(await getSetting("allowAllSites")).toBe(false);
   });
 });

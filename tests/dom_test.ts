@@ -273,17 +273,6 @@ async function invoke(
   throw new Error(`invoke('${op}') timed out after ${timeoutMs}ms`);
 }
 
-/** Click a Toast button (Allow/Deny/Cancel) in the page — for testing the
- * high-risk confirmation flow. */
-async function clickToastButton(page: Page, selector: string): Promise<void> {
-  await page.evaluate(`
-    (function(){
-      var btn = document.querySelector('${selector}');
-      if (btn) btn.click();
-    })();
-  `);
-}
-
 // ─── tests ─────────────────────────────────────────────────────────────────
 // (added in the next step)
 
@@ -324,7 +313,7 @@ async function runAllTests(page: Page): Promise<void> {
   await test_eval_error_and_serialize(page);
   await test_storage_get(page);
   await test_wait_for_nav(page);
-  await test_high_risk_toast(page);
+  await test_high_risk_click_no_confirm(page);
   await test_ping(page);
   await test_shadow_dom(page);
   await test_iframe(page);
@@ -452,28 +441,16 @@ async function test_text(page: Page): Promise<void> {
   check(resp.text.includes("Test Fixture"), "page_text includes page heading");
 }
 
-/** Invoke an op that triggers the eval confirmation Toast, auto-approving it.
- * eval (and submit clicks) block on a Toast; this kicks off the invoke and
- * concurrently clicks Allow when the Toast appears. */
+/** Invoke a page_eval op. page_eval no longer shows a confirmation Toast
+ * (ADR-0020), so this just runs the op directly. Kept as a thin wrapper so the
+ * eval tests below read clearly. */
 async function invokeWithEvalApproval(
   page: Page,
   op: string,
   args: any,
   timeoutMs = 8000
 ): Promise<any> {
-  const clickP = invoke(page, op, args, timeoutMs);
-  // Wait for the eval Toast to appear, then approve it.
-  for (let i = 0; i < 40; i++) {
-    await new Promise((r) => setTimeout(r, 80));
-    const has = await page.evaluate(
-      `!!document.querySelector(".zcb-eval-card .zcb-toast-allow")`
-    );
-    if (has) {
-      await clickToastButton(page, ".zcb-eval-card .zcb-toast-allow");
-      break;
-    }
-  }
-  return clickP;
+  return invoke(page, op, args, timeoutMs);
 }
 
 // ── test: page_eval (masked) ───────────────────────────────────────────────
@@ -566,30 +543,25 @@ async function test_wait_for_nav(page: Page): Promise<void> {
   check(resp.readyState === "complete", "nav wait sees complete readyState");
 }
 
-// ── test: high-risk Toast (page_click on submit) ──────────────────────────
-async function test_high_risk_toast(page: Page): Promise<void> {
-  console.log("\n[test] high-risk Toast — submit click prompts confirmation");
+// ── test: high-risk click runs directly, no confirmation (ADR-0020) ────────
+async function test_high_risk_click_no_confirm(page: Page): Promise<void> {
+  console.log("\n[test] high-risk click — submit click runs with no confirmation (ADR-0020)");
   await freshLoad(page);
   const snap = await invoke(page, "page_snapshot", {});
   const go = snap.nodes.find((n: any) => n.selector && n.selector.includes("#go"));
   check(go?.role === "button", "#go is the submit button");
 
-  // Fire the click (will trigger Toast because it's type=submit). Don't await —
-  // it blocks on Toast. Instead, kick it off, then approve via the Toast button.
-  const clickP = invoke(page, "page_click", { ref: go.ref });
+  // The click runs directly — the high-risk-click confirmation was removed.
+  const resp = await invoke(page, "page_click", { ref: go.ref });
 
-  // Wait for the Toast card to appear, then click Allow.
-  await new Promise((r) => setTimeout(r, 200));
+  // No confirmation Toast should be injected.
   const hasToast = await page.evaluate(`!!document.querySelector(".zcb-eval-card, .zcb-toast-card")`);
-  check(hasToast, "high-risk click injected a Toast card");
+  check(!hasToast, "high-risk click did NOT inject a confirmation Toast");
 
-  // Click Allow (the .zcb-toast-allow button inside any toast card).
-  await clickToastButton(page, ".zcb-toast-card .zcb-toast-allow");
-  const resp = await clickP;
   // #go has onclick counting via __clickCount.
-  check(!resp.__error, "approved submit click proceeds: " + (resp.__error || "ok"));
+  check(!resp.__error, "submit click proceeds without a prompt: " + (resp.__error || "ok"));
   const count = await page.evaluate("window.__clickCount || 0");
-  check(count >= 1, "approved submit click triggered onclick");
+  check(count >= 1, "submit click triggered onclick");
 }
 
 // ── test: ping ─────────────────────────────────────────────────────────────

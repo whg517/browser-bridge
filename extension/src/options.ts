@@ -87,17 +87,6 @@ function wireAllowAllSites() {
   });
 }
 
-// ---- render: number fields ------------------------------------------------
-
-function renderNumber(key: string) {
-  const input = $(key);
-  input.addEventListener("change", (e: Event) => {
-    const v = parseInt((e.target as HTMLInputElement).value, 10);
-    if (Number.isNaN(v)) return;
-    saveSetting(key, v);
-  });
-}
-
 // ---- render: tools grid ---------------------------------------------------
 
 function renderToolsGrid(disabledTools: string[]) {
@@ -218,16 +207,8 @@ function escapeAttr(s: string) {
 
   // Boolean toggles. The protections (safe on / warned off) show danger styling
   // while UNCHECKED via their `<key>-warn` element; benign toggles like
-  // groupTabs simply have no `-warn` element, so no styling fires.
-  for (const key of [
-    "pageEvalEnabled",
-    "evalMask",
-    "confirmHighRiskClick",
-    "confirmPageEval",
-    "confirmTabClose",
-    "warnPreciseSnapshot",
-    "groupTabs",
-  ] as (keyof Settings)[]) {
+  // warnPreciseSnapshot simply have no `-warn` element, so no styling fires.
+  for (const key of ["pageEvalEnabled", "evalMask", "warnPreciseSnapshot"] as (keyof Settings)[]) {
     const input = $<HTMLInputElement>(key);
     input.checked = s[key] !== false;
     const warn = $(`${key}-warn`);
@@ -273,17 +254,6 @@ function escapeAttr(s: string) {
     const card = $("card-allowAllSites");
     if (card) card.classList.toggle("danger", effective);
     wireAllowAllSites();
-  }
-
-  // Number fields.
-  for (const key of [
-    "confirmGraceMs",
-    "clickToastTimeoutMs",
-    "evalToastTimeoutMs",
-  ] as (keyof Settings)[]) {
-    const input = $<HTMLInputElement>(key);
-    input.value = String(s[key]);
-    renderNumber(key);
   }
 
   // Tools grid.

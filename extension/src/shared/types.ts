@@ -12,17 +12,10 @@ import type { BridgeCommand } from "./ops";
 export interface Settings {
   pageEvalEnabled: boolean;
   evalMask: boolean;
-  confirmHighRiskClick: boolean;
-  confirmPageEval: boolean;
-  confirmTabClose: boolean;
   warnPreciseSnapshot: boolean;
-  confirmGraceMs: number;
-  clickToastTimeoutMs: number;
-  evalToastTimeoutMs: number;
   disabledTools: string[];
   allowAllSites: boolean;
   cdpMode: boolean;
-  groupTabs: boolean;
 }
 
 // A request from the native host, forwarded to the right tab's content script.
@@ -46,8 +39,8 @@ export interface BridgeResp {
 // it needs (and validates them at runtime; the Rust side enforces the required
 // ones per each tool's JSON schema). BridgeReq itself is now precisely typed via
 // the generated BridgeCommand union; this stays wide because ContentMsg also
-// carries internal ops (ping / _confirm_toast / _info_toast) not in the
-// contract, and the content handlers read fields generically.
+// carries internal ops (ping / _info_toast) not in the contract, and the
+// content handlers read fields generically.
 export interface OpArgs {
   ref?: string;
   selector?: string;

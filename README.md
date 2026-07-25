@@ -23,9 +23,11 @@ JavaScript in your pages. The guardrails that keep that safe:
 - **Approve every site.** A new origin triggers a popup prompt; nothing runs on
   a site you haven't approved (which also grants the host permission the content
   script needs).
-- **Confirm high-risk actions.** Submit-button clicks, link navigations, tab
-  close, and **every `page_eval`** pop an on-page confirmation you must approve
-  (with a short same-origin grace window).
+- **Kill switches, not per-action prompts.** `page_eval` (arbitrary JS) can be
+  turned off entirely, any tool can be disabled in settings, and `page_eval`
+  results are masked by default. Per-action confirmation prompts were removed in
+  [ADR-0020](./docs/adr/0020-remove-interactive-confirmations.md) — the allowlist
+  above is the gate, so keep it tight.
 - **Read-only credentials.** Cookies and storage can be *read* (always masked —
   JWTs, long hex, long digit runs), never written. There is no `cookie_set` /
   `storage_set` by design.
@@ -164,13 +166,14 @@ visible on my screen and uses my real accounts. Work carefully:
   page_text / page_screenshot; list tabs with tab_list.
 - Don't do irreversible things — submitting forms, closing tabs, sending
   messages, purchases — unless I ask. Prefer the least-powerful tool; use
-  page_eval (arbitrary JS) only as a last resort.
+  page_eval (arbitrary JS) only as a last resort. There are no per-action
+  confirmation prompts: clicks, page_eval, and tab_close run immediately, so
+  nothing but your own judgement stops a mistake — double-check before acting.
 - Never exfiltrate secrets. Cookie and storage reads come back masked; don't
   try to defeat that or forward credentials off-origin.
-- Expect approval gates. A new site needs me to click Allow in the Browser
-  Bridge popup, and page_eval / tab_close / risky clicks pop a confirmation. If
-  a call blocks or fails with "not allowed" or "user denied", ask me to approve
-  it — don't retry in a loop.
+- The allowlist is the gate. A new site needs me to click Allow in the Browser
+  Bridge popup; your call blocks until I approve and fails with "origin not
+  allowed by user" if I decline. Ask me to approve it — don't retry in a loop.
 
 Then tell me what you can help with, or ask what I'd like to do in the browser.
 ```
@@ -201,7 +204,7 @@ Grouped from the single source of truth,
 | `tab_list` | List open tabs (id, title, url, active) | low |
 | `tab_focus` | Bring a tab to the foreground | low |
 | `tab_open` | Open a URL in a new tab (host must be allowlisted) | medium |
-| `tab_close` | Close a tab (on-page confirmation) | high |
+| `tab_close` | Close a tab by `tabId` | high |
 
 ### Inspect a page
 | Tool | Does | Risk |
@@ -214,7 +217,7 @@ Grouped from the single source of truth,
 ### Drive a page
 | Tool | Does | Risk |
 |------|------|------|
-| `page_click` | Click by `ref` or `selector`; submit/link clicks require confirmation | high |
+| `page_click` | Click by `ref` or `selector` | high |
 | `page_fill` | Type into a field (native setter, so React/Vue detect it) | high |
 | `page_scroll` | Up / down / top / bottom / N pixels | low |
 | `page_wait_for` | Wait for a selector, text, or navigation | low |
@@ -222,7 +225,7 @@ Grouped from the single source of truth,
 ### Run code (highest risk)
 | Tool | Does | Risk |
 |------|------|------|
-| `page_eval` | ⚠ Execute arbitrary JS. **Every call** shows the full code in a confirmation prompt; return value masked by default. Prefer the tools above. | critical |
+| `page_eval` | ⚠ Execute arbitrary JS. Runs with no prompt; return value masked by default and the tool can be disabled entirely in settings. Prefer the tools above. | critical |
 
 ### Read credentials (read-only, always masked)
 | Tool | Does | Risk |
