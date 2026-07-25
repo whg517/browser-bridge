@@ -17,6 +17,12 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `clickToastTimeoutMs`, `evalToastTimeoutMs`), and `tab_close` is no longer limited
   to http(s) tabs. Supersedes ADR-0006 and the confirmation half of ADR-0008.
 
+### Changed
+- **Tab grouping is now unconditional.** The `groupTabs` toggle was removed —
+  tabs the AI opens via `tab_open` are always collected into the "Browser Bridge"
+  group ([ADR-0018](docs/adr/0018-tab-workspace-group.md)); grouping is
+  best-effort, so a failure never fails `tab_open`.
+
 ## [0.3.0] - 2026-07-24
 
 Agent onboarding and a fully English project. Additive over 0.2.0 — no breaking

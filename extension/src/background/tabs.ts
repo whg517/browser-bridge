@@ -1,7 +1,6 @@
 // Tab resolution, content-script injection, and the tab-level tools
 // (tab_list / tab_focus / tab_open / tab_close).
 
-import { getSetting } from "../shared/settings";
 import { ensureAllowed } from "./allowlist-store";
 
 export async function resolveTargetTab(maybeTabId: number | undefined): Promise<chrome.tabs.Tab> {
@@ -68,8 +67,10 @@ const WORKSPACE_COLOR = "blue";
 export async function tabOpen(url: string) {
   await ensureAllowed(url);
   const t = await chrome.tabs.create({ url });
+  // Tabs the AI opens are always collected into the "Browser Bridge" group
+  // (ADR-0018). The groupTabs toggle was removed — grouping is unconditional.
   let groupId: number | undefined;
-  if ((await getSetting("groupTabs")) !== false && typeof t.id === "number") {
+  if (typeof t.id === "number") {
     groupId = await addToWorkspaceGroup(t.id, t.windowId);
   }
   return { opened: t.id, url, groupId };

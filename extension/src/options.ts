@@ -207,13 +207,8 @@ function escapeAttr(s: string) {
 
   // Boolean toggles. The protections (safe on / warned off) show danger styling
   // while UNCHECKED via their `<key>-warn` element; benign toggles like
-  // groupTabs simply have no `-warn` element, so no styling fires.
-  for (const key of [
-    "pageEvalEnabled",
-    "evalMask",
-    "warnPreciseSnapshot",
-    "groupTabs",
-  ] as (keyof Settings)[]) {
+  // warnPreciseSnapshot simply have no `-warn` element, so no styling fires.
+  for (const key of ["pageEvalEnabled", "evalMask", "warnPreciseSnapshot"] as (keyof Settings)[]) {
     const input = $<HTMLInputElement>(key);
     input.checked = s[key] !== false;
     const warn = $(`${key}-warn`);

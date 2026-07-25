@@ -17,7 +17,7 @@ A common approach taken by other tools (such as Codex connecting to a local brow
 
 Tabs opened by `tab_open` are **automatically placed into a tab group named "Browser Bridge"** (blue). Within the same window it reuses an existing group of the same name, and creates/names/colors one if none exists.
 
-- Controlled by the `groupTabs` setting, **enabled by default**; can be turned off on the Options page.
+- **Always on** and unconditional (best-effort — a failure never fails `tab_open`). The `groupTabs` toggle was later removed, so grouping can no longer be turned off.
 - Requires the new **`tabGroups`** permission (used to name/color the group; `chrome.tabs.group()` itself falls under `tabs`).
 - Grouping is **best-effort UX**: if grouping fails (exception, restricted page) it only `console.warn`s and **never** lets `tab_open` fail because of it.
 - The return value of `tab_list` gains a `groupId` field (`undefined` when ungrouped), making it easier for the AI/user to identify ownership.
