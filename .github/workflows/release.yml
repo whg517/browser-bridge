@@ -180,3 +180,47 @@ jobs:
           generate_release_notes: ${{ matrix.platform == 'macos' }}
           # any tag with a suffix (v0.1.0-dev, -rc.1, …) is a prerelease
           prerelease: ${{ contains(github.event.inputs.tag || github.ref_name, '-') }}
+
+  # Software Bill of Materials — generated from the committed lockfiles
+  # (Cargo.lock + extension/package-lock.json) and attached to the SAME release
+  # as CycloneDX JSON. This lives here as a job rather than in a separate
+  # `release: published` workflow because GitHub suppresses that event for
+  # releases created with the default GITHUB_TOKEN (workflow-recursion
+  # prevention) — the old standalone sbom.yml therefore silently stopped
+  # attaching SBOMs after v0.1.1 (see docs/release.md).
+  #
+  # The decoupling intent is preserved WITHOUT the event: `needs: release` makes
+  # this start only once the binaries are already published, and
+  # `continue-on-error` keeps any SBOM-tooling failure from ever failing the
+  # release run. sbom.yml survives as a workflow_dispatch-only tool to backfill
+  # or re-attach an SBOM to an existing release by hand.
+  sbom:
+    name: sbom
+    needs: [release]
+    runs-on: ubuntu-22.04
+    continue-on-error: true # an SBOM-tooling failure must never fail the release
+    permissions:
+      contents: write # attach the SBOM asset to the release
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Build the SBOM from the exact released code (same ref as the matrix).
+          ref: ${{ github.event.inputs.tag || github.ref_name }}
+
+      - name: Generate CycloneDX SBOM
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          # Scan declared dependencies from the committed lockfiles; a fresh
+          # checkout has no node_modules/target tree to walk.
+          path: .
+          format: cyclonedx-json
+          output-file: browser-bridge.cdx.json
+          upload-artifact: true
+          upload-release-assets: false
+
+      - name: Attach SBOM to release
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          files: browser-bridge.cdx.json
+          fail_on_unmatched_files: true
