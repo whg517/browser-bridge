@@ -48,18 +48,33 @@ export async function ensureAllowed(url: string | undefined) {
   if ((await getSetting("allowAllSites")) === true) return;
   const list = await getAllowlist();
   if (matchesAny(glob, list)) return;
-  // Not allowlisted → ask the user via the popup. We open the popup by
-  // setting a badge and storing a pending request; the popup, when opened,
-  // reads it. If the popup isn't opened within the timeout, we reject.
-  const allowed = await promptUserForAllow(glob);
-  if (!allowed) {
-    throw new Error(`origin not allowed by user: ${glob}`);
+  // Not allowlisted → ask the user. We raise a "!" toolbar badge + a pending
+  // record the popup reads; the popup grants/denies. Give the agent a distinct,
+  // actionable message per outcome (#79) — a bare "not allowed" reads as a
+  // permanent failure and doesn't tell the user what to click.
+  const reason = await promptUserForAllow(glob);
+  if (reason === "denied") {
+    throw new Error(`The user denied browser-bridge access to ${glob}.`);
   }
+  if (reason === "timeout") {
+    // On timeout the badge + pending record are already cleared, so there's
+    // nothing left to click — the fix is to RETRY, which re-opens the prompt.
+    throw new Error(
+      `Approval for ${glob} timed out (no response in 60s). Retry this tool call, ` +
+        `then click the Browser Bridge toolbar icon (it shows a red "!" badge) and ` +
+        `choose Allow within 60s. Or pre-approve the origin in the extension's ` +
+        `Settings → Allowed sites.`
+    );
+  }
+  // reason === "granted" → allowed; fall through.
 }
 
-// Ask the user to approve a new origin. We surface a notification badge; the
-// popup handles the actual yes/no. Resolves true/false.
-function promptUserForAllow(glob: string): Promise<boolean> {
+type AllowReason = "granted" | "denied" | "timeout";
+
+// Ask the user to approve a new origin. Surfaces a "!" toolbar badge + a pending
+// record the popup reads, and resolves how it ended so the caller can tell the
+// agent exactly what happened. Fails closed: no response in 60s → "timeout".
+function promptUserForAllow(glob: string): Promise<AllowReason> {
   return new Promise((resolve) => {
     const reqId = `allow_${Date.now()}`;
     pendingAllowRequests.set(reqId, { glob, resolve });
@@ -72,13 +87,13 @@ function promptUserForAllow(glob: string): Promise<boolean> {
         pendingAllowRequests.delete(reqId);
         chrome.storage.local.remove("pendingAllow");
         maybeClearBadge();
-        resolve(false);
+        resolve("timeout");
       }
     }, 60000);
   });
 }
 
-const pendingAllowRequests = new Map<string, { glob: string; resolve: (v: boolean) => void }>();
+const pendingAllowRequests = new Map<string, { glob: string; resolve: (v: AllowReason) => void }>();
 
 function maybeClearBadge() {
   if (pendingAllowRequests.size === 0) {
@@ -100,9 +115,9 @@ export async function resolvePendingAllow(
     const list = await getAllowlist();
     if (!list.includes(pending.glob)) list.push(pending.glob);
     await setAllowlist(list);
-    pending.resolve(true);
+    pending.resolve("granted");
   } else {
-    pending.resolve(false);
+    pending.resolve("denied");
   }
   return { ok: true };
 }

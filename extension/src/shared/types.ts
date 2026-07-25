@@ -51,6 +51,8 @@ export interface OpArgs {
   timeoutMs?: number;
   text?: string;
   nav?: boolean;
+  // readiness level for nav; normalized at runtime (anything != "domcontentloaded" → "load")
+  until?: string;
   type?: string;
   key?: string;
   message?: string;

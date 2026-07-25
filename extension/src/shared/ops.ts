@@ -158,7 +158,7 @@ export type BridgeCommand =
   | { op: "page_scroll"; args: { direction?: string; pixels?: number } }
   | {
       op: "page_wait_for";
-      args: { nav?: boolean; selector?: string; text?: string; timeoutMs?: number };
+      args: { nav?: boolean; until?: string; selector?: string; text?: string; timeoutMs?: number };
     }
   | { op: "page_eval"; args: { code: string } }
   | { op: "page_snapshot_precise"; args: { frameId?: string } }

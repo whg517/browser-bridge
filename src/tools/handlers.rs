@@ -58,6 +58,9 @@ pub(super) fn build_page_wait_for(args: &Value) -> Value {
     if let Some(n) = args.get("nav").and_then(|v| v.as_bool()) {
         payload.insert("nav".into(), json!(n));
     }
+    if let Some(u) = args.get("until").and_then(|v| v.as_str()) {
+        payload.insert("until".into(), json!(u));
+    }
     payload.insert(
         "timeoutMs".into(),
         json!(args

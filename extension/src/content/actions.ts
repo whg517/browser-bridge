@@ -52,13 +52,14 @@ function setNativeValue(el: HTMLElement, value: string) {
 }
 
 export function text() {
-  // Mask password fields.
-  const cloneSrc = document.body.cloneNode(true) as HTMLElement;
-  cloneSrc
-    .querySelectorAll<HTMLInputElement>("input[type=password]")
-    .forEach((i) => (i.value = "••••••"));
+  // innerText on the LIVE document reflects what's actually rendered: it
+  // excludes <script>/<style> (incl. @keyframes), display:none / visibility:
+  // hidden / [hidden] / aria-hidden subtrees, and the options of unopened
+  // <select>s. Reading it off a DETACHED body.cloneNode() degraded to
+  // textContent, which leaked all of that as noise (#79). Password input
+  // *values* never appear in innerText, so no separate masking is needed.
   // Mask long digit runs that look like card numbers.
-  const txt = (cloneSrc.innerText || "").replace(/\b\d{12,19}\b/g, "••••••");
+  const txt = (document.body?.innerText || "").replace(/\b\d{12,19}\b/g, "••••••");
   return { text: truncate(txt, 20000), url: location.href };
 }
 

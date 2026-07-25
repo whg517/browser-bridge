@@ -103,7 +103,9 @@ pub fn all() -> Vec<Tool> {
             name: "page_wait_for",
             description:
                 "Wait until a condition is met on the active tab, or until timeout. One of: \
-                 `selector` exists, `text` appears, or `nav` waits for page load completion.",
+                 `selector` exists, `text` appears, or `nav` waits for the page to load \
+                 (`until`: \"load\" default, or \"domcontentloaded\"). SPA hash-route changes \
+                 fire no navigation event; use `selector`/`text` for those.",
             input_schema: schema(
                 &[],
                 &[
@@ -114,6 +116,11 @@ pub fn all() -> Vec<Tool> {
                     ),
                     ("text", "string", "Wait for this text to appear in the page"),
                     ("nav", "boolean", "Wait for a navigation event"),
+                    (
+                        "until",
+                        "string",
+                        "For `nav`: readiness level, \"load\" (default, full page load) or \"domcontentloaded\" (DOM parsed)",
+                    ),
                     ("timeoutMs", "integer", "Max wait in ms (default 30000)"),
                 ],
             ),

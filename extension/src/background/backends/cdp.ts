@@ -56,6 +56,7 @@ export class CdpBackend implements PageBackend {
                 selector: args.selector,
                 text: args.text,
                 timeoutMs: args.timeoutMs,
+                until: args.until,
               },
             ],
             { awaitPromise: true }

@@ -68,6 +68,10 @@ export function pageSnapshot(refAttr: string): {
   ]);
   function isInteractive(el: HTMLElement): boolean {
     const tag = el.tagName.toLowerCase();
+    // Frames/embeds are natively focusable (tabIndex 0); the catch-all below
+    // would flag a covering marketing iframe as a target and collapse the whole
+    // snapshot to it (#79). They're a separate document we can't act on here.
+    if (tag === "iframe" || tag === "frame" || tag === "object" || tag === "embed") return false;
     if (INTERACTIVE_TAGS.has(tag)) return true;
     const role = el.getAttribute("role");
     if (role && INTERACTIVE_ROLES.has(role)) return true;
@@ -222,11 +226,10 @@ export function pageText(): { text: string; url: string } {
   function truncate(s: string, n: number): string {
     return s.length > n ? s.slice(0, n) + "…" : s;
   }
-  const cloneSrc = document.body.cloneNode(true) as HTMLElement;
-  cloneSrc
-    .querySelectorAll<HTMLInputElement>("input[type=password]")
-    .forEach((i) => (i.value = "••••••"));
-  const txt = (cloneSrc.innerText || "").replace(/\b\d{12,19}\b/g, "••••••");
+  // Live innerText reflects rendered content only: excludes script/style,
+  // hidden/aria-hidden subtrees, and unopened <select> option lists. Reading a
+  // detached clone degraded to textContent and leaked all of that (#79).
+  const txt = (document.body?.innerText || "").replace(/\b\d{12,19}\b/g, "••••••");
   return { text: truncate(txt, 20000), url: location.href };
 }
 
@@ -266,37 +269,35 @@ export function pageWaitFor(args: {
   selector?: string;
   text?: string;
   timeoutMs?: number;
+  until?: string;
 }): Promise<unknown> {
   const timeoutMs = args.timeoutMs ?? 30000;
+  const until = args.until === "domcontentloaded" ? "domcontentloaded" : "load";
   const start = Date.now();
   return new Promise((resolve, reject) => {
     let done = false;
-    const onLoad = () => {
-      if (args.nav) {
-        finish(resolve, {
-          matched: true,
-          nav: true,
-          url: location.href,
-          readyState: document.readyState,
-        });
-      }
-    };
+    const navResult = () => ({
+      matched: true,
+      nav: true,
+      url: location.href,
+      readyState: document.readyState,
+    });
+    const onReady = () => finish(resolve, navResult());
     const finish = (fn: (v: unknown) => void, value: unknown) => {
       if (done) return;
       done = true;
-      window.removeEventListener("load", onLoad, true);
+      window.removeEventListener("load", onReady, true);
+      document.removeEventListener("DOMContentLoaded", onReady, true);
       fn(value);
     };
     if (args.nav) {
-      if (document.readyState === "complete") {
-        return finish(resolve, {
-          matched: true,
-          nav: true,
-          url: location.href,
-          readyState: document.readyState,
-        });
+      if (until === "domcontentloaded") {
+        if (document.readyState !== "loading") return finish(resolve, navResult());
+        document.addEventListener("DOMContentLoaded", onReady, true);
+      } else {
+        if (document.readyState === "complete") return finish(resolve, navResult());
+        window.addEventListener("load", onReady, true);
       }
-      window.addEventListener("load", onLoad, true);
     }
     const tick = () => {
       if (done) return;
@@ -306,7 +307,7 @@ export function pageWaitFor(args: {
         }
       }
       if (args.text) {
-        if ((document.body.innerText || "").includes(args.text)) {
+        if ((document.body?.innerText || "").includes(args.text)) {
           return finish(resolve, { matched: true, text: args.text });
         }
       }

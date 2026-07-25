@@ -82,7 +82,7 @@ Acceptance: after adding browser-bridge to the client's MCP server configuration
 - `page_click(ref|selector)` — click; submit/link (high-risk) types run without a confirmation prompt (per-action confirmations removed, see [ADR-0020](./adr/0020-remove-interactive-confirmations.md))
 - `page_fill(ref|selector, value)` — fill a form; uses the native setter to trigger the change detection of frameworks (React/Vue); password fields are recorded redacted
 - `page_scroll(direction|pixels)` — scroll
-- `page_wait_for(selector|text|nav, timeoutMs)` — wait for a selector/text, or wait for the page load to complete
+- `page_wait_for(selector|text|nav, until, timeoutMs)` — wait for a selector/text, or `nav` for the page to load (`until`: `load` default, or `domcontentloaded`)
 - `page_eval(code)` — **high-risk**: execute arbitrary JS. Runs without a per-call confirmation prompt ([ADR-0020](./adr/0020-remove-interactive-confirmations.md)); gated instead by the `pageEvalEnabled` kill switch (which can disable `page_eval` entirely) and by the per-site allowlist. Return values are masked by default via `evalMask` (JWT/long hex/long numbers/sensitive keywords). Uses `new Function` to execute in the global scope, supporting await/return. See [ADR-0008](./adr/0008-page-eval-confirmation-channel.md)
 
 ### FR-4 Security Controls
