@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    width: 1280px; height: 800px;
+    font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
+    background: linear-gradient(135deg, #1f5c3d 0%, #2e8b57 55%, #3fa870 100%);
+    color: #fff; overflow: hidden;
+    display: flex; align-items: center; gap: 64px;
+    padding: 0 80px;
+  }
+  .left { flex: 1; max-width: 560px; }
+  .badge {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.25);
+    padding: 6px 14px; border-radius: 999px; font-size: 15px; font-weight: 600;
+    letter-spacing: .3px; margin-bottom: 26px;
+  }
+  h1 { font-size: 46px; line-height: 1.12; margin: 0 0 20px; font-weight: 800; letter-spacing: -0.5px; }
+  h1 .accent { color: #d7ffe9; }
+  p.sub { font-size: 20px; line-height: 1.5; margin: 0 0 30px; color: #eafff3; }
+  ul { list-style: none; padding: 0; margin: 0; }
+  li { font-size: 18px; line-height: 1.5; margin: 14px 0; display: flex; gap: 12px; align-items: flex-start; }
+  li .check {
+    flex: none; width: 24px; height: 24px; border-radius: 50%;
+    background: rgba(255,255,255,0.22); display: grid; place-items: center;
+    font-size: 14px; margin-top: 1px;
+  }
+
+  /* right: popup rendered ~1.55x for legibility, inside a browser frame */
+  .frame {
+    background: #ffffff; border-radius: 16px;
+    box-shadow: 0 40px 90px rgba(0,0,0,0.35), 0 8px 24px rgba(0,0,0,0.2);
+    overflow: hidden; width: 520px;
+  }
+  .toolbar {
+    height: 46px; background: #ececec; display: flex; align-items: center;
+    padding: 0 16px; gap: 8px; border-bottom: 1px solid #dcdcdc;
+  }
+  .toolbar .tl { width: 12px; height: 12px; border-radius: 50%; }
+  .toolbar .r { background: #ff5f57; } .toolbar .y { background: #febc2e; } .toolbar .g { background: #28c840; }
+  .toolbar .omni {
+    flex: 1; margin-left: 12px; height: 26px; background: #fff; border-radius: 13px;
+    display: flex; align-items: center; padding: 0 12px; color: #666; font-size: 12px;
+  }
+  .toolbar .ext {
+    width: 30px; height: 30px; border-radius: 8px; background: #2e8b57; color: #fff;
+    display: grid; place-items: center; font-weight: 800; font-size: 15px; margin-left: 10px;
+  }
+
+  /* popup — scaled up copy of the real popup markup/styles */
+  .popup {
+    padding: 20px; font-size: 20px; color: #1a1a1a;
+    font-family: -apple-system, system-ui, sans-serif;
+  }
+  .popup h2 {
+    font-size: 22px; margin: 0 0 14px; display: flex; align-items: center; justify-content: space-between;
+  }
+  .popup .gear {
+    font-size: 15px; border: 1px solid #ccc; border-radius: 8px; padding: 4px 10px; color: #444; background:#fff;
+  }
+  .status {
+    display: flex; align-items: center; gap: 10px; margin-bottom: 16px;
+    padding: 11px 14px; border-radius: 10px; background: #eef7f1;
+  }
+  .dot { width: 12px; height: 12px; border-radius: 50%; background: #2e8b57; }
+  .status .t { font-weight: 600; color: #1f6b45; }
+  .pending {
+    background: #fff8e1; border: 1px solid #f0c674; padding: 14px;
+    border-radius: 10px; margin-bottom: 16px;
+  }
+  .pending .lead { font-weight: 600; margin-bottom: 6px; }
+  .pending .glob { font-family: ui-monospace, monospace; word-break: break-all; color:#333; font-size:18px; }
+  .row { display: flex; gap: 10px; margin-top: 12px; }
+  .row button {
+    flex: 1; padding: 10px; border-radius: 9px; font-size: 17px; cursor: pointer; border: 1px solid #ccc; background:#fff;
+  }
+  .row .allow { background: #2e8b57; color: #fff; border-color: #2e8b57; font-weight: 600; }
+  .row .deny { color: #d9534f; border-color: #d9534f; }
+  .lbl { font-weight: 600; color:#333; margin-bottom: 6px; }
+  .item {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 9px 4px; border-bottom: 1px solid #eee;
+  }
+  .item code { font-size: 16px; color:#222; font-family: ui-monospace, monospace; }
+  .item .x { color:#b33; font-size: 15px; }
+</style>
+</head>
+<body>
+  <div class="left">
+    <div class="badge">🔌 Model Context Protocol</div>
+    <h1>Let your AI agent drive <span class="accent">your real Chrome</span></h1>
+    <p class="sub">Claude Code, Codex, and any MCP client can operate the tabs you're already logged into — with your permission at every step.</p>
+    <ul>
+      <li><span class="check">✓</span><span>Approve every site before anything runs</span></li>
+      <li><span class="check">✓</span><span>Confirm high-risk actions on the page</span></li>
+      <li><span class="check">✓</span><span>Read-only, masked credentials — never written</span></li>
+      <li><span class="check">✓</span><span>Local-only bridge — no remote servers, no tracking</span></li>
+    </ul>
+  </div>
+
+  <div class="frame">
+    <div class="toolbar">
+      <span class="tl r"></span><span class="tl y"></span><span class="tl g"></span>
+      <span class="omni">🔒 app.example.com/dashboard</span>
+      <span class="ext">B</span>
+    </div>
+    <div class="popup">
+      <h2>Browser Bridge <span class="gear">⚙ Settings</span></h2>
+      <div class="status"><span class="dot"></span><span class="t">Connected to MCP client</span></div>
+
+      <div class="pending">
+        <div class="lead">A new site wants access:</div>
+        <div class="glob">https://app.example.com/*</div>
+        <div class="row">
+          <button class="deny">Deny</button>
+          <button class="allow">Allow</button>
+        </div>
+      </div>
+
+      <div class="lbl">Allowed sites</div>
+      <div class="item"><code>https://github.com/*</code><span class="x">✕</span></div>
+      <div class="item"><code>https://mail.google.com/*</code><span class="x">✕</span></div>
+    </div>
+  </div>
+</body>
+</html>

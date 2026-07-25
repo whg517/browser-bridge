@@ -26,14 +26,15 @@ jobs:
           # Intel (x64) macOS is intentionally NOT built and will not be
           # re-added: Apple Silicon is the supported macOS target, and Intel
           # users can run the arm64 binary under Rosetta 2 or build from source.
-          - os: macos-14
+          - os: macos-26
             platform: macos
             arch: arm64
-          # Build on an older glibc baseline for wider Linux compatibility.
-          - os: ubuntu-22.04
+          # Built on ubuntu-24.04 (glibc 2.39 floor): the prebuilt Linux tarball
+          # needs a host at least that new; older distros build from source.
+          - os: ubuntu-24.04
             platform: linux
             arch: x64
-          - os: windows-2022
+          - os: windows-2025
             platform: windows
             arch: x64
     runs-on: ${{ matrix.os }}
