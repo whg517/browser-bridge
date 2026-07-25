@@ -7,8 +7,7 @@ import { roleOf } from "./snapshot";
 
 export async function click(args: OpArgs) {
   const el = resolveTarget(args);
-  // Clicks run directly — the high-risk-click confirmation was removed in
-  // ADR-0020; the per-site allowlist is the remaining gate.
+  // Clicks run directly; the per-site allowlist is the gate.
   el.scrollIntoView({ block: "center" });
   el.focus?.();
   el.click();

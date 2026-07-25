@@ -144,7 +144,7 @@ The extension source is written in **TypeScript** (strict) under `extension/src/
 | `content.ts` | `content.js` | content script **entry point** (about 30 lines): re-injection guard + onMessage listener → `handle`. The real logic is in `src/content/*` (see below) |
 | `options.ts` + `options.html` | `options.js` + `options.html` | Standalone Options configuration page (see [ADR-0011](./adr/0011-options-page-for-settings.md) for details) |
 | `popup.ts` + `popup.html` | `popup.js` + `popup.html` | Authorization UI: shows connection status, the allowlist (revocable), and Allow/Deny for pending authorization requests |
-| `toast.css` (static, copied into dist) | `toast.css` | Styles for the on-page informational notice Toast (the `page_snapshot_precise` notice; the blocking high-risk confirmation Toast was removed by [ADR-0020](./adr/0020-remove-interactive-confirmations.md)) |
+| `toast.css` (static, copied into dist) | `toast.css` | Styles for the on-page informational notice Toast (the `page_snapshot_precise` notice) |
 
 **Modular structure**: the two giant files have been split into cohesive modules; esbuild re-bundles the imports back into a single IIFE, so the runtime behavior is unchanged (verified by dom_test 77 / smoke / e2e).
 
@@ -225,8 +225,7 @@ The extension itself is loaded **load-unpacked** from **`extension/dist/`** (the
 5. content.js handle()
    → resolveTarget({ref:"e3"}) // look up refMap → element
    → el.scrollIntoView() + el.click()
-     // high-risk clicks (submit/link) now run without any prompt; the
-     // interactive confirmation Toast was removed (see ADR-0020)
+     // clicks run directly; the per-site allowlist is the gate
 
 6. The result returns the same way:
    content → chrome.runtime.sendMessage response
@@ -255,7 +254,7 @@ See the individual ADRs for details; here is the overview.
 | Domain allowlist (**primary gate**) | chrome.storage.local + popup authorization + permissions.request — the AI only acts on origins the user has approved | [0004](./adr/0004-allowlist-with-optional-host-permissions.md) |
 | Per-tool enable/disable | any tool can be turned off in the Options page (a disabled tool returns "tool disabled in settings") | [0011](./adr/0011-options-page-for-settings.md) |
 | page_eval kill switch | disable `page_eval` in the Options page (Tool enablement) — that per-tool disable is the kill switch | [0011](./adr/0011-options-page-for-settings.md) |
-| page_eval redaction | `page_eval` return values are always masked (token-like values); the call runs **without** any per-call confirmation | [0008](./adr/0008-page-eval-confirmation-channel.md), [0020](./adr/0020-remove-interactive-confirmations.md) |
+| page_eval redaction | `page_eval` return values are always masked (token-like values) | — |
 | page_snapshot_precise notice | an on-page **informational** NOTICE (always shown) before the debugger attaches — informational only, **not** a blocking confirmation | [0009](./adr/0009-page-snapshot-precise-debugger.md) |
 | host authentication | allowed_origins hardcoded with the extension ID | [0002](./adr/0002-three-process-architecture-localhost-tcp.md) |
 | bridge socket | per-run secret + lockfile in the user directory (Unix mode 0600) | [0002](./adr/0002-three-process-architecture-localhost-tcp.md) |
@@ -263,7 +262,7 @@ See the individual ADRs for details; here is the overview.
 | protocol security | NM 1MB outbound limit; single-threaded writes + flush; stderr panic hook | — |
 | configuration management | Standalone Options page centrally manages tool enablement / allowlist / allowAllSites / execution mode | [0011](./adr/0011-options-page-for-settings.md) |
 
-**Removed protections ([ADR-0020](./adr/0020-remove-interactive-confirmations.md), "Remove Interactive Per-Action Confirmations")**: the extension no longer interrupts the AI with an in-page confirmation for high-risk clicks (submit buttons / navigating links, formerly [ADR-0006](./adr/0006-toast-confirmation-for-high-risk.md)), `page_eval` (formerly a per-call Toast + 60s same-origin grace window, [ADR-0008](./adr/0008-page-eval-confirmation-channel.md)), or `tab_close`. The `confirmHighRiskClick` / `confirmPageEval` / `confirmTabClose` / `confirmGraceMs` / `clickToastTimeoutMs` / `evalToastTimeoutMs` settings no longer exist. **On an already-allowlisted site the AI can now submit forms, run JS (when `page_eval` is enabled), and close tabs with no per-action prompt** — the allowlist plus the per-tool / kill-switch controls above are the whole security boundary. ADR-0006 and the confirmation half of ADR-0008 are Superseded by ADR-0020.
+**No per-action prompts**: on an already-allowlisted site the AI can submit forms, run JS (when `page_eval` is enabled), and close tabs without interruption — the allowlist plus the per-tool disable and always-on masking above are the whole security boundary, so keep the allowlist tight.
 
 ## 7. Key Constraints (pitfalls hit and handled during implementation)
 
@@ -301,7 +300,7 @@ See the individual ADRs for details; here is the overview.
 ### 7.7 page_eval uses the Function constructor rather than eval()
 **Constraint**: `page_eval` needs to execute arbitrary JS in the page's global scope, but content.js itself runs inside a strict-mode closure; a direct `eval(code)` cannot see the page's global variables, and under strict mode eval has its own separate scope.
 **Mitigation**: use `new Function('"use strict"; return (async () => { <code> })()')()` — the Function constructor executes in the global scope and supports `return`/`await` (wrapped as an async IIFE).
-**Known limitation**: it is hard to reliably set an execution timeout (JS is single-threaded and cannot be interrupted externally); the session layer's 120s timeout is the backstop, and an infinite loop will hang the page. Before the return value leaves the page it is safely processed by `serializeResult` (circular references / DOM / Error / BigInt / exotic types) and then redacted by `maskSensitive`. See [ADR-0008](./adr/0008-page-eval-confirmation-channel.md) for details.
+**Known limitation**: it is hard to reliably set an execution timeout (JS is single-threaded and cannot be interrupted externally); the session layer's 120s timeout is the backstop, and an infinite loop will hang the page. Before the return value leaves the page it is safely processed by `serializeResult` (circular references / DOM / Error / BigInt / exotic types) and then redacted by `maskSensitive`.
 
 ### 7.8 chrome.debugger's infobar / restrictions / SW-only
 **Constraints** (page_snapshot_precise):
@@ -363,7 +362,7 @@ See [ADR-0010](./adr/0010-cookie-storage-readonly.md) for details.
 
 See [requirements.md §7 Phasing](./requirements.md#7-phasing). Extension points reserved in the architecture:
 - **Adding a new tool**: add a schema definition in `tools/catalogue.rs` + add a `HANDLERS` record in `tools/mod.rs` (the `build_payload` pure function), and extend background/content with handling for the corresponding op
-- **page_eval**: gated by the per-tool disable (Tool enablement) + always-on result masking (the per-call confirmation channel was removed by [ADR-0020](./adr/0020-remove-interactive-confirmations.md))
+- **page_eval**: gated by the per-tool disable (Tool enablement) + always-on result masking
 - **debugger fallback**: add the `page_snapshot_precise` tool, with the SW temporarily attaching/detaching
 - **Skill layer**: does not touch the architecture; purely adds skill files that teach the AI to combine existing tools
 

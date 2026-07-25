@@ -3,23 +3,12 @@
 - **Status**: Accepted
 - **Date**: 2026-07-09
 
-> **Update (2026-07-24, [ADR-0020](./0020-remove-interactive-confirmations.md)):** the
-> confirmation-related settings this ADR introduced — `confirmHighRiskClick`,
-> `confirmPageEval`, `confirmTabClose`, `confirmGraceMs`, `clickToastTimeoutMs`,
-> `evalToastTimeoutMs` — have since been **removed** along with the confirmations
-> themselves. Later, the whole **"Security" section** (`pageEvalEnabled`,
-> `evalMask`, `warnPreciseSnapshot`) was also removed: those protections are now
-> always-on (masking and the precise-snapshot notice are non-optional, and
-> `page_eval` is disabled via the general per-tool disable). The Options page now
-> holds tool enablement, the allowlist, and execution mode; treat the rows below
-> as historical.
-
 ## Context
 
 As phases two and three landed incrementally, the design accumulated a large number of configurable security policies and behavior switches scattered across the codebase:
 
-- **ADR-0008**'s `page_eval` return-value redaction switch (`evalMask`) — crammed into the popup in v0.2
-- **ADR-0006**'s high-risk click confirmation, 60-second confirmation-free grace period, and 30s Toast timeout — all hardcoded in content.js
+- the `page_eval` return-value redaction switch (`evalMask`) — crammed into the popup in v0.2
+- the high-risk click confirmation, 60-second confirmation-free grace period, and 30s Toast timeout — all hardcoded in content.js
 - **ADR-0009**'s pre-precise-snapshot prompt — shown every time, cannot be dismissed
 - **ADR-0004**'s allowlist — could only be revoked, not manually added (popup.js comments explicitly state manual add was not implemented in v0.1)
 - Whether each tool is enabled — no master switch
@@ -40,13 +29,13 @@ All configuration items are stored in `chrome.storage.local`, following the exis
 
 | key | Type | Default | Related | Purpose |
 |-----|------|------|------|------|
-| `pageEvalEnabled` | bool | true | ADR-0008 | page_eval master switch; when off, arbitrary JS execution is rejected outright |
-| `evalMask` | bool | true | ADR-0008 | page_eval return-value redaction |
-| `confirmHighRiskClick` | bool | true | ADR-0006 | High-risk click (submit/link) confirmation switch |
+| `pageEvalEnabled` | bool | true | — | page_eval master switch; when off, arbitrary JS execution is rejected outright |
+| `evalMask` | bool | true | — | page_eval return-value redaction |
+| `confirmHighRiskClick` | bool | true | — | High-risk click (submit/link) confirmation switch |
 | `warnPreciseSnapshot` | bool | true | ADR-0009 | Informational prompt before a precise snapshot |
-| `confirmGraceMs` | int | 60000 | ADR-0006 | Grace period exempting repeat confirmations for the same origin and type (0 = confirm every time) |
-| `clickToastTimeoutMs` | int | 30000 | ADR-0006 | Auto-reject timeout for the click confirmation Toast |
-| `evalToastTimeoutMs` | int | 45000 | ADR-0008 | Auto-reject timeout for the eval confirmation Toast |
+| `confirmGraceMs` | int | 60000 | — | Grace period exempting repeat confirmations for the same origin and type (0 = confirm every time) |
+| `clickToastTimeoutMs` | int | 30000 | — | Auto-reject timeout for the click confirmation Toast |
+| `evalToastTimeoutMs` | int | 45000 | — | Auto-reject timeout for the eval confirmation Toast |
 | `disabledTools` | string[] | [] | — | Set of disabled tool (op) names |
 | `allowAllSites` | bool | false | ADR-0004 | Skip per-site approval and allow all sites |
 
@@ -119,6 +108,4 @@ The default values for configuration items are defined in separate `DEFAULTS` ob
 ## Relationship to Other ADRs
 
 - **[ADR-0004](./0004-allowlist-with-optional-host-permissions.md)**: allowAllSites is a "master switch" variant of the allowlist — it skips per-site approval but underneath still relies on the same optional host permissions mechanism. Manually adding to the allowlist fills in the add capability that was missing in v0.1
-- **[ADR-0006](./0006-toast-confirmation-for-high-risk.md)**: confirmHighRiskClick / confirmGraceMs / clickToastTimeoutMs make this ADR's hardcoded values (60s grace, 30s timeout, confirmation on/off) configurable, with defaults matching the original decision
-- **[ADR-0008](./0008-page-eval-confirmation-channel.md)**: pageEvalEnabled (master switch), evalMask (migrated from the popup), and evalToastTimeoutMs make this ADR's policy configurable
-- **[ADR-0009](./0009-page-snapshot-precise-debugger.md)**: warnPreciseSnapshot makes the pre-precise-snapshot prompt dismissible
+- **[ADR-0009](./0009-page-snapshot-precise-debugger.md)**: the pre-precise-snapshot prompt originated here

@@ -2,7 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-07-15
-- **Relationship**: [ADR-0003](./0003-content-script-snapshot-vs-chrome-debugger.md) (default goes through content script), [ADR-0009](./0009-page-snapshot-precise-debugger.md) (precise uses CDP at a single point), [ADR-0008](./0008-page-eval-confirmation-channel.md) (page_eval confirmation channel)
+- **Relationship**: [ADR-0003](./0003-content-script-snapshot-vs-chrome-debugger.md) (default goes through content script), [ADR-0009](./0009-page-snapshot-precise-debugger.md) (precise uses CDP at a single point)
 
 ## Background
 
@@ -31,7 +31,7 @@ The implementation is organized around three patterns (`extension/src/background
 Key design points:
 
 - **Unified ref**: CDP's `page_snapshot` runs the **same DOM traversal algorithm** as `content/snapshot.ts` (not the AX tree — that is `page_snapshot_precise`), stamping the **same `data-zcb-ref="eN"`** attribute. As a result, the refs from the CDP and content paths are fully interchangeable, and `page_click`/`page_fill` can resolve them simply by looking up the DOM attribute.
-- **Confirmation without a content script** *(removed — see [ADR-0020](./0020-remove-interactive-confirmations.md))*: CDP mode originally rebuilt the high-risk-click and `page_eval` confirmation toasts inside the page via `Runtime.evaluate`, matching the content path. Those per-action confirmations were removed in ADR-0020, so CDP mode no longer builds them. Always-on `page_eval` result masking and the allowlist check still match the content path.
+- **Masking + allowlist parity**: `page_eval` result masking (always on) and the allowlist check are applied in the SW, matching the content path.
 - **Serialization/redaction**: `page_eval` retrieves the value via CDP `returnByValue`, then redacts it in the SW by reusing `shared/masking.ts`; `storage_get` reads the raw value in the page and redacts in the SW (always on, ADR-0010).
 - **screenshot**: under CDP, `Page.captureScreenshot` is preferred and the page function is not used.
 - **DRY**: `precise.ts` is changed to import `dbgAttach/dbgDetach/dbgSend/isDebuggable` from `cdp/session.ts`, removing the private copy, with no behavior change.

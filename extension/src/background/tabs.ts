@@ -100,9 +100,8 @@ async function addToWorkspaceGroup(
 }
 
 export async function tabClose(tabId: number) {
-  // Closes the tab directly — the "Close tab?" confirmation was removed in
-  // ADR-0020. `get` first so a bad id fails with Chrome's clear "No tab with
-  // id" error rather than a bare remove rejection.
+  // Closes the tab directly. `get` first so a bad id fails with Chrome's clear
+  // "No tab with id" error rather than a bare remove rejection.
   await chrome.tabs.get(tabId);
   await chrome.tabs.remove(tabId);
   return { closed: tabId };

@@ -56,12 +56,10 @@ Key invariants:
 - **Approve-per-origin** — page ops need an allowlisted origin (ADR-0004); this
   is the primary gate. Once an origin is approved there are **no per-action
   prompts**: the AI can submit forms, click navigating links, run `page_eval`
-  and close tabs without interrupting the user. The old interactive
-  confirmations were removed in
-  [ADR-0020](docs/adr/0020-remove-interactive-confirmations.md). Residual
-  controls scope this down: any tool can be turned off in the Options page
-  (including `page_eval`) — that per-tool disable is the kill switch — and
-  `page_eval` results are always masked (token-like values redacted).
+  and close tabs without interrupting the user. Residual controls scope this
+  down: any tool can be turned off in the Options page (including `page_eval`) —
+  that per-tool disable is the kill switch — and `page_eval` results are always
+  masked (token-like values redacted).
 - **Bridge auth** — the localhost TCP bridge authenticates each connection with
   a per-run secret from a 0600 lock file.
 

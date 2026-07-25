@@ -28,8 +28,8 @@ content or navigates) · **High** (writes to the page, or reads credentials) ·
 | `storage_get` | High | local/sessionStorage | — (read-only) | **yes** (tokens) | `scripting` | same-origin; values **always** masked |
 
 ¹ `page_click` is Medium for ordinary elements; **High** when the target is a
-submit button or a navigating link (bigger blast radius) — but these no longer
-prompt before running (see [ADR-0020](../adr/0020-remove-interactive-confirmations.md)).
+submit button or a navigating link (bigger blast radius) — but these do not
+prompt before running.
 
 ## Cross-cutting protections
 
@@ -39,12 +39,10 @@ prompt before running (see [ADR-0020](../adr/0020-remove-interactive-confirmatio
   run through the mask (JWT / long hex / long digit runs / token-like strings).
   `storage_get` masking is not user-toggleable.
 - **No per-action confirmations**: high-risk clicks, `page_eval`, and `tab_close`
-  run **without prompting**. The interactive confirmations (and their grace-window
-  / timeout settings — `confirmHighRiskClick`, `confirmPageEval`, `confirmTabClose`,
-  `confirmGraceMs`, `clickToastTimeoutMs`, `evalToastTimeoutMs`) were removed in
-  [ADR-0020](../adr/0020-remove-interactive-confirmations.md). On an already-allowlisted
-  origin the AI can submit forms, run JS (if `page_eval` is enabled), and close tabs
-  with no per-action approval — the allowlist bounds *which* sites, not *what* happens
+  run **without prompting**. There are no interactive confirmation toasts. On an
+  already-allowlisted origin the AI can submit forms, run JS (if `page_eval` is
+  enabled), and close tabs with no per-action approval — the allowlist bounds
+  *which* sites, not *what* happens
   on an approved one. Keep the allowlist tight (avoid "allow all sites"), disable
   `page_eval` when unused, and disable any tool the agent shouldn't have.
 - **Read-only by design**: no `cookie_set` / `storage_set` (writing httpOnly

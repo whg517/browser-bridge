@@ -438,9 +438,8 @@ async function test_text(page: Page): Promise<void> {
   check(resp.text.includes("Test Fixture"), "page_text includes page heading");
 }
 
-/** Invoke a page_eval op. page_eval no longer shows a confirmation Toast
- * (ADR-0020), so this just runs the op directly. Kept as a thin wrapper so the
- * eval tests below read clearly. */
+/** Invoke a page_eval op. page_eval shows no confirmation, so this just runs
+ * the op directly. Kept as a thin wrapper so the eval tests below read clearly. */
 async function invokeWithEvalApproval(
   page: Page,
   op: string,
@@ -540,9 +539,9 @@ async function test_wait_for_nav(page: Page): Promise<void> {
   check(resp.readyState === "complete", "nav wait sees complete readyState");
 }
 
-// ── test: high-risk click runs directly, no confirmation (ADR-0020) ────────
+// ── test: high-risk click runs directly, no confirmation ──────────────────
 async function test_high_risk_click_no_confirm(page: Page): Promise<void> {
-  console.log("\n[test] high-risk click — submit click runs with no confirmation (ADR-0020)");
+  console.log("\n[test] high-risk click — submit click runs with no confirmation");
   await freshLoad(page);
   const snap = await invoke(page, "page_snapshot", {});
   const go = snap.nodes.find((n: any) => n.selector && n.selector.includes("#go"));

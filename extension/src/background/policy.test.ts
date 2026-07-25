@@ -18,7 +18,7 @@ describe("policy.decide", () => {
     expect(d.risk).toBe("low");
   });
 
-  test("page_eval no longer requires confirmation (ADR-0020)", () => {
+  test("page_eval requires no confirmation", () => {
     const d = decide("page_eval", { disabledTools: [] });
     expect(d.allowed).toBe(true);
     expect(d.risk).toBe("critical");

@@ -6,7 +6,7 @@
 
 ## Background
 
-The v0.1/v0.2 MV3 extension was four hand-written native `.js` files (`background.js` / `content.js` / `options.js` / `popup.js`), loaded directly via load-unpacked from the `extension/` directory. This was fast enough during the prototype phase, but as ADR-0008 (page_eval), ADR-0009 (page_snapshot_precise), ADR-0010 (cookie/storage), and ADR-0011 (Options page) landed one after another, the amount and complexity of extension-side code grew, and several problems began to surface:
+The v0.1/v0.2 MV3 extension was four hand-written native `.js` files (`background.js` / `content.js` / `options.js` / `popup.js`), loaded directly via load-unpacked from the `extension/` directory. This was fast enough during the prototype phase, but as page_eval, ADR-0009 (page_snapshot_precise), ADR-0010 (cookie/storage), and ADR-0011 (Options page) landed one after another, the amount and complexity of extension-side code grew, and several problems began to surface:
 
 - **No types**: the `chrome.*` API and the `op`/`args`/response structure of bridge messages all relied on memory and comment conventions. When refactoring or adding tools, it was easy to miss a field or pass the wrong type, and such mistakes could only be caught by runtime errors.
 - **No static checking**: unused variables, misspelled branches, and implicit `any` went unblocked.

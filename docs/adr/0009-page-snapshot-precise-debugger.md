@@ -141,4 +141,4 @@ With different prefixes, content.js looks up by attribute value and needs no cha
 ## Relationship to Other ADRs
 
 - **Supplements [ADR-0003](./0003-content-script-snapshot-vs-chrome-debugger.md)**: ADR-0003 decided to default to the content script (avoiding the infobar); this ADR provides an explicit precise fallback path. The two coexist: use `page_snapshot` day-to-day (no infobar), and use `page_snapshot_precise` when authority is needed (infobar flash + prompt)
-- **Differs from [ADR-0008](./0008-page-eval-confirmation-channel.md)**: the eval Toast is a high-risk confirmation (deny by default, requires an active Allow), whereas precise's info Toast is an informational prompt (continue by default, requires an active cancel)
+- **Info toast, not a confirmation**: precise's on-page notice is informational (proceeds by default, requires an active cancel) — it never blocks or denies the snapshot

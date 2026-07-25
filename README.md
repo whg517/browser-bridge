@@ -25,10 +25,8 @@ JavaScript in your pages. The guardrails that keep that safe:
   script needs).
 - **Kill switch + always-on masking, not per-action prompts.** Any tool can be
   disabled in the Options page (including `page_eval`, arbitrary JS), and
-  `page_eval` results are always masked. Per-action confirmation prompts were
-  removed in
-  [ADR-0020](./docs/adr/0020-remove-interactive-confirmations.md) — the allowlist
-  above is the gate, so keep it tight.
+  `page_eval` results are always masked. There are no per-action confirmation
+  prompts — the allowlist above is the gate, so keep it tight.
 - **Read-only credentials.** Cookies and storage can be *read* (always masked —
   JWTs, long hex, long digit runs), never written. There is no `cookie_set` /
   `storage_set` by design.
