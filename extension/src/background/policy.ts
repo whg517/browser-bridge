@@ -32,8 +32,8 @@ const UNKNOWN_RISK: Risk = "critical";
 
 /**
  * Map a tool's `confirmation` field to whether a call must be confirmed and via
- * which channel. After ADR-0020 the only non-"none" value in the contract is
- * "warn" (page_snapshot_precise's on-page notice).
+ * which channel. The only non-"none" value in the contract is "warn"
+ * (page_snapshot_precise's on-page notice).
  *
  * - "none" → no confirmation
  * - anything else (e.g. "warn", or a future contract value) → confirm via the

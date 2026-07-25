@@ -70,7 +70,3 @@ We need a permission model to control "which sites the AI can operate on".
 ## Design Notes
 
 **Why not use manifest content_scripts + static matches**: In MV3, even if the manifest declares content_scripts matches, the content script **will not inject** if the corresponding domain is not in host_permissions (or an already-granted optional permission). So static matches paired with an initially empty host_permissions are completely ineffective. Switching to dynamic injection makes permissions follow the optional grants entirely — inject into whichever domain is authorized, keeping the logic clear.
-
-## Relationship to ADR-0006
-
-The allowlist controls "which sites can be operated on", while Toast confirmation ([ADR-0006](./0006-toast-confirmation-for-high-risk.md)) controls "which actions within an authorized site require secondary confirmation". The two layers of defense complement each other: the allowlist guards against unfamiliar sites, and Toast guards against dangerous actions on already-authorized sites.

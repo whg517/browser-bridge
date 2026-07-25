@@ -1,8 +1,6 @@
 // page_eval (high-risk) — execute arbitrary JS in the page's global scope.
 // Result is safely serialized and always masked before returning. Gated by the
-// per-tool enable/disable (Tool enablement) and the per-site allowlist; the
-// page_eval-specific enable/mask toggles were removed, and per-call
-// confirmation earlier (ADR-0020).
+// per-tool enable/disable (Tool enablement) and the per-site allowlist.
 
 import type { OpArgs } from "../shared/types";
 import { maskSensitive } from "../shared/masking";

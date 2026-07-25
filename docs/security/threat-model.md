@@ -53,8 +53,7 @@ against. Pairs with [trust-boundaries.md](trust-boundaries.md) and the
    switch), and **always-on masking** of token-like values in `page_eval`
    results. `page_snapshot_precise` also always shows an on-page NOTICE, but
    this is informational, not a blocking confirmation.
-   **Reduced protection:** as of
-   [ADR-0020](../adr/0020-remove-interactive-confirmations.md) there is **no**
+   **Reduced protection:** there is **no**
    per-action confirmation. On an already-allowlisted origin the agent can
    submit forms / click navigating links, run JS (when `page_eval` is enabled),
    and close tabs with **no prompt**. Injection resistance therefore rests on
@@ -88,16 +87,11 @@ against. Pairs with [trust-boundaries.md](trust-boundaries.md) and the
 
 ## Residual risks (accepted, tracked)
 
-- With per-action confirmations removed
-  ([ADR-0020](../adr/0020-remove-interactive-confirmations.md), superseding
-  [ADR-0006](../adr/0006-toast-confirmation-for-high-risk.md) and the
-  confirmation half of
-  [ADR-0008](../adr/0008-page-eval-confirmation-channel.md)), high-risk clicks,
-  `page_eval` (unless disabled per-tool), and `tab_close` run on any allowlisted
-  origin **without a prompt**. The allowlist and the per-tool disable are the
-  only gates, so a successful prompt injection on an approved origin can act
-  with the user's session until the user notices. (This also removes the earlier
-  60s same-origin grace window.)
+- There are no per-action confirmations: high-risk clicks, `page_eval` (unless
+  disabled per-tool), and `tab_close` run on any allowlisted origin **without a
+  prompt**. The allowlist and the per-tool disable are the only gates, so a
+  successful prompt injection on an approved origin can act with the user's
+  session until the user notices.
 - Masking is heuristic — it can miss a novel secret format or over-mask benign
   data.
 - `page_snapshot_precise` briefly attaches the debugger (infobar flash).

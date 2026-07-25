@@ -21,7 +21,7 @@ At the same time, many frontend frameworks (Auth0/NextAuth/Firebase) store token
 | Scope | **Read-only** — `cookie_get` + `storage_get`; **no** cookie_set/cookie_remove/storage_set |
 | Confirmation | Silent execution (same as page_snapshot/page_text), no Toast popup |
 | host constraints | Reuses the existing allowlist; Cookies are naturally constrained by host_permissions, storage is constrained by same-origin |
-| Output redaction | Reuses the `maskSensitive` from [ADR-0008](./0008-page-eval-confirmation-channel.md) (JWT/long hex/long numbers/sensitive keys) |
+| Output redaction | Reuses the shared `maskSensitive` redaction (JWT/long hex/long numbers/sensitive keys) |
 | httpOnly | Reads include httpOnly Cookies (the core value) |
 
 ## Key Research Findings (the facts that drove the design)
@@ -105,6 +105,6 @@ Reading covers 90% of scenarios (grabbing the login state for use elsewhere), wh
 ## Relationship to Other ADRs
 
 - **Reuses [ADR-0004](./0004-allowlist-with-optional-host-permissions.md)**: the allowlist is the site-level first line of defense; Cookie/Storage is automatically constrained by it
-- **Reuses [ADR-0008](./0008-page-eval-confirmation-channel.md)**: the `maskSensitive` redaction function, with a pattern library for JWT/hex/numbers/sensitive keys
-- **Differs from [ADR-0008](./0008-page-eval-confirmation-channel.md)**: eval is execution (requires high-risk confirmation), while Cookie/Storage is read-only (silent). Both use redaction, but the confirmation strength differs
+- **Shared redaction**: the `maskSensitive` redaction function, with a pattern library for JWT/hex/numbers/sensitive keys, is shared with `page_eval` results
+- **Read-only and silent**: Cookie/Storage reads are read-only and silent (like page_text/page_snapshot); results are always redacted
 - **Complements the capability boundary of [ADR-0003](./0003-content-script-snapshot-vs-chrome-debugger.md)**: content scripts read localStorage (same-origin), and chrome.debugger can also read it but is too heavy; a content script suffices here

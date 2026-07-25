@@ -1,7 +1,6 @@
 // In-page informational toast: a non-blocking notice (e.g. "the debugger is
 // about to attach, the infobar will flash briefly"). It auto-proceeds after a
-// short timeout unless the user presses Cancel. The interactive confirmation
-// toasts (high-risk click / page_eval) were removed in ADR-0020.
+// short timeout unless the user presses Cancel.
 
 export function showInfoToast(message: string) {
   return new Promise((resolve) => {

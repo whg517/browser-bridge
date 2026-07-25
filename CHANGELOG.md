@@ -7,15 +7,14 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Removed
-- **Interactive per-action confirmations**
-  ([ADR-0020](docs/adr/0020-remove-interactive-confirmations.md)). High-risk clicks
+- **Interactive per-action confirmations**. High-risk clicks
   (submit buttons / links), `page_eval`, and `tab_close` no longer show an in-page
   confirmation prompt — they run directly. The security boundary is now the standing
   controls: the per-site allowlist, the `page_eval` kill switch, `page_eval` result
   masking, and per-tool enable/disable. Six settings are retired
   (`confirmHighRiskClick`, `confirmPageEval`, `confirmTabClose`, `confirmGraceMs`,
   `clickToastTimeoutMs`, `evalToastTimeoutMs`), and `tab_close` is no longer limited
-  to http(s) tabs. Supersedes ADR-0006 and the confirmation half of ADR-0008.
+  to http(s) tabs.
 
 ### Changed
 - **Tab grouping is now unconditional.** The `groupTabs` toggle was removed —

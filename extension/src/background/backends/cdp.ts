@@ -119,8 +119,8 @@ export class CdpBackend implements PageBackend {
     return raw;
   }
 
-  // page_click runs directly — the high-risk-click confirmation was removed in
-  // ADR-0020; the per-site allowlist (checked in run()) is the remaining gate.
+  // page_click runs directly; the per-site allowlist (checked in run()) is the
+  // gate.
   private async click(session: CdpSession, args: OpArgs): Promise<unknown> {
     return await session.evaluate(doClick, [REF_ATTR, { ref: args.ref, selector: args.selector }]);
   }

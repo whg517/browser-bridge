@@ -40,24 +40,18 @@ An ADR (Architecture Decision Record) documents decisions where **there were mul
 | [0002](./adr/0002-three-process-architecture-localhost-tcp.md) | Three-process architecture + localhost TCP bridge | Accepted |
 | [0003](./adr/0003-content-script-snapshot-vs-chrome-debugger.md) | Snapshot via content script rather than chrome.debugger | Accepted |
 | [0004](./adr/0004-allowlist-with-optional-host-permissions.md) | Allowlist + optional host permissions granted on demand | Accepted |
-| [0005](./adr/0005-page-eval-disabled-by-default.md) | page_eval disabled by default | Superseded by #0008 |
-| [0006](./adr/0006-toast-confirmation-for-high-risk.md) | In-page toast + short-lived confirmation-free window for high-risk actions | Superseded by #0020 |
 | [0007](./adr/0007-mcp-protocol-version-2025-06-18.md) | Lock the MCP protocol version to 2025-06-18 | Accepted |
-| [0008](./adr/0008-page-eval-confirmation-channel.md) | page_eval high-risk confirmation channel | Superseded by #0020 (kill switch + masking retained) |
 | [0009](./adr/0009-page-snapshot-precise-debugger.md) | page_snapshot_precise uses chrome.debugger to obtain the authoritative a11y tree | Accepted |
 | [0010](./adr/0010-cookie-storage-readonly.md) | Read-only Cookie/Storage access | Accepted |
 | [0011](./adr/0011-options-page-for-settings.md) | Manage configuration through a dedicated Options page | Accepted |
 | [0017](./adr/0017-cdp-mode-all-ops.md) | CDP mode: all page operations can optionally go through chrome.debugger | Accepted |
 | [0018](./adr/0018-tab-workspace-group.md) | Group AI tabs into the "Browser Bridge" group (workspace) | Accepted |
 | [0019](./adr/0019-chrome-web-store-distribution.md) | Distribute via the Chrome Web Store (dual ID) | Accepted |
-| [0020](./adr/0020-remove-interactive-confirmations.md) | Remove interactive per-action confirmations (rely on the allowlist + kill switches) | Accepted |
 
 ## ADR Writing Conventions
 
 When adding a new ADR:
 - Filename: `NNNN-kebab-case-title.md`, numbered continuing from the highest value
-- Status: Accepted / Superseded by #NNNN / Deprecated
+- Status: Accepted / Deprecated
 - Required sections: Context, Decision, Alternatives Considered, Consequences
 - One decision per document, no mixing
-
-An overturned ADR is **not deleted**; change its status to `Superseded by #NNNN`, add a link, and preserve the history.

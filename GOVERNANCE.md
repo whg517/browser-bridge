@@ -57,8 +57,8 @@ masking, bridge auth, the lock file/secret, or widens `page_eval` (full list in
 ## Decisions: ADR vs RFC
 
 - **ADR** (`docs/adr/`) records a decision *already made* (why single-binary,
-  why localhost TCP, why a given confirmation UI). Status: Proposed / Accepted /
-  Superseded / Deprecated.
+  why localhost TCP, why read-only cookie access). Status: Proposed / Accepted /
+  Deprecated.
 - **RFC** (open a discussion/issue) is for proposing a *significant change*
   before building it — multi-client broker, a write capability, adopting Tokio,
   a new protocol version, Edge/Firefox support, enterprise policy. Flow:
