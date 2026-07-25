@@ -172,8 +172,11 @@ visible on my screen and uses my real accounts. Work carefully:
 - Never exfiltrate secrets. Cookie and storage reads come back masked; don't
   try to defeat that or forward credentials off-origin.
 - The allowlist is the gate. A new site needs me to click Allow in the Browser
-  Bridge popup; your call blocks until I approve and fails with "origin not
-  allowed by user" if I decline. Ask me to approve it — don't retry in a loop.
+  Bridge popup (its toolbar icon shows a red "!" badge). Your call waits for my
+  response: if I decline you get a "user denied…" error (stop and ask me why); if
+  I don't respond in time you get a "…timed out, retry…" error — on a timeout,
+  retry the call once so the prompt re-opens, then ask me to click Allow. Don't
+  retry in a tight loop.
 
 Then tell me what you can help with, or ask what I'd like to do in the browser.
 ```

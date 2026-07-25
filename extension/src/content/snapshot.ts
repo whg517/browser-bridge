@@ -33,6 +33,11 @@ export function snapshot() {
 
 function isInteractive(el: HTMLElement) {
   const tag = el.tagName.toLowerCase();
+  // Frames/embeds are natively focusable (tabIndex 0), so the catch-all below
+  // would flag a covering marketing iframe as clickable and collapse the whole
+  // snapshot to that one node (#79). They're a separate (usually cross-origin)
+  // document we can't act on from here anyway, so never treat them as targets.
+  if (tag === "iframe" || tag === "frame" || tag === "object" || tag === "embed") return false;
   if (INTERACTIVE_TAGS.has(tag)) return true;
   const role = el.getAttribute("role");
   if (role && INTERACTIVE_ROLES.has(role)) return true;

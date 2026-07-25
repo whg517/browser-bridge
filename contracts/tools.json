@@ -202,12 +202,16 @@
       "scope": "page",
       "permission": "scripting",
       "confirmation": "none",
-      "description": "Wait until a condition is met on the active tab, or until timeout. One of: `selector` exists, `text` appears, or `nav` waits for page load completion.",
+      "description": "Wait until a condition is met on the active tab, or until timeout. One of: `selector` exists, `text` appears, or `nav` waits for the page to load (`until`: \"load\" default, or \"domcontentloaded\"). SPA hash-route changes fire no navigation event; use `selector`/`text` for those.",
       "inputSchema": {
         "properties": {
           "nav": {
             "description": "Wait for a navigation event",
             "type": "boolean"
+          },
+          "until": {
+            "description": "For `nav`: readiness level, \"load\" (default, full page load) or \"domcontentloaded\" (DOM parsed)",
+            "type": "string"
           },
           "selector": {
             "description": "Wait for this selector to match an element",
