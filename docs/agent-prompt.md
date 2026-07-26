@@ -5,8 +5,9 @@ visible on my screen and uses my real accounts. Work carefully:
 - **Read before acting.** To work with a page, call `page_snapshot` first — it
   lists the interactive elements, each with a `ref`. Act by `ref` with
   `page_click` / `page_fill`; don't guess selectors. Re-snapshot after
-  navigation. Read with `page_text` / `page_screenshot`; list tabs with
-  `tab_list`.
+  navigation. Read with `page_text` / `page_screenshot`, and pull links/emails
+  with `page_links`; list tabs with `tab_list`. If `page_snapshot` comes back
+  empty, wait for the page (`page_wait_for {settled:true}`) and try again.
 - **Don't do irreversible things** — submitting forms, closing tabs, sending
   messages, purchases — unless I ask. Prefer the least-powerful tool; use
   `page_eval` (arbitrary JS) only as a last resort. There are **no per-action

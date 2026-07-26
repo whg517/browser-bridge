@@ -22,7 +22,7 @@ export const REF_ATTR = "data-zcb-ref";
 // A content-script-equivalent a11y-ish tree of interactive elements. Runs the
 // SAME DOM walk as content/snapshot.ts (not the CDP AX-tree — that is
 // page_snapshot_precise), so the `eN` refs match the content path.
-export function pageSnapshot(refAttr: string): {
+export async function pageSnapshot(refAttr: string): Promise<{
   refCount: number;
   nodes: Array<{
     ref: string;
@@ -33,7 +33,8 @@ export function pageSnapshot(refAttr: string): {
   }>;
   url: string;
   title: string;
-} {
+  note?: string;
+}> {
   function truncate(s: string, n: number): string {
     return s.length > n ? s.slice(0, n) + "…" : s;
   }
@@ -177,60 +178,135 @@ export function pageSnapshot(refAttr: string): {
     }
     return parts.join(" > ");
   }
-  // Stateless ref assignment: reuse an element's existing attribute (refs stay
-  // stable across snapshots because the attribute persists in the DOM) and
-  // advance past reused numbers so freshly-inserted elements never collide.
-  let refCounter = 0;
-  function assignRef(el: HTMLElement): string {
-    let ref = el.getAttribute(refAttr);
-    if (ref) {
-      const reused = parseInt(ref.slice(1), 10);
-      if (!Number.isNaN(reused) && reused > refCounter) refCounter = reused;
-    } else {
-      refCounter += 1;
-      ref = `e${refCounter}`;
-      el.setAttribute(refAttr, ref);
+  function walk() {
+    // Stateless ref assignment: reuse an element's existing attribute (refs stay
+    // stable across snapshots because the attribute persists in the DOM) and
+    // advance past reused numbers so freshly-inserted elements never collide.
+    let refCounter = 0;
+    function assignRef(el: HTMLElement): string {
+      let ref = el.getAttribute(refAttr);
+      if (ref) {
+        const reused = parseInt(ref.slice(1), 10);
+        if (!Number.isNaN(reused) && reused > refCounter) refCounter = reused;
+      } else {
+        refCounter += 1;
+        ref = `e${refCounter}`;
+        el.setAttribute(refAttr, ref);
+      }
+      return ref;
     }
-    return ref;
+
+    const out: Array<{
+      ref: string;
+      role: string;
+      name: string;
+      selector: string;
+      value: string | undefined;
+    }> = [];
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT, {
+      acceptNode: (el) =>
+        isInteractive(el as HTMLElement) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP,
+    });
+    let node: Node | null;
+    while ((node = walker.nextNode())) {
+      const el = node as HTMLElement;
+      if (!isVisible(el)) continue;
+      const ref = assignRef(el);
+      out.push({
+        ref,
+        role: roleOf(el),
+        name: nameOf(el),
+        selector: cssSelectorOf(el),
+        value: previewValue(el),
+      });
+    }
+    return { refCount: out.length, nodes: out, url: location.href, title: document.title };
   }
 
-  const out: Array<{
-    ref: string;
-    role: string;
-    name: string;
-    selector: string;
-    value: string | undefined;
-  }> = [];
-  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT, {
-    acceptNode: (el) =>
-      isInteractive(el as HTMLElement) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP,
-  });
-  let node: Node | null;
-  while ((node = walker.nextNode())) {
-    const el = node as HTMLElement;
-    if (!isVisible(el)) continue;
-    const ref = assignRef(el);
-    out.push({
-      ref,
-      role: roleOf(el),
-      name: nameOf(el),
-      selector: cssSelectorOf(el),
-      value: previewValue(el),
-    });
+  // Mirror content/snapshot.ts: lazy / heavy-JS pages often haven't mounted
+  // their interactive DOM yet, so settle briefly and retry when the walk is
+  // empty; annotate a persistently-empty result so the agent knows why (#88).
+  let result = walk();
+  for (let i = 0; result.refCount === 0 && i < 4; i++) {
+    await new Promise((r) => setTimeout(r, 300));
+    result = walk();
   }
-  return { refCount: out.length, nodes: out, url: location.href, title: document.title };
+  if (result.refCount === 0) {
+    return {
+      ...result,
+      note: "No interactive elements found — the page may still be loading, or its content lives in an iframe / shadow DOM. Try page_wait_for {settled:true} (or {selector}) then snapshot again, or page_snapshot_precise for shadow-DOM / complex ARIA.",
+    };
+  }
+  return result;
 }
 
 // --- page_text -------------------------------------------------------------
-export function pageText(): { text: string; url: string } {
+export function pageText(args: { mode?: string }): { text: string; url: string; mode: string } {
   function truncate(s: string, n: number): string {
     return s.length > n ? s.slice(0, n) + "…" : s;
   }
-  // Live innerText reflects rendered content only: excludes script/style,
-  // hidden/aria-hidden subtrees, and unopened <select> option lists. Reading a
-  // detached clone degraded to textContent and leaked all of that (#79).
-  const txt = (document.body?.innerText || "").replace(/\b\d{12,19}\b/g, "••••••");
-  return { text: truncate(txt, 20000), url: location.href };
+  // "full": clone the body, drop script/style/noscript/template, read
+  // textContent — keeps hidden / inactive-tab text that innerText drops (#88).
+  function fullText(): string {
+    const clone = document.body?.cloneNode(true) as HTMLElement | null;
+    if (!clone) return "";
+    clone.querySelectorAll("script,style,noscript,template").forEach((n) => n.remove());
+    return (clone.textContent || "")
+      .replace(/[^\S\n]+/g, " ")
+      .replace(/\s*\n\s*/g, "\n")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+  }
+  // "visible" (default): live innerText reflects rendered content only —
+  // excludes script/style, hidden/aria-hidden subtrees, and unopened <select>
+  // option lists. Reading a detached clone degraded to textContent and leaked
+  // all of that (#79).
+  const full = args && args.mode === "full";
+  const raw = full ? fullText() : document.body?.innerText || "";
+  const txt = raw.replace(/\b\d{12,19}\b/g, "••••••");
+  return { text: truncate(txt, 20000), url: location.href, mode: full ? "full" : "visible" };
+}
+
+// --- page_links ------------------------------------------------------------
+// Returns RAW hrefs; the SW masks them with the credential-pattern catalogue
+// (mirrors the storage_get raw/mask split). Every <a href> as {text, href,
+// type}; optional `filter` narrows to one type.
+export function pageLinks(filter: string | undefined): {
+  links: Array<{ text: string; href: string; type: string }>;
+  count: number;
+  url: string;
+} {
+  function truncate(s: string, n: number): string {
+    return s.length > n ? s.slice(0, n) + "…" : s;
+  }
+  const origin = location.origin;
+  const out: Array<{ text: string; href: string; type: string }> = [];
+  const seen = new Set<string>();
+  const anchors = Array.from(document.querySelectorAll("a[href]")) as HTMLAnchorElement[];
+  for (const a of anchors) {
+    const href = a.href;
+    if (!href) continue;
+    const rawHref = (a.getAttribute("href") || "").trim();
+    let type: string;
+    if (/^mailto:/i.test(rawHref)) type = "mailto";
+    else if (/^tel:/i.test(rawHref)) type = "tel";
+    else if (rawHref.startsWith("#")) type = "anchor";
+    // Same-origin (any scheme, so a relative link matches even under file://) is
+    // internal; other http(s) is external; everything else is an anchor.
+    else if (a.origin === origin) type = "internal";
+    else if (/^https?:/i.test(href)) type = "external";
+    else type = "anchor";
+    if (filter && type !== filter) continue;
+    const key = type + " " + href;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const label = (a.textContent || a.getAttribute("aria-label") || a.title || "")
+      .replace(/\s+/g, " ")
+      .trim();
+    out.push({ text: truncate(label, 120), href, type });
+    if (out.length >= 500) break;
+  }
+  return { links: out, count: out.length, url: location.href };
 }
 
 // --- page_scroll -----------------------------------------------------------
@@ -270,12 +346,17 @@ export function pageWaitFor(args: {
   text?: string;
   timeoutMs?: number;
   until?: string;
+  minCount?: number;
+  settled?: boolean;
 }): Promise<unknown> {
   const timeoutMs = args.timeoutMs ?? 30000;
   const until = args.until === "domcontentloaded" ? "domcontentloaded" : "load";
+  const minCount = args.minCount && args.minCount > 0 ? args.minCount : 1;
   const start = Date.now();
   return new Promise((resolve, reject) => {
     let done = false;
+    let observer: MutationObserver | null = null;
+    let quietTimer: ReturnType<typeof setTimeout> | undefined;
     const navResult = () => ({
       matched: true,
       nav: true,
@@ -288,6 +369,8 @@ export function pageWaitFor(args: {
       done = true;
       window.removeEventListener("load", onReady, true);
       document.removeEventListener("DOMContentLoaded", onReady, true);
+      if (observer) observer.disconnect();
+      clearTimeout(quietTimer);
       fn(value);
     };
     if (args.nav) {
@@ -299,11 +382,33 @@ export function pageWaitFor(args: {
         window.addEventListener("load", onReady, true);
       }
     }
+    // `settled`: resolve once the DOM stops mutating for a quiet window — the
+    // portable SPA/lazy-content signal when no selector/text/nav is known (#88).
+    if (args.settled) {
+      const QUIET_MS = 500;
+      const onSettled = () => finish(resolve, { matched: true, settled: true, url: location.href });
+      observer = new MutationObserver(() => {
+        clearTimeout(quietTimer);
+        quietTimer = setTimeout(onSettled, QUIET_MS);
+      });
+      observer.observe(document.documentElement, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        characterData: true,
+      });
+      quietTimer = setTimeout(onSettled, QUIET_MS);
+    }
     const tick = () => {
       if (done) return;
       if (args.selector) {
-        if (document.querySelector(args.selector)) {
-          return finish(resolve, { matched: true, selector: args.selector });
+        const matches = document.querySelectorAll(args.selector);
+        if (matches.length >= minCount) {
+          return finish(resolve, {
+            matched: true,
+            selector: args.selector,
+            count: matches.length,
+          });
         }
       }
       if (args.text) {

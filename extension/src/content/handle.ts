@@ -2,7 +2,7 @@
 
 import type { ContentMsg } from "../shared/types";
 import { snapshot } from "./snapshot";
-import { click, fill, text, screenshot, scroll } from "./actions";
+import { click, fill, text, links, screenshot, scroll } from "./actions";
 import { waitFor } from "./wait";
 import { runEval } from "./eval";
 import { storageGet } from "./storage";
@@ -14,13 +14,15 @@ export async function handle(msg: ContentMsg) {
     case "ping":
       return { pong: true };
     case "page_snapshot":
-      return snapshot();
+      return await snapshot();
     case "page_click":
       return await click(args);
     case "page_fill":
       return await fill(args);
     case "page_text":
-      return text();
+      return text(args);
+    case "page_links":
+      return links(args);
     case "page_screenshot":
       return await screenshot();
     case "page_scroll":

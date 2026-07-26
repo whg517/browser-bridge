@@ -19,7 +19,8 @@ export const TOOLS: ToolInfo[] = [
   { op: "page_snapshot", desc: "Snapshot interactive elements" },
   { op: "page_click", desc: "Click an element" },
   { op: "page_fill", desc: "Fill a form field" },
-  { op: "page_text", desc: "Read visible page text" },
+  { op: "page_text", desc: "Read page text" },
+  { op: "page_links", desc: "Extract links (mailto/tel/href)" },
   { op: "page_screenshot", desc: "Capture the viewport" },
   { op: "page_scroll", desc: "Scroll the page" },
   { op: "page_wait_for", desc: "Wait for a condition" },
@@ -95,6 +96,12 @@ export const TOOL_META: Record<string, ToolMeta> = {
     permission: "scripting",
     confirmation: "none",
   },
+  page_links: {
+    risk: "medium",
+    scope: "page",
+    permission: "scripting",
+    confirmation: "none",
+  },
   page_screenshot: {
     risk: "medium",
     scope: "page",
@@ -153,12 +160,21 @@ export type BridgeCommand =
   | { op: "page_snapshot"; args: Record<string, never> }
   | { op: "page_click"; args: { ref?: string; selector?: string } }
   | { op: "page_fill"; args: { ref?: string; selector?: string; value: string } }
-  | { op: "page_text"; args: Record<string, never> }
+  | { op: "page_text"; args: { mode?: string } }
+  | { op: "page_links"; args: { type?: string } }
   | { op: "page_screenshot"; args: Record<string, never> }
   | { op: "page_scroll"; args: { direction?: string; pixels?: number } }
   | {
       op: "page_wait_for";
-      args: { nav?: boolean; until?: string; selector?: string; text?: string; timeoutMs?: number };
+      args: {
+        nav?: boolean;
+        until?: string;
+        selector?: string;
+        minCount?: number;
+        text?: string;
+        settled?: boolean;
+        timeoutMs?: number;
+      };
     }
   | { op: "page_eval"; args: { code: string } }
   | { op: "page_snapshot_precise"; args: { frameId?: string } }

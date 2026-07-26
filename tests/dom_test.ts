@@ -308,6 +308,10 @@ async function runAllTests(page: Page): Promise<void> {
   await test_click(page);
   await test_fill(page);
   await test_text(page);
+  await test_text_full_mode(page);
+  await test_page_links(page);
+  await test_wait_for_settled_and_count(page);
+  await test_snapshot_empty_note(page);
   await test_eval_masked(page);
   await test_eval_unmasked(page);
   await test_eval_error_and_serialize(page);
@@ -436,6 +440,82 @@ async function test_text(page: Page): Promise<void> {
   // The password field's real value "supersecret" must NOT appear.
   check(!resp.text.includes("supersecret"), "page_text masks password value");
   check(resp.text.includes("Test Fixture"), "page_text includes page heading");
+}
+
+// ── test: page_text mode "visible" vs "full" (hidden inactive-tab panels) ────
+async function test_text_full_mode(page: Page): Promise<void> {
+  console.log("\n[test] page_text — mode visible vs full (#88)");
+  await freshLoad(page);
+  const vis = await invoke(page, "page_text", {});
+  check(vis.mode === "visible", "default mode is visible");
+  check(
+    !vis.text.includes("Tokyo Distributor Contact"),
+    "visible mode excludes the display:none panel"
+  );
+  const full = await invoke(page, "page_text", { mode: "full" });
+  check(full.mode === "full", "mode:full is reported back");
+  check(
+    full.text.includes("Tokyo Distributor Contact"),
+    "full mode includes the hidden panel text"
+  );
+  check(!full.text.includes("supersecret"), "full mode still masks the password value");
+}
+
+// ── test: page_links extracts mailto/tel/href with types + filter ────────────
+async function test_page_links(page: Page): Promise<void> {
+  console.log("\n[test] page_links — mailto/tel/external/internal + filter (#88)");
+  await freshLoad(page);
+  const resp = await invoke(page, "page_links", {});
+  check(!resp.__error, "page_links returns without error");
+  const links = resp.links || [];
+  const mail = links.find((l: any) => l.type === "mailto");
+  check(!!mail && mail.href.includes("sales@example.com"), "surfaces the mailto address");
+  check(
+    links.some((l: any) => l.type === "tel"),
+    "surfaces the tel: link"
+  );
+  check(
+    links.some((l: any) => l.type === "external"),
+    "classifies an external link"
+  );
+  check(
+    links.some((l: any) => l.type === "internal"),
+    "classifies an internal link"
+  );
+  const only = await invoke(page, "page_links", { type: "mailto" });
+  check(
+    only.links.length >= 1 && only.links.every((l: any) => l.type === "mailto"),
+    "type filter returns only mailto links"
+  );
+}
+
+// ── test: page_wait_for `settled` + selector `minCount` ──────────────────────
+async function test_wait_for_settled_and_count(page: Page): Promise<void> {
+  console.log("\n[test] page_wait_for — settled + minCount (#88)");
+  await freshLoad(page);
+  const settled = await invoke(page, "page_wait_for", { settled: true, timeoutMs: 3000 });
+  check(settled.settled === true, "settled wait resolves on a quiet DOM");
+  const counted = await invoke(page, "page_wait_for", {
+    selector: "input",
+    minCount: 2,
+    timeoutMs: 2000,
+  });
+  check(
+    counted.matched === true && counted.count >= 2,
+    "selector + minCount resolves and reports the count"
+  );
+}
+
+// ── test: page_snapshot on an element-free page returns refCount:0 + note ─────
+async function test_snapshot_empty_note(page: Page): Promise<void> {
+  console.log("\n[test] page_snapshot — empty page returns a note (#88)");
+  await freshLoad(page, { fixture: "empty.html" });
+  const resp = await invoke(page, "page_snapshot", {}, 4000);
+  check(resp.refCount === 0, "element-free page yields refCount:0");
+  check(
+    typeof resp.note === "string" && resp.note.length > 0,
+    "empty snapshot includes an explanatory note"
+  );
 }
 
 /** Invoke a page_eval op. page_eval shows no confirmation, so this just runs

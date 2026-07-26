@@ -47,10 +47,29 @@ pub(super) fn build_page_scroll(args: &Value) -> Value {
     Value::Object(payload)
 }
 
+pub(super) fn build_page_text(args: &Value) -> Value {
+    let mut payload = serde_json::Map::new();
+    if let Some(m) = args.get("mode").and_then(|v| v.as_str()) {
+        payload.insert("mode".into(), json!(m));
+    }
+    Value::Object(payload)
+}
+
+pub(super) fn build_page_links(args: &Value) -> Value {
+    let mut payload = serde_json::Map::new();
+    if let Some(t) = args.get("type").and_then(|v| v.as_str()) {
+        payload.insert("type".into(), json!(t));
+    }
+    Value::Object(payload)
+}
+
 pub(super) fn build_page_wait_for(args: &Value) -> Value {
     let mut payload = serde_json::Map::new();
     if let Some(s) = args.get("selector").and_then(|v| v.as_str()) {
         payload.insert("selector".into(), json!(s));
+    }
+    if let Some(c) = args.get("minCount").and_then(|v| v.as_i64()) {
+        payload.insert("minCount".into(), json!(c));
     }
     if let Some(t) = args.get("text").and_then(|v| v.as_str()) {
         payload.insert("text".into(), json!(t));
@@ -60,6 +79,9 @@ pub(super) fn build_page_wait_for(args: &Value) -> Value {
     }
     if let Some(u) = args.get("until").and_then(|v| v.as_str()) {
         payload.insert("until".into(), json!(u));
+    }
+    if let Some(b) = args.get("settled").and_then(|v| v.as_bool()) {
+        payload.insert("settled".into(), json!(b));
     }
     payload.insert(
         "timeoutMs".into(),

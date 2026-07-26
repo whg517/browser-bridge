@@ -146,14 +146,38 @@
     },
     {
       "name": "page_text",
-      "uiLabel": "Read visible page text",
+      "uiLabel": "Read page text",
       "risk": "medium",
       "scope": "page",
       "permission": "scripting",
       "confirmation": "none",
-      "description": "Return the visible text content of the active tab (sensitive fields masked).",
+      "description": "Return the text content of the active tab (sensitive fields masked). `mode` \"visible\" (default) returns only rendered text — it excludes display:none / hidden inactive-tab panels; `mode` \"full\" also includes that hidden/inactive-tab text (script/style/noscript stripped). Use \"full\" when content is split across tabs/accordions.",
       "inputSchema": {
-        "properties": {},
+        "properties": {
+          "mode": {
+            "description": "\"visible\" (default, rendered text only) or \"full\" (include hidden / inactive-tab content)",
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "name": "page_links",
+      "uiLabel": "Extract links (mailto/tel/href)",
+      "risk": "medium",
+      "scope": "page",
+      "permission": "scripting",
+      "confirmation": "none",
+      "description": "Return the links on the active tab as an array of {text, href, type}, where type is one of mailto | tel | external | internal | anchor. Surfaces contact links (mailto:/tel:) and href targets that page_text only shows as anchor labels, and works even when page_snapshot is empty. hrefs are masked (token-like query strings redacted; emails / phone numbers preserved). Optional `type` filters to one kind; result is capped at 500.",
+      "inputSchema": {
+        "properties": {
+          "type": {
+            "description": "Optional filter: one of mailto | tel | external | internal | anchor",
+            "type": "string"
+          }
+        },
         "required": [],
         "type": "object"
       }
@@ -202,7 +226,7 @@
       "scope": "page",
       "permission": "scripting",
       "confirmation": "none",
-      "description": "Wait until a condition is met on the active tab, or until timeout. One of: `selector` exists, `text` appears, or `nav` waits for the page to load (`until`: \"load\" default, or \"domcontentloaded\"). SPA hash-route changes fire no navigation event; use `selector`/`text` for those.",
+      "description": "Wait until a condition is met on the active tab, or until timeout. One of: `selector` exists (optionally at least `minCount` matches), `text` appears, `nav` waits for the page to load (`until`: \"load\" default, or \"domcontentloaded\"), or `settled` waits for the DOM to stop mutating. SPA hash-route changes fire no navigation event — use `settled`, `selector`, or `text` for those.",
       "inputSchema": {
         "properties": {
           "nav": {
@@ -217,9 +241,17 @@
             "description": "Wait for this selector to match an element",
             "type": "string"
           },
+          "minCount": {
+            "description": "With `selector`: wait until at least this many elements match (default 1)",
+            "type": "integer"
+          },
           "text": {
             "description": "Wait for this text to appear in the page",
             "type": "string"
+          },
+          "settled": {
+            "description": "Wait until the DOM stops mutating for ~500ms (SPA/lazy-content friendly)",
+            "type": "boolean"
           },
           "timeoutMs": {
             "description": "Max wait in ms (default 30000)",

@@ -6,7 +6,7 @@
 
 import type { OpArgs } from "../../shared/types";
 import type { PageBackend } from "../page-backend";
-import { maskSensitive, maskString } from "../../shared/masking";
+import { maskSensitive, maskString, maskPatterns } from "../../shared/masking";
 import { truncate } from "../../content/util";
 import { ensureAllowed } from "../allowlist-store";
 import { isDebuggable, type CdpSession, type EvaluateResponse } from "../cdp/session";
@@ -15,6 +15,7 @@ import {
   REF_ATTR,
   pageSnapshot,
   pageText,
+  pageLinks,
   pageScroll,
   pageWaitFor,
   readStorage,
@@ -35,10 +36,14 @@ export class CdpBackend implements PageBackend {
 
     switch (op) {
       case "page_snapshot":
-        return await session.evaluate(pageSnapshot, [REF_ATTR]);
+        // Now async (settle+retry when empty), so await the page-side promise.
+        return await session.evaluate(pageSnapshot, [REF_ATTR], { awaitPromise: true });
 
       case "page_text":
-        return await session.evaluate(pageText, []);
+        return await session.evaluate(pageText, [{ mode: args.mode }]);
+
+      case "page_links":
+        return await this.pageLinks(session, args);
 
       case "page_scroll":
         return await session.evaluate(pageScroll, [
@@ -56,6 +61,8 @@ export class CdpBackend implements PageBackend {
                 text: args.text,
                 timeoutMs: args.timeoutMs,
                 until: args.until,
+                minCount: args.minCount,
+                settled: args.settled,
               },
             ],
             { awaitPromise: true }
@@ -117,6 +124,21 @@ export class CdpBackend implements PageBackend {
     }
     if (raw.found) return { ...raw, value: maskString(raw.value) };
     return raw;
+  }
+
+  // page_links: read raw hrefs in the page, mask them in the SW with the
+  // credential-pattern catalogue (tokens/JWT/long-hex redacted; emails/phones
+  // preserved), mirroring the content path's use of maskPatterns.
+  private async pageLinks(session: CdpSession, args: OpArgs): Promise<unknown> {
+    const raw = (await session.evaluate(pageLinks, [args.type])) as {
+      links: Array<{ text: string; href: string; type: string }>;
+      count: number;
+      url: string;
+    };
+    return {
+      ...raw,
+      links: raw.links.map((l) => ({ ...l, href: maskPatterns(l.href) })),
+    };
   }
 
   // page_click runs directly; the per-site allowlist (checked in run()) is the

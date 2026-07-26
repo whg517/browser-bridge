@@ -38,6 +38,15 @@
     <button id="ax-hidden-btn">Ax Hidden</button>
   </div>
 
+  <!-- Hidden tab panel — page_text mode:"full" must include this text,
+       mode:"visible" (default) must not (#88). -->
+  <div id="panel-asia" style="display:none">Tokyo Distributor Contact</div>
+
+  <!-- Contact links — page_links must surface these with their types (#88). -->
+  <a id="mail" href="mailto:sales@example.com">Email Sales</a>
+  <a id="phone" href="tel:+15551234567">Call Us</a>
+  <a id="ext" href="https://external.example.org/page">External Site</a>
+
   <!-- Click counting for verifying real DOM click triggers. -->
   <button id="plain-btn" onclick="window.__plainClicks = (window.__plainClicks||0)+1">Plain</button>
 
