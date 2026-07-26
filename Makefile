@@ -3,12 +3,14 @@
 # Every recipe is a plain command you can also run by hand (see docs/development.md).
 
 NPM := npm --prefix extension
+EXT_NM := extension/node_modules
 
 .DEFAULT_GOAL := help
 
-.PHONY: help build fmt fmt-check lint lint-scripts test-rust test-e2e \
-	ext-deps ext-build ext-typecheck ext-lint ext-format-check ext-test \
-	test-browser test-integration test ci install sync-version check-extension-id check-version release
+.PHONY: help build fmt fmt-check lint lint-scripts audit gen gen-check \
+	test-rust test-e2e ext-deps ext-build ext-typecheck ext-lint \
+	ext-format-check ext-test ext-package test-browser test-integration test ci \
+	install sync-version check-extension-id check-version release
 
 help: ## List available targets
 	@grep -hE '^[a-zA-Z0-9_-]+:.*## ' $(MAKEFILE_LIST) \
@@ -33,9 +35,13 @@ audit: ## Supply-chain checks (needs cargo-deny, cargo-audit)
 	cargo deny check
 	cargo audit
 
-gen: ## Regenerate code from contracts/ (ops.ts from tools.json)
+gen: $(EXT_NM) ## Regenerate code from contracts/ (ops.ts from tools.json)
 	node scripts/gen-ops.mjs
-	npm --prefix extension exec prettier -- --write extension/src/shared/ops.ts
+	$(NPM) exec prettier -- --write extension/src/shared/ops.ts
+
+gen-check: gen ## Regenerate and fail if ops.ts drifted from contracts/ (CI gate)
+	@git diff --exit-code -- extension/src/shared/ops.ts \
+		|| { echo "ops.ts is stale — commit the result of 'make gen'"; exit 1; }
 
 test-rust: ## Rust unit tests
 	cargo test
@@ -43,23 +49,40 @@ test-rust: ## Rust unit tests
 test-e2e: build ## Protocol-layer e2e tests (drives the real release binary)
 	python3 tests/e2e.py
 
-ext-deps: ## Install extension dev dependencies
+ext-deps: ## Install/update extension dev dependencies (npm install)
 	$(NPM) install
 
-ext-build: ## Build the extension bundle (src/ -> dist/)
+# Sentinel: install from the lockfile, and only when it changes. Extension
+# targets depend on this so they work from a clean checkout with no manual
+# ext-deps, without reinstalling on every run.
+$(EXT_NM): extension/package-lock.json
+	$(NPM) ci
+	@touch $@
+
+ext-build: $(EXT_NM) ## Build the extension bundle (src/ -> dist/)
 	$(NPM) run build
 
-ext-typecheck: ## Type-check the extension sources
+ext-typecheck: $(EXT_NM) ## Type-check the extension sources
 	$(NPM) run typecheck
 
-ext-lint: ## Lint the extension sources
+ext-lint: $(EXT_NM) ## Lint the extension sources
 	$(NPM) run lint
 
-ext-format-check: ## Verify extension formatting
+ext-format-check: $(EXT_NM) ## Verify extension formatting
 	$(NPM) run format:check
 
-ext-test: ## Unit-test the extension's shared modules (bun; no browser)
+ext-test: $(EXT_NM) ## Unit-test the extension's shared modules (bun; no browser)
 	$(NPM) test
+
+ext-package: ext-build ## Zip the built extension: load-unpacked + store zips (-> dist-artifacts/)
+	@mkdir -p dist-artifacts
+	@rm -f dist-artifacts/browser-bridge-extension.zip dist-artifacts/browser-bridge-extension-store.zip
+	(cd extension/dist && zip -qrX "$(CURDIR)/dist-artifacts/browser-bridge-extension.zip" . -x ".*")
+	@rm -rf dist-artifacts/store-pkg && cp -r extension/dist dist-artifacts/store-pkg
+	node -e 'const fs=require("fs");const f="dist-artifacts/store-pkg/manifest.json";const m=JSON.parse(fs.readFileSync(f,"utf8"));delete m.key;fs.writeFileSync(f,JSON.stringify(m,null,2));'
+	(cd dist-artifacts/store-pkg && zip -qrX "$(CURDIR)/dist-artifacts/browser-bridge-extension-store.zip" . -x ".*")
+	@rm -rf dist-artifacts/store-pkg
+	@echo "packaged in dist-artifacts/:  browser-bridge-extension.zip (key KEPT — Load unpacked)  +  browser-bridge-extension-store.zip (key STRIPPED — Chrome Web Store)"
 
 test-browser: ext-build ## DOM + smoke tests (needs bun + Chrome; builds first)
 	cd tests && bun dom_test.ts
@@ -68,9 +91,9 @@ test-browser: ext-build ## DOM + smoke tests (needs bun + Chrome; builds first)
 test-integration: build ext-build ## Real E2E integration (opt-in; real binary + Chrome + extension)
 	BB_REAL_E2E=1 bun tests/integration_e2e.ts
 
-test: test-rust test-e2e ## All tests that run without a browser
+test: test-rust ext-test test-e2e ## All tests that run without a browser
 
-ci: fmt-check lint lint-scripts test-rust ext-typecheck ext-lint ext-format-check ext-test ext-build test-e2e ## Everything CI runs
+ci: fmt-check lint lint-scripts test-rust gen-check ext-typecheck ext-lint ext-format-check ext-test ext-build check-version check-extension-id test-e2e ## Local CI gates (all jobs except the browser + installer-smoke ones)
 
 install: ## Install locally (build + copy binary + host manifest)
 	./install/install.sh
@@ -84,5 +107,5 @@ check-version: ## Verify the crate and extension versions agree
 check-extension-id: ## Verify the manifest key and installer extension IDs agree
 	node scripts/check-extension-id.mjs
 
-release: check-version check-extension-id ci ## Pre-release gate: versions consistent + full CI green
+release: ci ## Pre-release gate: full local CI green (versions + IDs included)
 	@echo "Release checks passed. Now tag the release, e.g.: git tag v$$(./scripts/check-version.sh | awk '/Cargo.toml/{print $$2}')"
