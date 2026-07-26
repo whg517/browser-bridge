@@ -291,8 +291,10 @@ export function pageLinks(filter: string | undefined): {
     if (/^mailto:/i.test(rawHref)) type = "mailto";
     else if (/^tel:/i.test(rawHref)) type = "tel";
     else if (rawHref.startsWith("#")) type = "anchor";
-    else if (/^https?:/i.test(href))
-      type = href === origin || href.startsWith(origin + "/") ? "internal" : "external";
+    // Same-origin (any scheme, so a relative link matches even under file://) is
+    // internal; other http(s) is external; everything else is an anchor.
+    else if (a.origin === origin) type = "internal";
+    else if (/^https?:/i.test(href)) type = "external";
     else type = "anchor";
     if (filter && type !== filter) continue;
     const key = type + " " + href;
