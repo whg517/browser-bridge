@@ -20,8 +20,8 @@ is marked as a prerelease.
 
 ## Build matrix and prebuilt tarball
 
-release.yml builds across a matrix (currently `macos-14/arm64` and `ubuntu-22.04/x64`; Intel macOS is
-**intentionally omitted** due to the scarcity of hosted runners, and Linux uses an older glibc baseline to broaden compatibility). For each target:
+release.yml builds across a matrix (currently `macos-26/arm64`, `ubuntu-24.04/x64`, and `windows-2025/x64`; Intel macOS is
+**intentionally omitted** due to the scarcity of hosted runners — Intel users run the arm64 build under Rosetta 2 or build from source). The prebuilt Linux binary's glibc floor is set by the symbols it references (~2.34, the pthread-merge point) and **not** by the builder image, so it runs on glibc ≥ 2.34 (RHEL 9, Debian 12, Ubuntu 22.04+); hosts older than that build from source. For each target:
 
 1. `cargo build --release` produces the binary.
 2. `npm ci && npm run build` produces the extension bundle (`extension/dist/`).
