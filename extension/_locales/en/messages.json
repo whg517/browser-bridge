@@ -1,0 +1,85 @@
+{
+  "app_desc": {
+    "message": "Let an MCP client (Claude Code, Codex, …) operate your real Chrome — your tabs and logins. You approve new sites and risky actions."
+  },
+
+  "opt_title": { "message": "Browser Bridge Settings" },
+  "opt_subtitle": {
+    "message": "All changes are saved instantly. Adjust security-related switches with care."
+  },
+  "opt_language": { "message": "Language" },
+  "lang_auto": { "message": "Auto (follow browser)" },
+
+  "opt_exec_mode": { "message": "Execution mode" },
+  "opt_cdp_title": {
+    "message": "Route all page operations through CDP (chrome.debugger)"
+  },
+  "opt_cdp_desc": {
+    "message": "When enabled, all page operations use CDP (chrome.debugger) instead of injecting content scripts; this allows page_eval to run on strict-CSP sites (such as Bing). Disabled by default (ADR-0017)."
+  },
+  "opt_cdp_warn": {
+    "message": "⚠ When enabled, Chrome persistently displays a \"Debugging this browser\" banner at the top (the debugger stays attached the whole time), and the access surface is larger. Only enable this when you need to bypass CSP or want unified deep control."
+  },
+
+  "opt_tools": { "message": "Tool enablement" },
+  "opt_tools_sub": {
+    "message": "For any unchecked tool, an AI call receives a \"tool disabled in settings\" error. Note: the AI can still see that the tool exists, but cannot execute it."
+  },
+
+  "opt_allowed": { "message": "Allowed sites (allowlist)" },
+  "opt_allowall_title": { "message": "Allow all sites (skip per-site approval)" },
+  "opt_allowall_desc": {
+    "message": "When enabled, the AI can operate on any http(s) site directly, without a per-site authorization prompt for each new site. Enabling it requests the \"<all_urls>\" host permission. Suitable when you trust the AI to browse fully automatically; otherwise it's recommended to keep this off and use the per-site allowlist below."
+  },
+  "opt_allowall_warn": {
+    "message": "⚠ When enabled, any site (including banking, email, and intranet sites) can be operated on without authorization. Use with care."
+  },
+  "opt_add_format": {
+    "message": "Format: <code>https://domain/*</code>. After adding manually, Chrome's host-permission prompt still needs to be approved on first visit to that site."
+  },
+  "btn_add": { "message": "Add" },
+
+  "btn_settings": { "message": "⚙ Settings" },
+  "status_checking": { "message": "checking…" },
+  "status_connected": { "message": "Connected to bridge" },
+  "status_disconnected": { "message": "Not connected (is your MCP client running?)" },
+  "popup_pending_lead": { "message": "A new site wants access:" },
+  "btn_deny": { "message": "Deny" },
+  "btn_allow": { "message": "Allow" },
+  "popup_allowed": { "message": "Allowed sites" },
+  "empty_no_sites": { "message": "No sites allowed yet." },
+  "btn_revoke": { "message": "Revoke" },
+  "btn_remove": { "message": "Remove" },
+
+  "toast_saved": { "message": "Saved" },
+  "toast_allurls_denied": { "message": "<all_urls> not granted; kept per-site approval" },
+  "toast_all_allowed": { "message": "All sites allowed" },
+  "toast_persite_restored": { "message": "Restored per-site approval" },
+  "toast_removed": { "message": "Removed" },
+  "toast_format_err": { "message": "Format should be https://domain/*" },
+  "toast_parse_err": { "message": "Failed to parse URL" },
+  "toast_added": { "message": "Added" },
+  "toast_add_failed": { "message": "Failed to add" },
+
+  "toast_precise_body": {
+    "message": "About to run a precise page scan — Chrome will show a 'Debugging' banner at the top that disappears automatically after the scan (about 1 second)."
+  },
+  "btn_cancel": { "message": "Cancel" },
+
+  "tool_tab_list": { "message": "List all tabs" },
+  "tool_tab_focus": { "message": "Switch to a tab" },
+  "tool_tab_open": { "message": "Open a new tab (allowlist required)" },
+  "tool_tab_close": { "message": "Close a tab" },
+  "tool_page_snapshot": { "message": "Snapshot interactive elements" },
+  "tool_page_click": { "message": "Click an element" },
+  "tool_page_fill": { "message": "Fill a form field" },
+  "tool_page_text": { "message": "Read page text" },
+  "tool_page_links": { "message": "Extract links (mailto/tel/href)" },
+  "tool_page_screenshot": { "message": "Capture the viewport" },
+  "tool_page_scroll": { "message": "Scroll the page" },
+  "tool_page_wait_for": { "message": "Wait for a condition" },
+  "tool_page_eval": { "message": "Execute arbitrary JS (high-risk)" },
+  "tool_page_snapshot_precise": { "message": "Precise snapshot (via debugger)" },
+  "tool_cookie_get": { "message": "Read cookies (redacted)" },
+  "tool_storage_get": { "message": "Read localStorage/sessionStorage (redacted)" }
+}

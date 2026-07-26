@@ -59,6 +59,7 @@ An ADR (Architecture Decision Record) documents decisions where **there were mul
 | [0017](./adr/0017-cdp-mode-all-ops.md) | CDP mode: all page operations can optionally go through chrome.debugger | Accepted |
 | [0018](./adr/0018-tab-workspace-group.md) | Group AI tabs into the "Browser Bridge" group (workspace) | Accepted |
 | [0019](./adr/0019-chrome-web-store-distribution.md) | Distribute via the Chrome Web Store (dual ID) | Accepted |
+| [0021](./adr/0021-extension-i18n.md) | Extension UI i18n (English + Simplified Chinese) via `_locales` + a runtime toggle | Accepted |
 
 ## ADR Writing Conventions
 
