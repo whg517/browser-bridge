@@ -6,6 +6,14 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- **SBOM attached to every release again.** The CycloneDX SBOM
+  (`browser-bridge.cdx.json`) is now produced by a `continue-on-error` job in
+  the release workflow instead of a standalone `release: published` workflow.
+  GitHub suppresses that event for releases created with the default
+  `GITHUB_TOKEN`, so no SBOM had shipped since v0.1.1; SBOMs for v0.2.0–v0.4.0
+  were backfilled.
+
 ## [0.4.0] - 2026-07-25
 
 Removes the interactive per-action confirmations and every confirmation /

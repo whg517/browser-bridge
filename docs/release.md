@@ -1,7 +1,7 @@
 # Release: tag-driven release pipeline
 
 > This document explains how browser-bridge is released: pushing a tag triggers prebuilt artifacts, checksums, a dual-mode install script,
-> and a decoupled SBOM workflow. For version discipline see [compatibility.md](./compatibility.md);
+> and an attached CycloneDX SBOM. For version discipline see [compatibility.md](./compatibility.md);
 > for installation artifact paths see [architecture.md §4.3](./architecture.md#43-installation-artifacts).
 
 ## Trigger: push a tag
@@ -45,17 +45,32 @@ Both modes register the Chrome native messaging host manifest (`allowed_origins`
 for details see [architecture.md §4.3](./architecture.md#43-installation-artifacts) and
 [operations.md](./operations.md). Windows uses `install.ps1` (see [ADR-0015](./adr/0015-windows-support.md)).
 
-## SBOM: decoupled CycloneDX workflow
+## SBOM: CycloneDX, attached after the binaries
 
-`.github/workflows/sbom.yml` is independent of release.yml and triggers on `release: published` (i.e. once the release
-**has already been created**):
+Each release attaches a CycloneDX Software Bill of Materials, `browser-bridge.cdx.json`, generated from the **committed
+lockfiles** (`Cargo.lock` + `extension/package-lock.json`) — `anchore/sbom-action` scans the declared dependencies rather
+than an installed tree (a fresh checkout has no `node_modules/target`). This is the `sbom` job in release.yml:
 
-- Uses `anchore/sbom-action` to generate, from the **committed lockfiles** (`Cargo.lock` + `extension/package-lock.json`),
-  CycloneDX JSON (`browser-bridge.cdx.json`), scanning the declared dependencies rather than the installed tree
-  (a fresh checkout has no `node_modules/target`).
-- Attaches the SBOM as an asset to the Release for the corresponding tag.
+- It `needs` the build matrix, so it starts **only after** the binaries have already been published — the binary release
+  never waits on SBOM tooling.
+- It is marked `continue-on-error`, so an `anchore/sbom-action` failure **never fails the release run**.
+- `softprops/action-gh-release` attaches the JSON to the Release for the tag.
 
-**Why decouple**: the SBOM workflow is separated from the binary release, so an SBOM-tooling failure **never blocks** the binary release.
+**Why in-pipeline, not a separate `release: published` workflow**: GitHub suppresses the `release: published` event for
+releases created with the default `GITHUB_TOKEN` (workflow-recursion prevention). release.yml creates the Release with
+`action-gh-release` + `GITHUB_TOKEN`, so that event never fired and the old standalone `sbom.yml` silently stopped
+producing SBOMs after v0.1.1. Running the SBOM as a `needs`-gated, `continue-on-error` job in the same workflow makes it
+deterministic while keeping the original decoupling intent — **an SBOM-tooling failure must never block the binary
+release**.
+
+**Manual backfill / re-attach**: `.github/workflows/sbom.yml` remains as a `workflow_dispatch`-only tool that (re)attaches
+an SBOM to an existing release:
+
+```bash
+gh workflow run sbom.yml -f tag=v0.4.0
+```
+
+It was used to backfill v0.2.0–v0.4.0, which shipped before the in-pipeline job existed.
 
 ## SemVer rules
 
