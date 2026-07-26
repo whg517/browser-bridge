@@ -9,9 +9,14 @@ export function waitFor(args: OpArgs) {
   // "domcontentloaded" (DOM parsed). domcontentloaded fixes nav waits that hung
   // on heavy pages that are usable long before `load` fires (#79).
   const until = args.until === "domcontentloaded" ? "domcontentloaded" : "load";
+  // With `selector`, resolve once at least this many match (default 1) — lets an
+  // agent wait for a list/grid to populate, not just its first row (#88).
+  const minCount = args.minCount && args.minCount > 0 ? args.minCount : 1;
   const start = Date.now();
   return new Promise((resolve, reject) => {
     let done = false;
+    let observer: MutationObserver | null = null;
+    let quietTimer: ReturnType<typeof setTimeout> | undefined;
     const navResult = () => ({
       matched: true,
       nav: true,
@@ -24,6 +29,8 @@ export function waitFor(args: OpArgs) {
       done = true;
       window.removeEventListener("load", onReady, true);
       document.removeEventListener("DOMContentLoaded", onReady, true);
+      if (observer) observer.disconnect();
+      clearTimeout(quietTimer);
       fn(value);
     };
     if (args.nav) {
@@ -35,11 +42,34 @@ export function waitFor(args: OpArgs) {
         window.addEventListener("load", onReady, true);
       }
     }
+    // `settled`: resolve once the DOM stops mutating for a quiet window. The
+    // portable SPA/lazy-content signal when no selector/text/nav is known — a
+    // hash route fires no navigation but does mutate the DOM (#88).
+    if (args.settled) {
+      const QUIET_MS = 500;
+      const onSettled = () => finish(resolve, { matched: true, settled: true, url: location.href });
+      observer = new MutationObserver(() => {
+        clearTimeout(quietTimer);
+        quietTimer = setTimeout(onSettled, QUIET_MS);
+      });
+      observer.observe(document.documentElement, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        characterData: true,
+      });
+      quietTimer = setTimeout(onSettled, QUIET_MS); // resolve if already quiet
+    }
     const tick = () => {
       if (done) return;
       if (args.selector) {
-        if (document.querySelector(args.selector)) {
-          return finish(resolve, { matched: true, selector: args.selector });
+        const matches = document.querySelectorAll(args.selector);
+        if (matches.length >= minCount) {
+          return finish(resolve, {
+            matched: true,
+            selector: args.selector,
+            count: matches.length,
+          });
         }
       }
       if (args.text) {

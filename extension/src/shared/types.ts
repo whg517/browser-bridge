@@ -50,6 +50,12 @@ export interface OpArgs {
   nav?: boolean;
   // readiness level for nav; normalized at runtime (anything != "domcontentloaded" → "load")
   until?: string;
+  // page_wait_for: with `selector`, resolve once this many match (default 1)
+  minCount?: number;
+  // page_wait_for: resolve when the DOM stops mutating for ~500ms (SPA-friendly)
+  settled?: boolean;
+  // page_text: "visible" (default, rendered only) | "full" (include hidden/inactive-tab text)
+  mode?: string;
   type?: string;
   key?: string;
   message?: string;

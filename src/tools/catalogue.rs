@@ -75,8 +75,28 @@ pub fn all() -> Vec<Tool> {
         Tool {
             name: "page_text",
             description:
-                "Return the visible text content of the active tab (sensitive fields masked).",
-            input_schema: schema(&[], &[]),
+                "Return the text content of the active tab (sensitive fields masked). `mode` \"visible\" (default) returns only rendered text — it excludes display:none / hidden inactive-tab panels; `mode` \"full\" also includes that hidden/inactive-tab text (script/style/noscript stripped). Use \"full\" when content is split across tabs/accordions.",
+            input_schema: schema(
+                &[],
+                &[(
+                    "mode",
+                    "string",
+                    "\"visible\" (default, rendered text only) or \"full\" (include hidden / inactive-tab content)",
+                )],
+            ),
+        },
+        Tool {
+            name: "page_links",
+            description:
+                "Return the links on the active tab as an array of {text, href, type}, where type is one of mailto | tel | external | internal | anchor. Surfaces contact links (mailto:/tel:) and href targets that page_text only shows as anchor labels, and works even when page_snapshot is empty. hrefs are masked (token-like query strings redacted; emails / phone numbers preserved). Optional `type` filters to one kind; result is capped at 500.",
+            input_schema: schema(
+                &[],
+                &[(
+                    "type",
+                    "string",
+                    "Optional filter: one of mailto | tel | external | internal | anchor",
+                )],
+            ),
         },
         Tool {
             name: "page_screenshot",
@@ -102,10 +122,7 @@ pub fn all() -> Vec<Tool> {
         Tool {
             name: "page_wait_for",
             description:
-                "Wait until a condition is met on the active tab, or until timeout. One of: \
-                 `selector` exists, `text` appears, or `nav` waits for the page to load \
-                 (`until`: \"load\" default, or \"domcontentloaded\"). SPA hash-route changes \
-                 fire no navigation event; use `selector`/`text` for those.",
+                "Wait until a condition is met on the active tab, or until timeout. One of: `selector` exists (optionally at least `minCount` matches), `text` appears, `nav` waits for the page to load (`until`: \"load\" default, or \"domcontentloaded\"), or `settled` waits for the DOM to stop mutating. SPA hash-route changes fire no navigation event — use `settled`, `selector`, or `text` for those.",
             input_schema: schema(
                 &[],
                 &[
@@ -114,12 +131,22 @@ pub fn all() -> Vec<Tool> {
                         "string",
                         "Wait for this selector to match an element",
                     ),
+                    (
+                        "minCount",
+                        "integer",
+                        "With `selector`: wait until at least this many elements match (default 1)",
+                    ),
                     ("text", "string", "Wait for this text to appear in the page"),
                     ("nav", "boolean", "Wait for a navigation event"),
                     (
                         "until",
                         "string",
                         "For `nav`: readiness level, \"load\" (default, full page load) or \"domcontentloaded\" (DOM parsed)",
+                    ),
+                    (
+                        "settled",
+                        "boolean",
+                        "Wait until the DOM stops mutating for ~500ms (SPA/lazy-content friendly)",
                     ),
                     ("timeoutMs", "integer", "Max wait in ms (default 30000)"),
                 ],
@@ -240,7 +267,7 @@ mod tests {
     #[test]
     fn tool_count_is_pinned() {
         // Bump deliberately when adding/removing a tool (keeps docs honest).
-        assert_eq!(all().len(), 15);
+        assert_eq!(all().len(), 16);
     }
 
     // contracts/tools.json is the single source of truth for the catalogue.

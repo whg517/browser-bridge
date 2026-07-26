@@ -25,9 +25,9 @@ use crate::session::Session;
 pub use catalogue::{all, Tool};
 
 use handlers::{
-    build_cookie_get, build_empty, build_page_eval, build_page_fill, build_page_scroll,
-    build_page_snapshot_precise, build_page_wait_for, build_storage_get, build_tab_close,
-    build_tab_focus, build_tab_open, call, ref_or_selector,
+    build_cookie_get, build_empty, build_page_eval, build_page_fill, build_page_links,
+    build_page_scroll, build_page_snapshot_precise, build_page_text, build_page_wait_for,
+    build_storage_get, build_tab_close, build_tab_focus, build_tab_open, call, ref_or_selector,
 };
 
 /// A registered tool handler. The bridge `op` name equals the tool `name`;
@@ -72,7 +72,11 @@ const HANDLERS: &[Handler] = &[
     },
     Handler {
         name: "page_text",
-        build_payload: build_empty,
+        build_payload: build_page_text,
+    },
+    Handler {
+        name: "page_links",
+        build_payload: build_page_links,
     },
     Handler {
         name: "page_screenshot",

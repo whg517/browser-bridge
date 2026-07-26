@@ -190,7 +190,7 @@ time, so pasting is only needed for a manual kickstart.
 
 ---
 
-## What you can do — 15 tools
+## What you can do — 16 tools
 
 Grouped from the single source of truth,
 [`contracts/tools.json`](./contracts/tools.json):
@@ -213,7 +213,8 @@ Grouped from the single source of truth,
 |------|------|------|
 | `page_snapshot` | Accessibility-style tree of interactive elements, each with a stable `ref` | low |
 | `page_snapshot_precise` | Authoritative a11y tree via `chrome.debugger` (shadow DOM / complex ARIA); refs use a `p` prefix | medium |
-| `page_text` | Visible page text (passwords & card-like numbers masked) | medium |
+| `page_text` | Page text — passwords & card-like numbers masked (`mode`: `visible` default, or `full` to include hidden/inactive-tab panels) | medium |
+| `page_links` | Every `<a href>` as `{text, href, type}` — surfaces `mailto:`/`tel:`/external/internal links (tokens masked, emails/phones kept) | medium |
 | `page_screenshot` | Visible viewport as a PNG | medium |
 
 ### Drive a page

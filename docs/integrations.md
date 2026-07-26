@@ -1,6 +1,6 @@
 # Integrating with Various AI Agents
 
-> After installing browser-bridge, how to let your Agent **discover** and **use** these 15 tools.
+> After installing browser-bridge, how to let your Agent **discover** and **use** these 16 tools.
 
 ## Core mechanism: register once, auto-discover
 
@@ -10,7 +10,7 @@ The mechanism boils down to two steps:
 1. **Let the Agent know it exists**: register browser-bridge as an MCP server (pointing at the installed
    binary by its **absolute path**, with **no arguments**).
 2. **The Agent auto-discovers capabilities**: it spawns this binary, runs `initialize` + `tools/list`, and all
-   15 tools show up together with their parameter schemas — **without you writing any wrapper**.
+   16 tools show up together with their parameter schemas — **without you writing any wrapper**.
 
 browser-bridge itself is already a compliant MCP stdio server, so **discovery needs no changes at all**; all you
 have to do is **register it once** in your Agent. The installer can auto-register Claude Code / Codex / OpenClaw
@@ -110,7 +110,7 @@ from langchain.agents import create_agent
 client = MultiServerMCPClient({
     "browser-bridge": {"command": "<BIN>", "args": [], "transport": "stdio"},
 })
-tools = await client.get_tools()          # runs initialize + tools/list, getting all 15 tools
+tools = await client.get_tools()          # runs initialize + tools/list, getting all 16 tools
 agent = create_agent("openai:gpt-4.1", tools)
 ```
 

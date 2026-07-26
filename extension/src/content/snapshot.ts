@@ -5,7 +5,26 @@
 import { truncate } from "./util";
 import { resetRefs, assignRef } from "./refs";
 
-export function snapshot() {
+export async function snapshot() {
+  let result = walkSnapshot();
+  // Lazy / heavy-JS pages often haven't mounted their interactive DOM by the
+  // time we're called, so the first walk sees refCount:0. Settle briefly and
+  // retry a few times before giving up — only the empty case pays this cost.
+  for (let i = 0; result.refCount === 0 && i < 4; i++) {
+    await new Promise((r) => setTimeout(r, 300));
+    result = walkSnapshot();
+  }
+  if (result.refCount === 0) {
+    // Distinguish "nothing actionable / not ready" from a healthy empty result.
+    return {
+      ...result,
+      note: "No interactive elements found — the page may still be loading, or its content lives in an iframe / shadow DOM. Try page_wait_for {settled:true} (or {selector}) then snapshot again, or page_snapshot_precise for shadow-DOM / complex ARIA.",
+    };
+  }
+  return result;
+}
+
+function walkSnapshot() {
   resetRefs();
 
   const out = [];

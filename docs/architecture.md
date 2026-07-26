@@ -128,7 +128,7 @@ interface BridgeResp {
 | `ipc.rs` | localhost TCP listener + lockfile in the user directory + hello authentication + secret from the system random source |
 | `native_host.rs` | `--native-host` mode: two threads (stdin→TCP, TCP→stdout), graceful exit on EOF |
 | `mcp_server.rs` | Default mode: TCP accept thread + stdin JSON-RPC main loop + message dispatch |
-| `tools/` | Schema definitions for 15 tools (`catalogue.rs`) + the `HANDLERS` registry (`{name, build_payload}` pure functions, `mod.rs`) + argument shaping (`handlers.rs`) → dispatch to session.call |
+| `tools/` | Schema definitions for 16 tools (`catalogue.rs`) + the `HANDLERS` registry (`{name, build_payload}` pure functions, `mod.rs`) + argument shaping (`handlers.rs`) → dispatch to session.call |
 | `session.rs` | Connection management + request/response pairing by id (an mpsc channel per id) + a per-connection generation id (fixes the writer-clobber race, drains to `Disconnected` on disconnect) + 120s timeout |
 | `error.rs` | Typed error `CallError` at the tool-call boundary (thiserror); Display is the model-visible text. See [ADR-0014](./adr/0014-leveled-logging.md) for details |
 | `log.rs` | A leveled stderr logger controlled by `BB_LOG` (error/warn/info/debug, default info) + `log_*!` macros. See [ADR-0014](./adr/0014-leveled-logging.md) for details |
