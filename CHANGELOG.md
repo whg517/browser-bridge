@@ -6,13 +6,44 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-07-27
+
+Additive over 0.4.0 — a link-extraction tool, richer page-reading options, and a
+localized (English + 简体中文) extension UI. No breaking changes.
+
+### Added
+- **`page_links` tool** — returns every `<a href>` on the active tab as
+  `{text, href, type}` (`mailto` / `tel` / `external` / `internal` / `anchor`),
+  surfacing contact links and href targets that `page_text` only shows as anchor
+  labels. Works even when `page_snapshot` is empty; hrefs are masked (tokens
+  redacted, emails/phones preserved). Tool count 15 → 16.
+- **`page_text` `mode`** — `"visible"` (default, unchanged) or `"full"`, which
+  also includes text behind `display:none` / inactive tab panels.
+- **`page_wait_for` `settled` + `minCount`** — `settled` resolves once the DOM
+  stops mutating (~500 ms; SPA / lazy-content friendly); `minCount` waits until
+  at least N elements match `selector`, not just the first.
+- **Extension UI internationalization (English + Simplified Chinese)** — the
+  popup, options page, and in-page toast are localized, with a Language override
+  (Auto / English / 中文) in the Options page. AI-facing text (the tool contract,
+  agent prompt) stays English ([ADR-0021](docs/adr/0021-extension-i18n.md)).
+
 ### Fixed
+- **`page_snapshot` no longer returns a bare empty tree on lazy / heavy-JS
+  pages** — it settles and retries when the first walk is empty, and a
+  persistently-empty result carries a `note` explaining likely causes (still
+  loading / iframe / shadow DOM) and suggesting `page_wait_for {settled}` or
+  `page_snapshot_precise`.
 - **SBOM attached to every release again.** The CycloneDX SBOM
   (`browser-bridge.cdx.json`) is now produced by a `continue-on-error` job in
   the release workflow instead of a standalone `release: published` workflow.
   GitHub suppresses that event for releases created with the default
   `GITHUB_TOKEN`, so no SBOM had shipped since v0.1.1; SBOMs for v0.2.0–v0.4.0
   were backfilled.
+
+### Changed
+- Release runner images bumped to `ubuntu-24.04` / `macos-26` / `windows-2025`.
+  The prebuilt Linux binary's glibc floor is set by the symbols it references
+  (~2.34), so it still runs on glibc ≥ 2.34 (RHEL 9, Debian 12, Ubuntu 22.04+).
 
 ## [0.4.0] - 2026-07-25
 
