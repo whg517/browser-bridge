@@ -35,8 +35,9 @@ export async function handle(msg: ContentMsg) {
       return storageGet(args);
     case "_info_toast":
       // Informational toast (e.g. "about to attach debugger, infobar will
-      // flash"). Returns true unless the user cancels.
-      return await showInfoToast(args.message || "");
+      // flash"). Returns true unless the user cancels. Strings are localized in
+      // the SW and passed through.
+      return await showInfoToast({ message: args.message || "", cancel: args.toastCancel });
     default:
       throw new Error(`content: unknown op ${op}`);
   }

@@ -13,6 +13,9 @@ export interface Settings {
   disabledTools: string[];
   allowAllSites: boolean;
   cdpMode: boolean;
+  // UI language for the extension's own surfaces: "auto" follows the browser,
+  // "en"/"zh_CN" force a language (see shared/i18n.ts).
+  language: "auto" | "en" | "zh_CN";
 }
 
 // A request from the native host, forwarded to the right tab's content script.
@@ -59,6 +62,9 @@ export interface OpArgs {
   type?: string;
   key?: string;
   message?: string;
+  // _info_toast: localized Cancel-button label (built in the SW; the toast runs
+  // in the page world where reading the language setting is awkward)
+  toastCancel?: string;
   // tab-level / cookie ops (service worker)
   tabId?: number;
   url?: string;

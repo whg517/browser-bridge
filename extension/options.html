@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Browser Bridge Settings</title>
+  <title data-i18n="opt_title">Browser Bridge Settings</title>
   <style>
     :root {
       --fg: #111827; --muted: #6b7280; --faint: #9ca3af;
@@ -110,42 +110,52 @@
 </head>
 <body>
   <header>
-    <h1>Browser Bridge Settings</h1>
-    <div class="sub">All changes are saved instantly. Adjust security-related switches with care.</div>
+    <h1 data-i18n="opt_title">Browser Bridge Settings</h1>
+    <div class="sub" data-i18n="opt_subtitle">All changes are saved instantly. Adjust security-related switches with care.</div>
   </header>
 
+  <!-- ===== Language ===== -->
+  <h2 data-i18n="opt_language">Language</h2>
+  <div class="sub">
+    <select id="language">
+      <option value="auto" data-i18n="lang_auto">Auto (follow browser)</option>
+      <option value="en">English</option>
+      <option value="zh_CN">中文</option>
+    </select>
+  </div>
+
   <!-- ===== Execution mode ===== -->
-  <h2>Execution mode</h2>
+  <h2 data-i18n="opt_exec_mode">Execution mode</h2>
   <div class="card" id="card-cdpMode">
     <input type="checkbox" id="cdpMode" />
     <div class="body">
-      <div class="title">Route all page operations through CDP (chrome.debugger)</div>
-      <div class="desc">When enabled, all page operations use CDP (chrome.debugger) instead of injecting content scripts; this allows page_eval to run on strict-CSP sites (such as Bing). Disabled by default (ADR-0017).</div>
-      <div class="warn" id="cdpMode-warn">⚠ When enabled, Chrome persistently displays a "Debugging this browser" banner at the top (the debugger stays attached the whole time), and the access surface is larger. Only enable this when you need to bypass CSP or want unified deep control.</div>
+      <div class="title" data-i18n="opt_cdp_title">Route all page operations through CDP (chrome.debugger)</div>
+      <div class="desc" data-i18n="opt_cdp_desc">When enabled, all page operations use CDP (chrome.debugger) instead of injecting content scripts; this allows page_eval to run on strict-CSP sites (such as Bing). Disabled by default (ADR-0017).</div>
+      <div class="warn" id="cdpMode-warn" data-i18n="opt_cdp_warn">⚠ When enabled, Chrome persistently displays a "Debugging this browser" banner at the top (the debugger stays attached the whole time), and the access surface is larger. Only enable this when you need to bypass CSP or want unified deep control.</div>
     </div>
   </div>
 
   <!-- ===== Tools ===== -->
-  <h2>Tool enablement</h2>
-  <div class="sub">For any unchecked tool, an AI call receives a "tool disabled in settings" error. Note: the AI can still see that the tool exists, but cannot execute it.</div>
+  <h2 data-i18n="opt_tools">Tool enablement</h2>
+  <div class="sub" data-i18n="opt_tools_sub">For any unchecked tool, an AI call receives a "tool disabled in settings" error. Note: the AI can still see that the tool exists, but cannot execute it.</div>
   <div class="tools" id="tools-grid"></div>
 
   <!-- ===== Allowed sites ===== -->
-  <h2>Allowed sites (allowlist)</h2>
+  <h2 data-i18n="opt_allowed">Allowed sites (allowlist)</h2>
 
   <div class="card" id="card-allowAllSites">
     <input type="checkbox" id="allowAllSites" />
     <div class="body">
-      <div class="title">Allow all sites (skip per-site approval)</div>
-      <div class="desc">When enabled, the AI can operate on any http(s) site directly, without a per-site authorization prompt for each new site. Enabling it requests the "&lt;all_urls&gt;" host permission. Suitable when you trust the AI to browse fully automatically; otherwise it's recommended to keep this off and use the per-site allowlist below.</div>
-      <div class="warn" id="allowAllSites-warn" style="display:none">⚠ When enabled, any site (including banking, email, and intranet sites) can be operated on without authorization. Use with care.</div>
+      <div class="title" data-i18n="opt_allowall_title">Allow all sites (skip per-site approval)</div>
+      <div class="desc" data-i18n="opt_allowall_desc">When enabled, the AI can operate on any http(s) site directly, without a per-site authorization prompt for each new site. Enabling it requests the "&lt;all_urls&gt;" host permission. Suitable when you trust the AI to browse fully automatically; otherwise it's recommended to keep this off and use the per-site allowlist below.</div>
+      <div class="warn" id="allowAllSites-warn" style="display:none" data-i18n="opt_allowall_warn">⚠ When enabled, any site (including banking, email, and intranet sites) can be operated on without authorization. Use with care.</div>
     </div>
   </div>
 
-  <div class="sub">Format: <code>https://domain/*</code>. After adding manually, Chrome's host-permission prompt still needs to be approved on first visit to that site.</div>
+  <div class="sub" data-i18n-html="opt_add_format">Format: <code>https://domain/*</code>. After adding manually, Chrome's host-permission prompt still needs to be approved on first visit to that site.</div>
   <div class="add-row">
     <input type="text" id="new-site" placeholder="https://example.com/*" />
-    <button class="primary" id="add-site">Add</button>
+    <button class="primary" id="add-site" data-i18n="btn_add">Add</button>
   </div>
   <div class="list" id="site-list"></div>
 

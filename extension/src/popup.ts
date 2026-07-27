@@ -6,6 +6,8 @@
 //      this must happen in the popup (a user-gesture context), since service
 //      workers cannot request permissions.
 
+import { t, applyI18n, initI18n } from "./shared/i18n";
+
 function $<T extends HTMLElement = HTMLElement>(id: string): T {
   return document.getElementById(id) as T;
 }
@@ -15,8 +17,8 @@ async function refreshStatus() {
   const dot = $("dot");
   dot.className = "dot " + (status?.nativeConnected ? "ok" : "bad");
   $("status-text").textContent = status?.nativeConnected
-    ? "Connected to bridge"
-    : "Not connected (is your MCP client running?)";
+    ? t("status_connected")
+    : t("status_disconnected");
 }
 
 async function refreshList() {
@@ -27,7 +29,7 @@ async function refreshList() {
     .map(
       (g) =>
         `<div class="item"><code>${escapeHtml(g)}</code>` +
-        `<button class="danger" data-glob="${escapeAttr(g)}">Revoke</button></div>`
+        `<button class="danger" data-glob="${escapeAttr(g)}">${escapeHtml(t("btn_revoke"))}</button></div>`
     )
     .join("");
   // Wire revoke buttons.
@@ -110,8 +112,13 @@ $("open-settings").addEventListener("click", () => {
   chrome.runtime.openOptionsPage();
 });
 
-refreshStatus();
-refreshList();
-refreshPending();
+(async function init() {
+  // Resolve the UI language and fill static [data-i18n] elements first.
+  await initI18n();
+  applyI18n();
+  refreshStatus();
+  refreshList();
+  refreshPending();
+})();
 
 export {};

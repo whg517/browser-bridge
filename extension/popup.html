@@ -80,24 +80,24 @@
   </style>
 </head>
 <body>
-  <h1>Browser Bridge <button id="open-settings">⚙ Settings</button></h1>
+  <h1>Browser Bridge <button id="open-settings" data-i18n="btn_settings">⚙ Settings</button></h1>
   <div class="status">
     <span id="dot" class="dot bad"></span>
-    <span id="status-text">checking…</span>
+    <span id="status-text" data-i18n="status_checking">checking…</span>
   </div>
 
   <div id="pending" class="pending" style="display:none">
-    <div class="lead">A new site wants access:</div>
+    <div class="lead" data-i18n="popup_pending_lead">A new site wants access:</div>
     <div class="glob" id="pending-glob"></div>
     <div class="row" style="margin-top:8px">
-      <button id="deny" class="danger">Deny</button>
-      <button id="allow" class="primary">Allow</button>
+      <button id="deny" class="danger" data-i18n="btn_deny">Deny</button>
+      <button id="allow" class="primary" data-i18n="btn_allow">Allow</button>
     </div>
   </div>
 
-  <div class="section-title">Allowed sites</div>
+  <div class="section-title" data-i18n="popup_allowed">Allowed sites</div>
   <div id="list" class="list"></div>
-  <div id="empty" class="empty">No sites allowed yet.</div>
+  <div id="empty" class="empty" data-i18n="empty_no_sites">No sites allowed yet.</div>
 
   <script src="popup.js"></script>
 </body>

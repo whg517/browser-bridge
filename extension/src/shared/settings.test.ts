@@ -4,11 +4,12 @@ import { DEFAULTS, getSetting } from "./settings";
 describe("DEFAULTS", () => {
   test("has the expected keys and values", () => {
     expect(Object.keys(DEFAULTS).sort()).toEqual(
-      ["allowAllSites", "cdpMode", "disabledTools"].sort()
+      ["allowAllSites", "cdpMode", "disabledTools", "language"].sort()
     );
     expect(DEFAULTS.disabledTools).toEqual([]);
     expect(DEFAULTS.allowAllSites).toBe(false);
     expect(DEFAULTS.cdpMode).toBe(false);
+    expect(DEFAULTS.language).toBe("auto");
   });
 });
 

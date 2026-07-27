@@ -7,6 +7,7 @@
 import type { Settings } from "./shared/types";
 import { DEFAULTS } from "./shared/settings";
 import { TOOLS } from "./shared/ops";
+import { t, applyI18n, initI18n } from "./shared/i18n";
 
 // Elements are declared in options.html; `$` asserts presence (the page owns
 // its own DOM). Pass a subtype when you need element-specific fields.
@@ -24,7 +25,7 @@ async function loadSettings(): Promise<Settings> {
 
 async function saveSetting(key: string, value: unknown) {
   await chrome.storage.local.set({ [key]: value });
-  flashToast("Saved");
+  flashToast(t("toast_saved"));
 }
 
 // ---- toast feedback -------------------------------------------------------
@@ -59,7 +60,7 @@ function wireAllowAllSites() {
       if (!granted) {
         // User declined the OS prompt → roll back.
         target.checked = false;
-        flashToast("<all_urls> not granted; kept per-site approval");
+        flashToast(t("toast_allurls_denied"));
         return;
       }
     } else {
@@ -69,7 +70,7 @@ function wireAllowAllSites() {
     if (warn) warn.style.display = checked ? "block" : "none";
     if (card) card.classList.toggle("danger", checked);
     await saveSetting("allowAllSites", checked);
-    flashToast(checked ? "All sites allowed" : "Restored per-site approval");
+    flashToast(checked ? t("toast_all_allowed") : t("toast_persite_restored"));
   });
 }
 
@@ -78,13 +79,18 @@ function wireAllowAllSites() {
 function renderToolsGrid(disabledTools: string[]) {
   const grid = $("tools-grid");
   const disabled = new Set(Array.isArray(disabledTools) ? disabledTools : []);
-  grid.innerHTML = TOOLS.map((t) => {
-    const checked = disabled.has(t.op) ? "" : "checked";
+  grid.innerHTML = TOOLS.map((tool) => {
+    const checked = disabled.has(tool.op) ? "" : "checked";
+    // Localized label (tool_<op>); fall back to the English contract label if a
+    // key is ever missing (the i18n parity test guards against that).
+    const key = "tool_" + tool.op;
+    const localized = t(key);
+    const label = localized === key ? tool.desc : localized;
     return (
       `<label class="tool">` +
-      `<input type="checkbox" data-op="${escapeAttr(t.op)}" ${checked} />` +
-      `<div><div class="name">${escapeHtml(t.op)}</div>` +
-      `<div class="tdesc">${escapeHtml(t.desc)}</div></div>` +
+      `<input type="checkbox" data-op="${escapeAttr(tool.op)}" ${checked} />` +
+      `<div><div class="name">${escapeHtml(tool.op)}</div>` +
+      `<div class="tdesc">${escapeHtml(label)}</div></div>` +
       `</label>`
     );
   }).join("");
@@ -107,14 +113,14 @@ async function refreshAllowlist() {
   const list = (resp?.list as string[]) || [];
   const box = $("site-list");
   if (list.length === 0) {
-    box.innerHTML = `<div class="empty">No sites allowed yet.</div>`;
+    box.innerHTML = `<div class="empty">${escapeHtml(t("empty_no_sites"))}</div>`;
     return;
   }
   box.innerHTML = list
     .map(
       (g) =>
         `<div class="item"><code>${escapeHtml(g)}</code>` +
-        `<button class="danger" data-glob="${escapeAttr(g)}">Remove</button></div>`
+        `<button class="danger" data-glob="${escapeAttr(g)}">${escapeHtml(t("btn_remove"))}</button></div>`
     )
     .join("");
   box.querySelectorAll<HTMLButtonElement>("button").forEach((b) => {
@@ -122,7 +128,7 @@ async function refreshAllowlist() {
       const glob = b.getAttribute("data-glob")!;
       await send({ type: "remove_allow", glob });
       refreshAllowlist();
-      flashToast("Removed");
+      flashToast(t("toast_removed"));
     };
   });
 }
@@ -137,7 +143,7 @@ function wireAddSite() {
     const v = input.value.trim();
     if (!v) return;
     if (!/^https?:\/\/[^/]+\//.test(v) && !/^https?:\/\/[^/]+$/.test(v)) {
-      flashToast("Format should be https://domain/*");
+      flashToast(t("toast_format_err"));
       return;
     }
     // Normalize to an origin glob: https://host/*
@@ -146,16 +152,16 @@ function wireAddSite() {
       const u = new URL(v);
       glob = `${u.protocol}//${u.host}/*`;
     } catch (_) {
-      flashToast("Failed to parse URL");
+      flashToast(t("toast_parse_err"));
       return;
     }
     const resp = await send({ type: "add_allow", glob });
     if (resp && resp.ok) {
       input.value = "";
       refreshAllowlist();
-      flashToast("Added");
+      flashToast(t("toast_added"));
     } else {
-      flashToast((resp?.error as string) || "Failed to add");
+      flashToast((resp?.error as string) || t("toast_add_failed"));
     }
   }
   btn.onclick = add;
@@ -189,7 +195,23 @@ function escapeAttr(s: string) {
 // ---- init -----------------------------------------------------------------
 
 (async function init() {
+  // Resolve the UI language and fill every static [data-i18n] element first.
+  await initI18n();
+  applyI18n();
+
   const s = await loadSettings();
+
+  // Language selector: "auto" follows the browser, "en"/"zh_CN" force it.
+  // Changing it reloads the page so every rendered string (incl. the tools
+  // grid and allowlist, which are built in JS) refreshes.
+  {
+    const sel = $<HTMLSelectElement>("language");
+    sel.value = s.language;
+    sel.addEventListener("change", async () => {
+      await chrome.storage.local.set({ language: sel.value });
+      location.reload();
+    });
+  }
 
   // cdpMode is the inverse: DANGEROUS when ON (persistent debugger attach, CSP
   // bypassed), so its warning/danger styling shows while CHECKED. Default off.

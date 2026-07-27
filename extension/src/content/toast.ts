@@ -2,7 +2,9 @@
 // about to attach, the infobar will flash briefly"). It auto-proceeds after a
 // short timeout unless the user presses Cancel.
 
-export function showInfoToast(message: string) {
+// Body + button label are localized in the SW (the toast runs in the page world
+// where reading the language setting is awkward); "Browser Bridge" is the brand.
+export function showInfoToast(opts: { message: string; cancel?: string }) {
   return new Promise((resolve) => {
     const host = ensureToastHost();
     const card = document.createElement("div");
@@ -11,9 +13,10 @@ export function showInfoToast(message: string) {
         <div class="zcb-info-title">Browser Bridge</div>
         <div class="zcb-info-text"></div>
         <div class="zcb-info-actions">
-          <button class="zcb-info-cancel">Cancel</button>
+          <button class="zcb-info-cancel"></button>
         </div>`;
-    card.querySelector(".zcb-info-text")!.textContent = message;
+    card.querySelector(".zcb-info-text")!.textContent = opts.message;
+    card.querySelector(".zcb-info-cancel")!.textContent = opts.cancel || "Cancel";
     host.appendChild(card);
 
     let done = false;

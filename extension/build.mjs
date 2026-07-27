@@ -21,6 +21,9 @@ const STATIC_FILES = ["manifest.json", "popup.html", "options.html", "toast.css"
 function copyStatic() {
   for (const f of STATIC_FILES) cpSync(join(root, f), join(outdir, f));
   cpSync(join(root, "icons"), join(outdir, "icons"), { recursive: true });
+  // _locales/ powers both the native manifest name/description (chrome.i18n)
+  // and the runtime UI catalogue (shared/i18n.ts).
+  cpSync(join(root, "_locales"), join(outdir, "_locales"), { recursive: true });
 }
 
 /** @type {import("esbuild").BuildOptions} */

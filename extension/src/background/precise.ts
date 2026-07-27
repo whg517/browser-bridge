@@ -13,6 +13,7 @@ import { resolveTargetTab, injectIfNeeded } from "./tabs";
 // its own private copies.
 import { dbgAttach, dbgDetach, dbgSend, isDebuggable } from "./cdp/session";
 import { cdpRegistry } from "./cdp/registry";
+import { t, initI18n } from "../shared/i18n";
 
 // The subset of the CDP payloads we actually read (not the full protocol).
 interface AXValueLike {
@@ -82,12 +83,13 @@ export async function snapshotPrecise(maybeTabId: number | undefined, _args: OpA
   // Warn the user via an informational toast in the page. Proceed unless they
   // actively cancel within the timeout. (Always shown — the toggle was removed.)
   await injectIfNeeded(tab.id!);
+  await initI18n(); // resolve the UI language for the toast strings
   const proceed: boolean | PageResponse = await chrome.tabs
     .sendMessage(tab.id!, {
       op: "_info_toast",
       args: {
-        message:
-          "About to run a precise page scan — Chrome will show a 'Debugging' banner at the top that disappears automatically after the scan (about 1 second).",
+        message: t("toast_precise_body"),
+        toastCancel: t("btn_cancel"),
       },
     })
     .catch(() => true /* content script missing → proceed anyway */);
