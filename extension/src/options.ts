@@ -203,7 +203,7 @@ function escapeAttr(s: string) {
   // grid and allowlist, which are built in JS) refreshes.
   {
     const sel = $<HTMLSelectElement>("language");
-    sel.value = typeof s.language === "string" ? s.language : "auto";
+    sel.value = s.language;
     sel.addEventListener("change", async () => {
       await chrome.storage.local.set({ language: sel.value });
       location.reload();

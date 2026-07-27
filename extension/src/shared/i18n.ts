@@ -41,7 +41,7 @@ export function resolveLocale(setting: string | undefined): Locale {
 export async function initI18n(): Promise<Locale> {
   let setting: string | undefined;
   try {
-    setting = (await getSetting("language")) as unknown as string;
+    setting = await getSetting("language");
   } catch {
     setting = undefined;
   }
@@ -59,12 +59,10 @@ export function setLocale(locale: Locale): void {
 }
 
 // Look up a message in the active locale, falling back to English, then the key
-// itself. `$1`, `$2`, … placeholders are filled from `subs`.
-export function t(key: string, subs?: Array<string | number>): string {
+// itself. (No placeholder interpolation yet — no shipped message needs it.)
+export function t(key: string): string {
   const entry = CATALOGS[active]?.[key] || CATALOGS.en[key];
-  let msg = entry ? entry.message : key;
-  if (subs) subs.forEach((s, i) => (msg = msg.split(`$${i + 1}`).join(String(s))));
-  return msg;
+  return entry ? entry.message : key;
 }
 
 // Fill a DOM subtree from data-i18n hooks:
@@ -73,6 +71,11 @@ export function t(key: string, subs?: Array<string | number>): string {
 //   data-i18n-placeholder="key" → placeholder attribute
 // Catalogue values are trusted (bundled), so innerHTML is safe here.
 export function applyI18n(root: ParentNode = document): void {
+  // Keep the document language in sync with the active locale so screen readers
+  // and language-specific rendering match what's shown (BCP-47 tags).
+  if (typeof document !== "undefined") {
+    document.documentElement.lang = active === "zh_CN" ? "zh-CN" : "en";
+  }
   root.querySelectorAll<HTMLElement>("[data-i18n]").forEach((el) => {
     el.textContent = t(el.dataset.i18n!);
   });

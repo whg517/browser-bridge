@@ -52,10 +52,4 @@ describe("t()", () => {
     expect(t("__no_such_key__")).toBe("__no_such_key__");
     setLocale("en");
   });
-
-  it("fills $1 placeholders from subs", () => {
-    // No shipped string uses $1, so exercise the mechanism against a fixed key:
-    // subs on a placeholder-free message is a no-op (regression guard).
-    expect(t("btn_add", ["ignored"])).toBe(en.btn_add.message);
-  });
 });

@@ -15,7 +15,7 @@ export interface Settings {
   cdpMode: boolean;
   // UI language for the extension's own surfaces: "auto" follows the browser,
   // "en"/"zh_CN" force a language (see shared/i18n.ts).
-  language: string;
+  language: "auto" | "en" | "zh_CN";
 }
 
 // A request from the native host, forwarded to the right tab's content script.
