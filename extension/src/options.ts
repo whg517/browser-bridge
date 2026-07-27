@@ -81,8 +81,11 @@ function renderToolsGrid(disabledTools: string[]) {
   const disabled = new Set(Array.isArray(disabledTools) ? disabledTools : []);
   grid.innerHTML = TOOLS.map((tool) => {
     const checked = disabled.has(tool.op) ? "" : "checked";
-    // Localized label (tool_<op>); falls back to the English contract label.
-    const label = t("tool_" + tool.op) === "tool_" + tool.op ? tool.desc : t("tool_" + tool.op);
+    // Localized label (tool_<op>); fall back to the English contract label if a
+    // key is ever missing (the i18n parity test guards against that).
+    const key = "tool_" + tool.op;
+    const localized = t(key);
+    const label = localized === key ? tool.desc : localized;
     return (
       `<label class="tool">` +
       `<input type="checkbox" data-op="${escapeAttr(tool.op)}" ${checked} />` +
