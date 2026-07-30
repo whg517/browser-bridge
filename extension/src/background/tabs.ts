@@ -36,6 +36,41 @@ export async function injectIfNeeded(tabId: number) {
   }
 }
 
+// Inject content.js into EVERY reachable frame (idempotent — content.ts's
+// window-scoped load guard prevents double listeners). Best-effort: frames
+// without host permission simply reject.
+export async function injectAllFrames(tabId: number) {
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId, allFrames: true },
+      files: ["content.js"],
+    });
+  } catch {
+    // Some frames may not be injectable; the per-frame dispatch tolerates gaps.
+  }
+}
+
+// Enumerate the frames the extension can reach as [{frameId, url}]. Uses a
+// func-injection rather than chrome.webNavigation.getAllFrames so we don't have
+// to request the "read your browsing history" (webNavigation) permission.
+// Frames without host permission are absent from the results (executeScript
+// skips them), which naturally scopes reading to permitted origins.
+export async function enumerateFrames(
+  tabId: number
+): Promise<Array<{ frameId: number; url: string }>> {
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId, allFrames: true },
+      func: () => location.href,
+    });
+    return results
+      .filter((r) => typeof r.result === "string")
+      .map((r) => ({ frameId: r.frameId, url: r.result as string }));
+  } catch {
+    return [{ frameId: 0, url: "" }]; // fall back to the top frame only
+  }
+}
+
 export async function tabList() {
   const tabs = await chrome.tabs.query({});
   // groupId is -1 (chrome.tabGroups.TAB_GROUP_ID_NONE) for ungrouped tabs;

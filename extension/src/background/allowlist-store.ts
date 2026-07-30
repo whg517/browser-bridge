@@ -38,6 +38,16 @@ export async function ensureDomainAllowed(domain: string) {
   }
 }
 
+// Non-prompting allowlist check. Used to gate same-origin sub-frames during
+// allFrames reading — we must NOT prompt for every sub-frame, so frames whose
+// origin isn't already allowed are silently skipped rather than surfaced.
+export async function isAllowed(url: string | undefined): Promise<boolean> {
+  const glob = originGlobOf(url);
+  if (!glob) return false;
+  if ((await getSetting("allowAllSites")) === true) return true;
+  return matchesAny(glob, await getAllowlist());
+}
+
 export async function ensureAllowed(url: string | undefined) {
   const glob = originGlobOf(url);
   if (!glob) throw new Error(`cannot parse url: ${url}`);
