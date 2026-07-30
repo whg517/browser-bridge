@@ -36,9 +36,7 @@ pub fn all() -> Vec<Tool> {
         Tool {
             name: "page_snapshot",
             description:
-                "Capture the active tab's interactive elements as an accessibility-style tree. \
-                 Each node has a stable `ref` (e.g. \"e3\"), a role, an accessible name, and a \
-                 fallback CSS selector. Use the `ref` in page_click/page_fill when possible.",
+                "Capture the active tab's interactive elements as an accessibility-style tree. Each node has a stable `ref` (e.g. \"e3\"), a role, an accessible name, and a fallback CSS selector. Use the `ref` in page_click/page_fill when possible. Same-origin sub-frames are included automatically; a sub-frame node's `ref` is prefixed `f<frameId>:` (e.g. \"f2:e3\") and page_click/page_fill route it back to that frame.",
             input_schema: schema(&[], &[]),
         },
         Tool {
@@ -75,7 +73,7 @@ pub fn all() -> Vec<Tool> {
         Tool {
             name: "page_text",
             description:
-                "Return the text content of the active tab (sensitive fields masked). `mode` \"visible\" (default) returns only rendered text — it excludes display:none / hidden inactive-tab panels; `mode` \"full\" also includes that hidden/inactive-tab text (script/style/noscript stripped). Use \"full\" when content is split across tabs/accordions.",
+                "Return the text content of the active tab (sensitive fields masked). `mode` \"visible\" (default) returns only rendered text — it excludes display:none / hidden inactive-tab panels; `mode` \"full\" also includes that hidden/inactive-tab text (script/style/noscript stripped). Use \"full\" when content is split across tabs/accordions. Same-origin sub-frames are appended under a frame marker.",
             input_schema: schema(
                 &[],
                 &[(
@@ -88,7 +86,7 @@ pub fn all() -> Vec<Tool> {
         Tool {
             name: "page_links",
             description:
-                "Return the links on the active tab as an array of {text, href, type}, where type is one of mailto | tel | external | internal | anchor. Surfaces contact links (mailto:/tel:) and href targets that page_text only shows as anchor labels, and works even when page_snapshot is empty. hrefs are masked (token-like query strings redacted; emails / phone numbers preserved). Optional `type` filters to one kind; result is capped at 500.",
+                "Return the links on the active tab as an array of {text, href, type}, where type is one of mailto | tel | external | internal | anchor. Surfaces contact links (mailto:/tel:) and href targets that page_text only shows as anchor labels, and works even when page_snapshot is empty. hrefs are masked (token-like query strings redacted; emails / phone numbers preserved). Optional `type` filters to one kind; result is capped at 500. Includes links from same-origin sub-frames.",
             input_schema: schema(
                 &[],
                 &[(
