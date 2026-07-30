@@ -1,30 +1,45 @@
-// CdpBackend — the page backend used when cdpMode is on (ADR-0017). Every
-// page-level op runs through a persistent CdpSession (chrome.debugger) in the
-// page's MAIN world via Runtime.evaluate, which bypasses page CSP. The DOM work
-// is the portable functions in cdp/page-fns.ts; settings gates and masking are
-// handled here in the SW so they match the content-script path.
+// CdpBackend — the page backend used when cdpMode is on (ADR-0017). page_eval
+// (plus scroll / wait / screenshot / storage) run through a persistent
+// CdpSession (chrome.debugger) in the page's MAIN world via Runtime.evaluate,
+// which bypasses page CSP.
+//
+// Reads (page_snapshot / page_text / page_links) and ref-based page_click /
+// page_fill do NOT need the CSP bypass — reading/clicking the DOM works from a
+// content script even on strict-CSP sites — and the content-script backend
+// reads across same-origin sub-frames (ADR-0022). So those ops are delegated to
+// it even in cdpMode, so iframe content works here too. Only page_eval
+// genuinely needs CDP.
 
 import type { OpArgs } from "../../shared/types";
 import type { PageBackend } from "../page-backend";
-import { maskSensitive, maskString, maskPatterns } from "../../shared/masking";
+import { maskSensitive, maskString } from "../../shared/masking";
 import { truncate } from "../../content/util";
 import { ensureAllowed } from "../allowlist-store";
 import { isDebuggable, type CdpSession, type EvaluateResponse } from "../cdp/session";
 import { cdpRegistry } from "../cdp/registry";
-import {
-  REF_ATTR,
-  pageSnapshot,
-  pageText,
-  pageLinks,
-  pageScroll,
-  pageWaitFor,
-  readStorage,
-  doClick,
-  doFill,
-} from "../cdp/page-fns";
+import { pageScroll, pageWaitFor, readStorage } from "../cdp/page-fns";
+import { ContentScriptBackend } from "./content-script";
+
+// DOM read/act ops that don't need CDP's CSP bypass; delegated to the
+// content-script backend so they span same-origin sub-frames (ADR-0022).
+const FRAME_AWARE_OPS = new Set([
+  "page_snapshot",
+  "page_text",
+  "page_links",
+  "page_click",
+  "page_fill",
+]);
+// Stateless; a private instance avoids a circular import with page-backend.ts.
+const contentScriptReads = new ContentScriptBackend();
 
 export class CdpBackend implements PageBackend {
   async run(op: string, args: OpArgs, tab: chrome.tabs.Tab): Promise<unknown> {
+    // Reads + ref click/fill: delegate so they work across sub-frames (they
+    // don't need CDP, and this reuses the content-script allFrames path).
+    if (FRAME_AWARE_OPS.has(op)) {
+      return await contentScriptReads.run(op, args, tab);
+    }
+
     // Preserve dispatch's ordering: allowlist check, then do the work.
     await ensureAllowed(tab.url);
     if (!isDebuggable(tab.url)) {
@@ -35,16 +50,6 @@ export class CdpBackend implements PageBackend {
     const session = await cdpRegistry.get(tab.id!);
 
     switch (op) {
-      case "page_snapshot":
-        // Now async (settle+retry when empty), so await the page-side promise.
-        return await session.evaluate(pageSnapshot, [REF_ATTR], { awaitPromise: true });
-
-      case "page_text":
-        return await session.evaluate(pageText, [{ mode: args.mode }]);
-
-      case "page_links":
-        return await this.pageLinks(session, args);
-
       case "page_scroll":
         return await session.evaluate(pageScroll, [
           { direction: args.direction, pixels: args.pixels },
@@ -88,15 +93,6 @@ export class CdpBackend implements PageBackend {
       case "storage_get":
         return await this.storageGet(session, args);
 
-      case "page_fill":
-        return await session.evaluate(doFill, [
-          REF_ATTR,
-          { ref: args.ref, selector: args.selector, value: args.value },
-        ]);
-
-      case "page_click":
-        return await this.click(session, args);
-
       case "page_eval":
         return await this.pageEval(session, args);
 
@@ -124,27 +120,6 @@ export class CdpBackend implements PageBackend {
     }
     if (raw.found) return { ...raw, value: maskString(raw.value) };
     return raw;
-  }
-
-  // page_links: read raw hrefs in the page, mask them in the SW with the
-  // credential-pattern catalogue (tokens/JWT/long-hex redacted; emails/phones
-  // preserved), mirroring the content path's use of maskPatterns.
-  private async pageLinks(session: CdpSession, args: OpArgs): Promise<unknown> {
-    const raw = (await session.evaluate(pageLinks, [args.type])) as {
-      links: Array<{ text: string; href: string; type: string }>;
-      count: number;
-      url: string;
-    };
-    return {
-      ...raw,
-      links: raw.links.map((l) => ({ ...l, href: maskPatterns(l.href) })),
-    };
-  }
-
-  // page_click runs directly; the per-site allowlist (checked in run()) is the
-  // gate.
-  private async click(session: CdpSession, args: OpArgs): Promise<unknown> {
-    return await session.evaluate(doClick, [REF_ATTR, { ref: args.ref, selector: args.selector }]);
   }
 
   // page_eval: run in the MAIN world (gated by the per-tool disable + allowlist;

@@ -53,9 +53,12 @@ script frame-agnostic.** Reading is default-on (no opt-in flag).
   routing. Other ops (scroll/screenshot/wait/eval/storage) stay top-frame.
 - **Same-origin** sub-frames. Cross-origin frames are reachable only if the user
   granted their origin (e.g. via "allow all sites") and are gated per frame.
-- **Content-script backend only.** CDP mode (`cdpMode`, opt-in, off by default)
-  still reads the top frame — per-frame CDP execution contexts are a separate,
-  larger change.
+- **Both backends.** In `cdpMode`, DOM reads (`page_snapshot`/`page_text`/
+  `page_links`) and ref-based `page_click`/`page_fill` are delegated to the
+  content-script backend — they don't need CDP's CSP bypass (reading/clicking
+  the DOM works from a content script even on strict-CSP sites), and delegating
+  reuses this same allFrames path. Only `page_eval` (which needs the CSP bypass)
+  and scroll/wait/screenshot/storage stay on the CDP path (top frame).
 
 ## Alternatives Considered
 
@@ -87,9 +90,11 @@ script frame-agnostic.** Reading is default-on (no opt-in flag).
 ### Negative / trade-offs
 - Every read op does one extra `executeScript` (the enumerate) even on
   single-frame pages (~a few ms).
-- **CDP mode is inconsistent** — it still reads the top frame only, so the
-  tool descriptions' "includes sub-frames" holds for the default backend but not
-  when `cdpMode` is on. Documented here; a follow-up can add per-frame CDP.
+- **`cdpMode` now injects content scripts for reads/clicks** — it previously
+  ran every op through CDP (ADR-0017). Routing reads + ref click/fill through the
+  content-script backend relaxes that "all ops via CDP" stance, but it's the
+  price of consistent sub-frame support and is functionally safe (those ops
+  never needed the CSP bypass). `page_eval` still goes through CDP.
 - The SW-side orchestration (inject/enumerate/dispatch) isn't covered by the
   headless-Chrome DOM test harness (which drives the content script in a single
   document); only the pure merge logic is unit-tested. End-to-end multi-frame
