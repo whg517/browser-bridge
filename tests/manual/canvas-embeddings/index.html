@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="zh">
+  <head>
+    <meta charset="utf-8" />
+    <title>AI Canvas 嵌入方式 QA</title>
+    <style>
+      body { font: 14px/1.6 system-ui, sans-serif; max-width: 900px; margin: 24px auto; padding: 0 16px; }
+      h2 { margin-top: 30px; border-top: 1px solid #eee; padding-top: 14px; }
+      iframe { width: 480px; height: 300px; border: 2px solid #4a90d9; border-radius: 6px; }
+      code { background: #f2f2f2; padding: 1px 4px; border-radius: 3px; }
+      .note { color: #666; }
+    </style>
+    <script src="card.js"></script>
+  </head>
+  <body>
+    <h1>AI Canvas —— 六种嵌入方式对照 QA</h1>
+    <p>每个 Canvas 是同一份"职位预览" artifact,带唯一标签,便于判断 browser-bridge 读到了哪一个。</p>
+
+    <h2>1) 内联同源 DOM (INLINE)</h2>
+    <p class="note">artifact 直接渲染进顶层文档。预期:完全可读可交互。</p>
+    <div id="mount-inline"></div>
+
+    <h2>2) 同源 iframe · src (SAMEORIGIN_SRC)</h2>
+    <p class="note"><code>&lt;iframe src="artifact.html?label=SAMEORIGIN_SRC"&gt;</code>。预期:#97 allFrames 可读。</p>
+    <iframe id="f-sameorigin" src="artifact.html?label=SAMEORIGIN_SRC" title="same-origin src"></iframe>
+
+    <h2>3) srcdoc iframe (SRCDOC)</h2>
+    <p class="note"><code>iframe.srcdoc</code> 注入 HTML(预览最常见做法之一);URL 为 <code>about:srcdoc</code>,继承父源。</p>
+    <iframe id="f-srcdoc" title="srcdoc"></iframe>
+
+    <h2>4) blob iframe (BLOB)</h2>
+    <p class="note"><code>iframe.src = blob:…</code> 由父页面生成的 HTML。</p>
+    <iframe id="f-blob" title="blob"></iframe>
+
+    <h2>5) 跨源 iframe (CROSSORIGIN @ :8001)</h2>
+    <p class="note"><code>&lt;iframe src="http://localhost:8001/artifact.html?label=CROSSORIGIN"&gt;</code>。预期:需授权该 origin 才可读。</p>
+    <iframe id="f-crossorigin" src="http://localhost:8001/artifact.html?label=CROSSORIGIN" title="cross-origin"></iframe>
+
+    <h2>6) 沙箱 iframe (SANDBOX, allow-scripts only)</h2>
+    <p class="note"><code>sandbox="allow-scripts"</code> → 不透明源(null origin)。预期:最难读。</p>
+    <iframe id="f-sandbox" sandbox="allow-scripts" src="artifact.html?label=SANDBOX" title="sandbox"></iframe>
+
+    <script>
+      // 1) inline — render straight into the top document
+      document.getElementById("mount-inline").innerHTML = window.cardHTML("INLINE");
+      // 3) srcdoc — inherits the parent origin, URL is about:srcdoc
+      document.getElementById("f-srcdoc").srcdoc = window.cardDoc("SRCDOC");
+      // 4) blob — a parent-generated document served from a blob: URL
+      const blob = new Blob([window.cardDoc("BLOB")], { type: "text/html" });
+      document.getElementById("f-blob").src = URL.createObjectURL(blob);
+    </script>
+  </body>
+</html>

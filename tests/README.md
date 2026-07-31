@@ -9,6 +9,7 @@ historical accident:
 | **DOM** | `dom_test.ts` | `bun` + Chrome (CDP) | Injects the built `extension/dist/content.js` into a real headless Chrome page and exercises every content-script op (snapshot, click, fill, eval, storage, toast). Needs a real browser DOM; TypeScript shares the extension's toolchain. |
 | **Smoke** | `ext_test.ts` | `bun` + puppeteer-core | Launches Chrome with `extension/dist/` loaded and checks the MV3 service worker boots with its APIs. |
 | **Integration** (opt-in) | `integration_e2e.ts` | `bun` or Node 22.12+ + puppeteer-core | The full real chain with nothing mocked — MCP client → real MCP server → native host → real extension → `chrome.tabs` → back. Closes the seam `e2e.py` mocks. |
+| **Manual** | [`manual/canvas-embeddings/`](./manual/canvas-embeddings/README.md) | real Chrome + a human | Cross-frame allFrames reading across six iframe embeddings (inline / same-origin src / srcdoc / blob / cross-origin / sandbox). Not automatable here — the SW-side allFrames aggregation is out of `dom_test.ts`'s reach (ADR-0022) and the per-origin Allow needs a real click. Backs the `effectiveOriginGlob` units (ADR-0023). |
 
 The two browser suites are **TypeScript run under bun** (matching the
 extension). The protocol suite stays **Python on purpose** — rewriting it in

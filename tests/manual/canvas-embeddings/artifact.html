@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="zh">
+  <head>
+    <meta charset="utf-8" />
+    <title>Canvas artifact</title>
+    <script src="card.js"></script>
+  </head>
+  <body>
+    <script>
+      const L = new URLSearchParams(location.search).get("label") || "ARTIFACT";
+      document.title = "Canvas " + L;
+      document.body.insertAdjacentHTML("beforeend", window.cardHTML(L));
+    </script>
+  </body>
+</html>
