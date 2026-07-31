@@ -8,7 +8,7 @@
 
 import type { OpArgs, PageResponse } from "../../shared/types";
 import type { PageBackend } from "../page-backend";
-import { ensureAllowed, isAllowed } from "../allowlist-store";
+import { ensureAllowed, isSubFrameAllowed } from "../allowlist-store";
 import { injectIfNeeded, injectAllFrames, enumerateFrames } from "../tabs";
 import { parseFrameRef, mergeSnapshot, mergeText, mergeLinks, type FrameResult } from "../frames";
 
@@ -24,13 +24,13 @@ export class ContentScriptBackend implements PageBackend {
     // A click/fill carrying a frame-qualified ref routes to that sub-frame.
     if (REF_OPS.has(op)) {
       const parsed = parseFrameRef(args.ref);
-      if (parsed) return await this.runInFrame(tabId, op, args, parsed);
+      if (parsed) return await this.runInFrame(tabId, tab.url, op, args, parsed);
       return await this.send(tabId, undefined, op, args);
     }
 
     // Read ops aggregate same-origin sub-frames (default-on).
     if (READ_OPS.has(op)) {
-      const merged = await this.runReadAcrossFrames(tabId, op, args);
+      const merged = await this.runReadAcrossFrames(tabId, tab.url, op, args);
       if (merged !== undefined) return merged;
     }
 
@@ -56,13 +56,14 @@ export class ContentScriptBackend implements PageBackend {
   // for gated frames, but don't trust a fabricated ref).
   private async runInFrame(
     tabId: number,
+    topUrl: string | undefined,
     op: string,
     args: OpArgs,
     parsed: { frameId: number; bareRef: string }
   ): Promise<unknown> {
     const frames = await enumerateFrames(tabId);
     const frame = frames.find((f) => f.frameId === parsed.frameId);
-    if (!frame || !(await isAllowed(frame.url))) {
+    if (!frame || !(await isSubFrameAllowed(frame.url, topUrl))) {
       throw new Error(
         `frame ${parsed.frameId} is not available or not allowlisted — re-run page_snapshot`
       );
@@ -76,6 +77,7 @@ export class ContentScriptBackend implements PageBackend {
   // back to the plain top-frame path (no ref prefixing for a single-frame page).
   private async runReadAcrossFrames(
     tabId: number,
+    topUrl: string | undefined,
     op: string,
     args: OpArgs
   ): Promise<unknown | undefined> {
@@ -83,7 +85,7 @@ export class ContentScriptBackend implements PageBackend {
     const subs: Array<{ frameId: number; url: string }> = [];
     for (const f of frames) {
       if (f.frameId === 0) continue; // top handled separately
-      if (await isAllowed(f.url)) subs.push(f);
+      if (await isSubFrameAllowed(f.url, topUrl)) subs.push(f);
     }
     if (subs.length === 0) return undefined;
 

@@ -61,6 +61,7 @@ An ADR (Architecture Decision Record) documents decisions where **there were mul
 | [0019](./adr/0019-chrome-web-store-distribution.md) | Distribute via the Chrome Web Store (dual ID) | Accepted |
 | [0021](./adr/0021-extension-i18n.md) | Extension UI i18n (English + Simplified Chinese) via `_locales` + a runtime toggle | Accepted |
 | [0022](./adr/0022-allframes-page-reading.md) | Read same-origin sub-frames (SW-orchestrated allFrames; frame-namespaced refs) | Accepted |
+| [0023](./adr/0023-subframe-origin-gating.md) | Effective-origin gating for inherited-origin sub-frames (srcdoc/blob/about:blank) + permission-drift recovery | Accepted |
 
 ## ADR Writing Conventions
 

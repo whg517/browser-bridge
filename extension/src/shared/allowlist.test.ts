@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   originGlobOf,
+  effectiveOriginGlob,
   hostFromOriginGlob,
   normalizeCookieDomain,
   matchesAny,
@@ -38,6 +39,28 @@ describe("originGlobOf", () => {
   test("null for unparseable input", () => {
     expect(originGlobOf("not a url")).toBeNull();
     expect(originGlobOf(undefined)).toBeNull();
+  });
+});
+
+describe("effectiveOriginGlob", () => {
+  const top = "http://localhost:8000/index.html";
+  test("about:srcdoc / about:blank inherit the top origin", () => {
+    expect(effectiveOriginGlob("about:srcdoc", top)).toBe("http://localhost:8000/*");
+    expect(effectiveOriginGlob("about:blank", top)).toBe("http://localhost:8000/*");
+  });
+  test("blob: gates by its inner origin, not the top", () => {
+    expect(effectiveOriginGlob("blob:http://localhost:8000/abc-123", "https://other.com/")).toBe(
+      "http://localhost:8000/*"
+    );
+  });
+  test("an ordinary frame gates by its own origin", () => {
+    expect(effectiveOriginGlob("http://localhost:8001/a.html?x=1", top)).toBe(
+      "http://localhost:8001/*"
+    );
+  });
+  test("null for unparseable frame url, or when top is needed but unparseable", () => {
+    expect(effectiveOriginGlob(undefined, top)).toBeNull();
+    expect(effectiveOriginGlob("about:srcdoc", "not a url")).toBeNull();
   });
 });
 
