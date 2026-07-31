@@ -14,7 +14,6 @@ import type { OpArgs } from "../../shared/types";
 import type { PageBackend } from "../page-backend";
 import { maskSensitive, maskString } from "../../shared/masking";
 import { truncate } from "../../content/util";
-import { ensureAllowed } from "../allowlist-store";
 import { isDebuggable, type CdpSession, type EvaluateResponse } from "../cdp/session";
 import { cdpRegistry } from "../cdp/registry";
 import { pageScroll, pageWaitFor, readStorage } from "../cdp/page-fns";
@@ -40,8 +39,6 @@ export class CdpBackend implements PageBackend {
       return await contentScriptReads.run(op, args, tab);
     }
 
-    // Preserve dispatch's ordering: allowlist check, then do the work.
-    await ensureAllowed(tab.url);
     if (!isDebuggable(tab.url)) {
       throw new Error(
         `CDP mode cannot control this page (URL scheme not allowed): ${(tab.url || "").slice(0, 80)}`
@@ -122,8 +119,8 @@ export class CdpBackend implements PageBackend {
     return raw;
   }
 
-  // page_eval: run in the MAIN world (gated by the per-tool disable + allowlist;
-  // the page_eval-specific toggle and per-call confirmation were removed).
+  // page_eval: run in the MAIN world (gated by the per-tool disable; the
+  // page_eval-specific toggle and per-call confirmation were removed).
   private async pageEval(session: CdpSession, args: OpArgs): Promise<unknown> {
     const code = args.code;
     if (typeof code !== "string" || !code.trim()) {

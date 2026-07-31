@@ -11,7 +11,6 @@ import type { BridgeCommand } from "./ops";
 // Pick) must stay in sync with these keys.
 export interface Settings {
   disabledTools: string[];
-  allowAllSites: boolean;
   cdpMode: boolean;
   // UI language for the extension's own surfaces: "auto" follows the browser,
   // "en"/"zh_CN" force a language (see shared/i18n.ts).
@@ -91,10 +90,4 @@ export interface PageResponse {
 
 // Messages the service worker receives from the popup / options page and the
 // content-script screenshot proxy (chrome.runtime.onMessage).
-export type RuntimeMsg =
-  | { type: "resolve_allow"; id: string; allow: boolean }
-  | { type: "get_allowlist" }
-  | { type: "add_allow"; glob: string }
-  | { type: "remove_allow"; glob: string }
-  | { type: "get_status" }
-  | { type: "capture_visible_tab" };
+export type RuntimeMsg = { type: "get_status" } | { type: "capture_visible_tab" };

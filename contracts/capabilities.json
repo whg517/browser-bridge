@@ -3,7 +3,7 @@
   "capabilities": [
     {
       "id": "tab_control",
-      "description": "Enumerate, focus, open, close browser tabs and capture the visible viewport. Opening/closing are gated by allowlist + user confirmation.",
+      "description": "Enumerate, focus, open, close browser tabs and capture the visible viewport.",
       "permissions": ["tabs"],
       "tools": ["tab_list", "tab_focus", "tab_open", "tab_close", "page_screenshot"]
     },
@@ -39,7 +39,7 @@
     },
     {
       "id": "cookie_read",
-      "description": "Read cookies (including httpOnly) for allowlisted hosts. Read-only; values are masked. Backed by chrome.cookies in the service worker.",
+      "description": "Read cookies (including httpOnly) for the active tab or a specified host. Read-only; values are masked. Backed by chrome.cookies in the service worker.",
       "permissions": ["cookies"],
       "tools": ["cookie_get"]
     },

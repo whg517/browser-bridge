@@ -1,6 +1,6 @@
 {
   "app_desc": {
-    "message": "让 MCP 客户端(Claude Code、Codex 等)操作你真实的 Chrome —— 你的标签页与登录状态。新站点和高危操作需要你授权。"
+    "message": "让 MCP 客户端(Claude Code、Codex 等)操作你真实的 Chrome —— 你的标签页与登录状态。"
   },
 
   "opt_title": { "message": "Browser Bridge 设置" },
@@ -26,40 +26,12 @@
     "message": "对于任何未勾选的工具,AI 调用会收到 \"tool disabled in settings\" 错误。注意:AI 仍能看到该工具存在,但无法执行它。"
   },
 
-  "opt_allowed": { "message": "允许的站点(白名单)" },
-  "opt_allowall_title": { "message": "允许所有站点(跳过逐站点授权)" },
-  "opt_allowall_desc": {
-    "message": "启用后,AI 可直接操作任意 http(s) 站点,而无需对每个新站点逐一弹出授权提示。启用会请求 \"<all_urls>\" 主机权限。适合你信任 AI 完全自动浏览的场景;否则建议保持关闭,并使用下方的逐站点白名单。"
-  },
-  "opt_allowall_warn": {
-    "message": "⚠ 启用后,任意站点(包括银行、邮箱和内网站点)都可在未经授权的情况下被操作。请谨慎使用。"
-  },
-  "opt_add_format": {
-    "message": "格式:<code>https://domain/*</code>。手动添加后,首次访问该站点时仍需在 Chrome 的主机权限提示中批准。"
-  },
-  "btn_add": { "message": "添加" },
-
   "btn_settings": { "message": "⚙ 设置" },
   "status_checking": { "message": "检查中…" },
   "status_connected": { "message": "已连接到桥接" },
   "status_disconnected": { "message": "未连接(你的 MCP 客户端在运行吗?)" },
-  "popup_pending_lead": { "message": "有一个新站点请求访问:" },
-  "btn_deny": { "message": "拒绝" },
-  "btn_allow": { "message": "允许" },
-  "popup_allowed": { "message": "允许的站点" },
-  "empty_no_sites": { "message": "尚未允许任何站点。" },
-  "btn_revoke": { "message": "撤销" },
-  "btn_remove": { "message": "移除" },
 
   "toast_saved": { "message": "已保存" },
-  "toast_allurls_denied": { "message": "<all_urls> 未授予;已保留逐站点授权" },
-  "toast_all_allowed": { "message": "已允许所有站点" },
-  "toast_persite_restored": { "message": "已恢复逐站点授权" },
-  "toast_removed": { "message": "已移除" },
-  "toast_format_err": { "message": "格式应为 https://domain/*" },
-  "toast_parse_err": { "message": "URL 解析失败" },
-  "toast_added": { "message": "已添加" },
-  "toast_add_failed": { "message": "添加失败" },
 
   "toast_precise_body": {
     "message": "即将运行一次精确页面扫描 —— Chrome 会在顶部显示“正在调试”横幅,扫描结束后(约 1 秒)自动消失。"
@@ -68,7 +40,7 @@
 
   "tool_tab_list": { "message": "列出所有标签页" },
   "tool_tab_focus": { "message": "切换到某个标签页" },
-  "tool_tab_open": { "message": "打开新标签页(需白名单)" },
+  "tool_tab_open": { "message": "打开新标签页" },
   "tool_tab_close": { "message": "关闭标签页" },
   "tool_page_snapshot": { "message": "快照可交互元素" },
   "tool_page_click": { "message": "点击元素" },

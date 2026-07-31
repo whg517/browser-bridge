@@ -31,7 +31,7 @@
                                             │  background.js (SW):     │
                                             │   - native port + reconnect│
                                             │   - dispatch req to content│
-                                            │   - allowlist management  │
+                                            │   - tool enable/disable gate│
                                             │  content.js:             │
                                             │   - snapshot/click/fill  │
                                             │   - Toast/redaction      │
@@ -51,7 +51,7 @@ The system as a whole involves three independent processes; understanding their 
 |------|---------|------|---------|
 | **MCP server** | MCP client (spawned via its server config) | Holds session state, listens on TCP, tool logic dispatch | Tied to the client session |
 | **native host** | Chrome (via host manifest) | Thin bridge between stdin/stdout NM frames ↔ TCP NDJSON | Tied to the Chrome extension's Port |
-| **Chrome extension (SW + content)** | Chrome | Actual page operations, allowlist, Toast | SW restarts every 5 minutes; the extension is tied to the browser |
+| **Chrome extension (SW + content)** | Chrome | Actual page operations, tool-enable gating, Toast | SW restarts every 5 minutes; the extension is tied to the browser |
 
 **Why three processes instead of one**: Chrome spawns the native host itself (via the manifest), and the MCP client spawns the MCP server itself. The two are **not in a parent-child relationship**, cannot share stdin/stdout, and therefore need an IPC channel between them. See [ADR-0002](./adr/0002-three-process-architecture-localhost-tcp.md) for details.
 
@@ -139,20 +139,20 @@ The extension source is written in **TypeScript** (strict) under `extension/src/
 
 | Source file (`src/`) | Artifact (`dist/`) | Responsibilities |
 |------|------|------|
-| `manifest.json` (static, copied into dist) | `manifest.json` | MV3; permissions=[tabs,scripting,storage,nativeMessaging]; **no static host_permissions** (all requested on demand as optional) |
+| `manifest.json` (static, copied into dist) | `manifest.json` | MV3; permissions=[tabs,scripting,storage,nativeMessaging]; **`host_permissions: ["<all_urls>"]`** — broad host access granted at install, no runtime permission request (see [ADR-0024](./adr/0024-remove-allowlist.md)) |
 | `background.ts` | `background.js` | SW **entry point** (about 20 lines): registers the onMessage router + calls connectNative on startup. The real logic is in `src/background/*` (see below) |
 | `content.ts` | `content.js` | content script **entry point** (about 30 lines): re-injection guard + onMessage listener → `handle`. The real logic is in `src/content/*` (see below) |
 | `options.ts` + `options.html` | `options.js` + `options.html` | Standalone Options configuration page (see [ADR-0011](./adr/0011-options-page-for-settings.md) for details) |
-| `popup.ts` + `popup.html` | `popup.js` + `popup.html` | Authorization UI: shows connection status, the allowlist (revocable), and Allow/Deny for pending authorization requests |
+| `popup.ts` + `popup.html` | `popup.js` + `popup.html` | Status UI: shows native-host connection status and a link to the Options page. There is no per-site approval flow — the extension holds `<all_urls>` outright |
 | `toast.css` (static, copied into dist) | `toast.css` | Styles for the on-page informational notice Toast (the `page_snapshot_precise` notice) |
 
 **Modular structure**: the two giant files have been split into cohesive modules; esbuild re-bundles the imports back into a single IIFE, so the runtime behavior is unchanged (verified by dom_test 77 / smoke / e2e).
 
-- `src/shared/` (shared by both ends, pure logic, has unit tests) — `types` (bridge/message/settings types), `settings` (DEFAULTS + getSetting), `masking` (redaction pattern catalog), `allowlist` (glob matching / domain normalization), `ops` (tool catalog, unit-tested to stay consistent with `tools.rs`)
-- `src/background/` — `port` (native port lifecycle), `dispatch` (BridgeReq routing + tool-disable gate), `tabs` (target tab resolution/injection + tab_* tools), `precise` (page_snapshot_precise / CDP), `cookies` (cookie_get), `allowlist-store` (allowlist storage + authorization flow), `messages` (runtime.onMessage routing)
+- `src/shared/` (shared by both ends, pure logic, has unit tests) — `types` (bridge/message/settings types), `settings` (DEFAULTS + getSetting), `masking` (redaction pattern catalog), `ops` (tool catalog, unit-tested to stay consistent with `tools.rs`)
+- `src/background/` — `port` (native port lifecycle), `dispatch` (BridgeReq routing + tool-disable gate), `tabs` (target tab resolution/injection + tab_* tools), `precise` (page_snapshot_precise / CDP), `cookies` (cookie_get), `messages` (runtime.onMessage routing)
 - `src/content/` — `refs` (encapsulated ref state), `snapshot` (a11y tree), `actions` (click/fill/text/screenshot/scroll), `wait`, `eval`, `storage`, `toast`, `handle` (op dispatch)
 
-The dependencies form an acyclic DAG: `shared/*` → `background/allowlist-store` → `tabs` → `precise`/`cookies` → `dispatch` → `port` → `messages`; on the content side `shared/*`/`util` → `refs`/`snapshot` → `toast` → `actions`/`eval` → `handle`. Unit tests (`src/shared/*.test.ts`, bun) cover the pure modules, including a cross-language guard (the op list must stay consistent with `tools.rs`).
+The dependencies form an acyclic DAG: `shared/*` → `tabs` → `precise`/`cookies` → `dispatch` → `port` → `messages`; on the content side `shared/*`/`util` → `refs`/`snapshot` → `toast` → `actions`/`eval` → `handle`. Unit tests (`src/shared/*.test.ts`, bun) cover the pure modules, including a cross-language guard (the op list must stay consistent with `tools.rs`).
 
 ### 4.3 Installation Artifacts
 
@@ -218,14 +218,14 @@ The extension itself is loaded **load-unpacked** from **`extension/dist/`** (the
 
 4. background.js Port.onMessage receives {op:"page_click",args:{ref:"e3"}}
    → resolveTargetTab(currently active tab)
-   → ensureAllowed(tab.url)  // allowlist check; pops the popup if not authorized
+   → checkToolEnabled(op)     // per-tool disable gate; no per-site check
    → injectIfNeeded(tab.id)  // dynamically inject content.js
    → chrome.tabs.sendMessage(tab.id, {op, args})
 
 5. content.js handle()
    → resolveTarget({ref:"e3"}) // look up refMap → element
    → el.scrollIntoView() + el.click()
-     // clicks run directly; the per-site allowlist is the gate
+     // clicks run directly; the per-tool disable is the only gate
 
 6. The result returns the same way:
    content → chrome.runtime.sendMessage response
@@ -251,7 +251,7 @@ See the individual ADRs for details; here is the overview.
 
 | Boundary | Mechanism | ADR |
 |------|------|-----|
-| Domain allowlist (**primary gate**) | chrome.storage.local + popup authorization + permissions.request — the AI only acts on origins the user has approved | [0004](./adr/0004-allowlist-with-optional-host-permissions.md) |
+| Host trust (**primary boundary**) | the native-host manifest's `allowed_origins` trusts only pinned extension IDs, and a single MCP client owns the bridge at a time — origin gating in the extension was removed, so this trust chain plus the controls below is the boundary | [0024](./adr/0024-remove-allowlist.md) |
 | Per-tool enable/disable | any tool can be turned off in the Options page (a disabled tool returns "tool disabled in settings") | [0011](./adr/0011-options-page-for-settings.md) |
 | page_eval kill switch | disable `page_eval` in the Options page (Tool enablement) — that per-tool disable is the kill switch | [0011](./adr/0011-options-page-for-settings.md) |
 | page_eval redaction | `page_eval` return values are always masked (token-like values) | — |
@@ -260,16 +260,16 @@ See the individual ADRs for details; here is the overview.
 | bridge socket | per-run secret + lockfile in the user directory (Unix mode 0600) | [0002](./adr/0002-three-process-architecture-localhost-tcp.md) |
 | redaction | page_text masks passwords + long numbers; page_fill echoes back the password redacted | — |
 | protocol security | NM 1MB outbound limit; single-threaded writes + flush; stderr panic hook | — |
-| configuration management | Standalone Options page centrally manages tool enablement / allowlist / allowAllSites / execution mode | [0011](./adr/0011-options-page-for-settings.md) |
+| configuration management | Standalone Options page centrally manages tool enablement / execution mode | [0011](./adr/0011-options-page-for-settings.md) |
 
-**No per-action prompts**: on an already-allowlisted site the AI can submit forms, run JS (when `page_eval` is enabled), and close tabs without interruption — the allowlist plus the per-tool disable and always-on masking above are the whole security boundary, so keep the allowlist tight.
+**No per-site and no per-action gate**: the extension holds `<all_urls>`, so page/tab/cookie ops run on **any** site with no per-site consent, and on any site the AI can submit forms, run JS (when `page_eval` is enabled), and close tabs without interruption. Origin gating is deliberately gone (see [ADR-0024](./adr/0024-remove-allowlist.md)); the remaining boundary is the pinned-ID host trust + single-client bridge + per-tool disable + always-on masking, so keep high-risk tools (especially `page_eval`) disabled unless you need them.
 
 ## 7. Key Constraints (pitfalls hit and handled during implementation)
 
 ### 7.1 MV3 Service Worker restarts every 5 minutes (Chromium #40733525)
 **Constraint**: Chrome forcibly restarts the SW every 5 minutes, losing all in-memory state; the Port closes and the native host exits on receiving stdin EOF.
 **Mitigation**:
-- Store the allowlist in `chrome.storage.local` (not in memory)
+- Store settings (tool enablement, execution mode) in `chrome.storage.local` (not in memory)
 - Automatically `connectNative()` to reconnect when the SW starts
 - Keep session state (current tab, ref map) in the MCP server process, not in the SW
 - Mark refs on the DOM element's `data-zcb-ref` attribute, so after the SW restarts the content script can rebuild the refMap from the DOM
@@ -282,13 +282,13 @@ See the individual ADRs for details; here is the overview.
 **Constraint**: the manifest's `path` must be an executable file and cannot carry arguments.
 **Mitigation**: use the `run-host.sh` wrapper (a shebang script) that does `exec browser-bridge --native-host`.
 
-### 7.4 chrome.permissions.request requires a user gesture
-**Constraint**: `permissions.request` (requesting host permissions) must be called in a user-gesture context such as a popup/action click, and cannot be called in the service worker background.
-**Mitigation**: the allowlist authorization flow is completed through the popup — when the user clicks Allow in the popup, host permissions are requested and the allowlist entry is recorded at the same time.
+### 7.4 Host permissions are static, granted at install
+**Constraint**: the extension needs host access to inject content scripts and read cookies on the pages the agent drives.
+**Mitigation**: declare `host_permissions: ["<all_urls>"]` statically in the manifest, so Chrome grants broad host access at install time. There is **no** runtime `permissions.request` and **no** user-gesture-bound authorization flow — the earlier per-site allowlist that used `optional_host_permissions` was removed. See [ADR-0024](./adr/0024-remove-allowlist.md).
 
-### 7.5 Static content_scripts matches conflict with optional permissions
-**Constraint**: in MV3, a content_scripts `matches` declaration also needs host permissions in order to inject. If the initial `host_permissions: []`, the content script does not inject at all.
-**Mitigation**: **do not use manifest content_scripts**; use `chrome.scripting.executeScript` for dynamic injection everywhere. Permissions follow `optional_host_permissions` — whichever domain is authorized is the one that gets injected.
+### 7.5 Dynamic injection instead of static content_scripts
+**Constraint**: static manifest `content_scripts` would auto-inject into every matching page on load, which is more than needed.
+**Mitigation**: **do not use manifest content_scripts**; use `chrome.scripting.executeScript` to inject `content.js` on demand into the target tab. With `<all_urls>` host access granted, injection succeeds on any (injectable) origin at the moment a tool call targets it.
 
 ### 7.6 Rust panic pollutes stdout
 **Constraint**: a panic's default message is printed to stdout, which corrupts NM frames and MCP NDJSON and causes the connection to drop.
@@ -321,12 +321,12 @@ See the individual ADRs for details; here is the overview.
 
 ### 7.9 chrome.cookies is host-constrained / localStorage is same-origin / httpOnly is readable
 **Constraints** (cookie_get / storage_get):
-- The `chrome.cookies` API is **constrained by host_permissions**: `getAll({})` only returns cookies for authorized domains, **not** all browser cookies. The blast radius is consistent with the existing tools, reusing the allowlist.
+- The `chrome.cookies` API is **constrained by host_permissions**: `getAll({})` returns cookies for the domains the extension has host access to. Since the extension now holds `<all_urls>`, this is broad; `cookie_get` scopes its reads to the active tab's domain and always masks values, so the blast radius stays consistent with the other tools.
 - `chrome.cookies` is only available in the **SW/extension context** → cookie_get lives in background.js.
 - A page's `localStorage`/`sessionStorage` is only readable from the **content script (page context, same origin)**; `chrome.storage` belongs to the extension itself, not to the page — the two are different. → storage_get lives in content.js.
 - `chrome.cookies` **can read httpOnly cookies** (this is its core value relative to `document.cookie`, since session tokens are often stored here).
-- The `cookies` permission has **no extra install warning** (debugger already triggers the maximum host warning).
-- For unauthorized domains: getAll returns an **empty array rather than an error**, so it is impossible to distinguish "not authorized" from "genuinely no data"; the best that can be done is a friendly hint.
+- The `cookies` permission has **no extra install warning** (the `<all_urls>` host access already triggers the maximum host warning).
+- With `<all_urls>` host access, getAll returns cookies for any domain the extension queries; `cookie_get` scopes its query to the active tab's domain rather than dumping everything.
 
 **Mitigation**:
 - cookie_get lives in background, storage_get lives in content (each determined by its own data source)

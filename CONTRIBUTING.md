@@ -9,7 +9,7 @@ for preserving the safety model.
 - Read [docs/development.md](./docs/development.md) for the dev loop and
   [docs/architecture.md](./docs/architecture.md) for the design.
 - Behavioral or security-model changes should reference (or add) an
-  [ADR](./docs/adr/). Don't quietly weaken a confirmation/allowlist boundary.
+  [ADR](./docs/adr/). Don't quietly weaken a confirmation/permission boundary.
 
 ## Workflow
 

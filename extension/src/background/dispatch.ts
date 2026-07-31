@@ -61,9 +61,7 @@ export async function dispatch(req: BridgeReq): Promise<unknown> {
 
   // Page-level ops. Resolve the target tab, then run through the selected
   // backend: the content script (default) or CDP / chrome.debugger when the
-  // user turned cdpMode on (ADR-0017). The backend owns ensureAllowed +
-  // injection/attach, so dispatch's ordering (resolve tab → ensureAllowed →
-  // run) is preserved either way.
+  // user turned cdpMode on (ADR-0017). The backend owns injection/attach.
   const tab = await resolveTargetTab(req.tabId);
   const cdpMode = (await getSetting("cdpMode")) === true;
   const backend = selectBackend(cdpMode);

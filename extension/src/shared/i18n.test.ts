@@ -41,10 +41,10 @@ describe("resolveLocale", () => {
 describe("t()", () => {
   it("returns the active-locale message", () => {
     setLocale("zh_CN");
-    expect(t("btn_add")).toBe(zhCN.btn_add.message);
-    expect(t("btn_add")).not.toBe(en.btn_add.message);
+    expect(t("status_connected")).toBe(zhCN.status_connected.message);
+    expect(t("status_connected")).not.toBe(en.status_connected.message);
     setLocale("en");
-    expect(t("btn_add")).toBe(en.btn_add.message);
+    expect(t("status_connected")).toBe(en.status_connected.message);
   });
 
   it("returns the key itself for an unknown message", () => {

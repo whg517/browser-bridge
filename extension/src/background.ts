@@ -6,7 +6,6 @@
 //   - tabs.ts           tab resolution/injection + tab_* tools
 //   - precise.ts        page_snapshot_precise (chrome.debugger / CDP)
 //   - cookies.ts        cookie_get (chrome.cookies, SW-only)
-//   - allowlist-store.ts  storage-backed allowlist + approval flow
 //   - messages.ts       runtime message router (popup/options/screenshot)
 
 import "./background/messages"; // registers the runtime.onMessage router

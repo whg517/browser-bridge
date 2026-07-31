@@ -167,8 +167,8 @@ fn render(r: &Report) -> String {
     out.push_str(
         "\nnote: the checks above cover the MCP server + native-host bridge only.\n\
          They do NOT confirm the Chrome extension is loaded and connected. Verify\n\
-         that via the Browser Bridge toolbar icon (approve the target site) and\n\
-         the extension's Service Worker console at chrome://extensions.\n",
+         that via the Browser Bridge toolbar icon (it shows the connection status)\n\
+         and the extension's Service Worker console at chrome://extensions.\n",
     );
 
     out.push_str(&format!("\n{}\n", summary(r)));

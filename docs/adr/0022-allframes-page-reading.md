@@ -3,6 +3,11 @@
 - **Status**: Accepted
 - **Date**: 2026-07-28
 
+> **Update (ADR-0024):** the per-frame **allowlist gate** described below was
+> removed along with the allowlist itself. allFrames reading remains, but every
+> sub-frame is now read unconditionally (no `isAllowed`/`isSubFrameAllowed`
+> check); the frame-namespaced `f<N>:` refs and merge logic are unchanged.
+
 ## Context
 
 The content-script tools (`page_snapshot`, `page_text`, `page_links`) read only

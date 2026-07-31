@@ -26,7 +26,7 @@ At the same time, many frontend frameworks (Auth0/NextAuth/Firebase) store token
 
 ## Key Research Findings (the facts that drove the design)
 
-1. **The `chrome.cookies` API is constrained by host_permissions**: `getAll({})` returns only the Cookies of authorized domains, **not** all browser Cookies. The blast radius is consistent with existing tools, reusing the existing allowlist ([ADR-0004](./0004-allowlist-with-optional-host-permissions.md)).
+1. **The `chrome.cookies` API is constrained by host_permissions**: `getAll({})` returns only the Cookies of authorized domains, **not** all browser Cookies. The blast radius is consistent with existing tools, reusing the existing allowlist (ADR-0004 (removed; see [ADR-0024](./0024-remove-allowlist.md))).
 2. **It can read httpOnly Cookies**: the API exposes the `httpOnly` field and returns httpOnly Cookies normally — this is the core value relative to `document.cookie`.
 3. **Page localStorage must be read from a content script** (same-origin restriction); `chrome.storage` is the extension's own and unrelated to the page — the two are different. So `storage_get` lives in content.js, and `cookie_get` lives in background.js.
 4. **The `cookies` permission adds no extra install warning** (we already have debugger, which triggers the maximum host warning, so adding `cookies` costs nothing).
@@ -104,7 +104,7 @@ Reading covers 90% of scenarios (grabbing the login state for use elsewhere), wh
 
 ## Relationship to Other ADRs
 
-- **Reuses [ADR-0004](./0004-allowlist-with-optional-host-permissions.md)**: the allowlist is the site-level first line of defense; Cookie/Storage is automatically constrained by it
+- **Reuses ADR-0004 (removed; see [ADR-0024](./0024-remove-allowlist.md))**: the allowlist is the site-level first line of defense; Cookie/Storage is automatically constrained by it
 - **Shared redaction**: the `maskSensitive` redaction function, with a pattern library for JWT/hex/numbers/sensitive keys, is shared with `page_eval` results
 - **Read-only and silent**: Cookie/Storage reads are read-only and silent (like page_text/page_snapshot); results are always redacted
 - **Complements the capability boundary of [ADR-0003](./0003-content-script-snapshot-vs-chrome-debugger.md)**: content scripts read localStorage (same-origin), and chrome.debugger can also read it but is too heavy; a content script suffices here

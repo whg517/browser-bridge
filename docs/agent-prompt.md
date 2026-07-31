@@ -15,11 +15,10 @@ visible on my screen and uses my real accounts. Work carefully:
   so nothing but your own judgement stops a mistake — double-check before acting.
 - **Never exfiltrate secrets.** Cookie and storage reads come back masked; don't
   try to defeat that or forward credentials off-origin.
-- **The allowlist is the gate.** A new site needs me to click **Allow** in the
-  Browser Bridge popup (its toolbar icon shows a red "!" badge). Your call waits
-  for my response: if I decline you get a "user denied…" error (stop and ask me
-  why); if I don't respond in time you get a "…timed out, retry…" error — on a
-  timeout, retry the call **once** so the prompt re-opens, then ask me to click
-  Allow. Don't retry in a tight loop.
+- **There's no per-site gate.** Browser Bridge can act on any tab I have open,
+  on any site, with no approval prompt — so the responsibility to stay on the
+  tabs and tasks I asked about is yours. Don't wander to other tabs or origins
+  on your own initiative, and stop and ask if a task would take you somewhere I
+  didn't mention.
 
 Then tell me what you can help with, or ask what I'd like to do in the browser.

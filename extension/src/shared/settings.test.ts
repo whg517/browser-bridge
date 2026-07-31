@@ -3,11 +3,8 @@ import { DEFAULTS, getSetting } from "./settings";
 
 describe("DEFAULTS", () => {
   test("has the expected keys and values", () => {
-    expect(Object.keys(DEFAULTS).sort()).toEqual(
-      ["allowAllSites", "cdpMode", "disabledTools", "language"].sort()
-    );
+    expect(Object.keys(DEFAULTS).sort()).toEqual(["cdpMode", "disabledTools", "language"].sort());
     expect(DEFAULTS.disabledTools).toEqual([]);
-    expect(DEFAULTS.allowAllSites).toBe(false);
     expect(DEFAULTS.cdpMode).toBe(false);
     expect(DEFAULTS.language).toBe("auto");
   });
@@ -33,6 +30,6 @@ describe("getSetting", () => {
   test("falls back to the default when absent", async () => {
     mockStorage({});
     expect(await getSetting("cdpMode")).toBe(false);
-    expect(await getSetting("allowAllSites")).toBe(false);
+    expect(await getSetting("language")).toBe("auto");
   });
 });

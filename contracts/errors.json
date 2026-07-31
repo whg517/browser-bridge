@@ -28,12 +28,6 @@
       "message": "The extension service worker is not ready yet; retry shortly."
     },
     {
-      "code": "SITE_NOT_ALLOWED",
-      "category": "permission",
-      "retryable": false,
-      "message": "The target origin is not in the user's allowlist."
-    },
-    {
       "code": "HOST_PERMISSION_MISSING",
       "category": "permission",
       "retryable": false,

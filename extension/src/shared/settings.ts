@@ -8,7 +8,6 @@ import type { Settings } from "./types";
 
 export const DEFAULTS: Settings = {
   disabledTools: [], // string[] of tool/op names that are blocked
-  allowAllSites: false,
   cdpMode: false, // route ALL page ops through chrome.debugger (CDP). See ADR-0017.
   language: "auto", // UI language: "auto" (follow browser) | "en" | "zh_CN"
 };

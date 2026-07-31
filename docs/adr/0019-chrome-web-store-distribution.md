@@ -97,7 +97,7 @@ developer path.**
 
 ## Relationship to Other ADRs
 
-- Orthogonal to [ADR-0004](./0004-allowlist-with-optional-host-permissions.md): the distribution
+- Orthogonal to ADR-0004 (removed; see [ADR-0024](./0024-remove-allowlist.md)): the distribution
   method does not change the allowlist/authorization model
 - Related to [ADR-0009](./0009-page-snapshot-precise-debugger.md): `page_eval` and `chrome.debugger`
   are the key risk items in the store review
