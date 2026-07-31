@@ -12,7 +12,7 @@
 
 import type { OpArgs } from "../../shared/types";
 import type { PageBackend } from "../page-backend";
-import { maskSensitive, maskString } from "../../shared/masking";
+import { maskSensitive, maskNamedValue } from "../../shared/masking";
 import { truncate } from "../../content/util";
 import { isDebuggable, type CdpSession, type EvaluateResponse } from "../cdp/session";
 import { cdpRegistry } from "../cdp/registry";
@@ -110,12 +110,13 @@ export class CdpBackend implements PageBackend {
           truncated: boolean;
           totalKeys: number;
         };
+    // Key-name aware, same as the content-script path (content/storage.ts).
     if ("entries" in raw) {
-      const masked: Record<string, string> = {};
-      for (const k of Object.keys(raw.entries)) masked[k] = maskString(raw.entries[k]);
+      const masked: Record<string, unknown> = {};
+      for (const k of Object.keys(raw.entries)) masked[k] = maskNamedValue(k, raw.entries[k]);
       return { ...raw, entries: masked };
     }
-    if (raw.found) return { ...raw, value: maskString(raw.value) };
+    if (raw.found) return { ...raw, value: maskNamedValue(raw.key, raw.value) };
     return raw;
   }
 

@@ -1,6 +1,8 @@
 // Tab resolution, content-script injection, and the tab-level tools
 // (tab_list / tab_focus / tab_open / tab_close).
 
+import { TOP_FRAME } from "./frames";
+
 export async function resolveTargetTab(maybeTabId: number | undefined): Promise<chrome.tabs.Tab> {
   if (maybeTabId) {
     return await chrome.tabs.get(maybeTabId);
@@ -14,7 +16,10 @@ export async function injectIfNeeded(tabId: number) {
   // Content scripts are injected dynamically after the user grants the host
   // permission for this origin. Ping first so repeated tool calls stay cheap.
   try {
-    await chrome.tabs.sendMessage(tabId, { op: "ping" });
+    // Probe the TOP frame specifically: an unqualified sendMessage reaches every
+    // frame, so a sub-frame's pong could mask a top frame that has no content
+    // script yet and skip the injection below.
+    await chrome.tabs.sendMessage(tabId, { op: "ping" }, { frameId: TOP_FRAME });
   } catch {
     // Not injected yet — inject now (requires scripting permission + host).
     // Fetch the tab purely for its side effect: rejects if the tab is gone.

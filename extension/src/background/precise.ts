@@ -35,6 +35,7 @@ interface NodeDescriptor {
   id?: string;
   name?: string;
   value?: string;
+  checked?: boolean;
 }
 interface CallFunctionResult {
   result?: { value?: NodeDescriptor };
@@ -62,6 +63,29 @@ const PRECISE_INTERACTIVE_ROLES = new Set([
   "spinButton",
   "slider",
 ]);
+
+// Runs in the page (via Runtime.callFunctionOn) against one resolved element:
+// tags it with its ref and reports the descriptor fields the snapshot needs.
+// Exported as a string so it can be unit-tested without a debugger session.
+//
+// Masking happens HERE, in the page, so a password never crosses back into the
+// extension at all — matching the content-script (content/snapshot.ts) and CDP
+// (cdp/page-fns.ts) snapshots, which have always masked it.
+export const NODE_DESCRIPTOR_FN =
+  "function(ref) {" +
+  "  this.setAttribute('data-zcb-ref', ref);" +
+  "  var id = this.id ? '#' + this.id : '';" +
+  "  var tag = (this.tagName || '').toLowerCase();" +
+  "  var type = String(this.type || '').toLowerCase();" +
+  "  var value;" +
+  "  if (type === 'password') { value = this.value ? '••••••' : ''; }" +
+  // A checkbox/radio's `value` is the submit payload ("on" by default), not its
+  // state — reporting it reads as "checked". Report `checked` instead.
+  "  else if (type === 'checkbox' || type === 'radio') { value = undefined; }" +
+  "  else if (this.value !== undefined) { value = String(this.value).slice(0,60); }" +
+  "  return { tag: tag, id: id, name: this.getAttribute('name') || '', value: value," +
+  "    checked: (type === 'checkbox' || type === 'radio') ? !!this.checked : undefined };" +
+  "}";
 
 function axValue(v: AXValueLike | undefined): unknown {
   // AXValue shapes: {type:"string", value:"..."} or plain value.
@@ -158,14 +182,7 @@ export async function snapshotPrecise(maybeTabId: number | undefined, _args: OpA
         // Tag the element AND read back a selector/id hint in one call.
         const callRes = await dbgSend<CallFunctionResult>(tab.id!, "Runtime.callFunctionOn", {
           objectId,
-          functionDeclaration:
-            "function(ref) {" +
-            "  this.setAttribute('data-zcb-ref', ref);" +
-            "  var id = this.id ? '#' + this.id : '';" +
-            "  var tag = (this.tagName || '').toLowerCase();" +
-            "  return { tag: tag, id: id, name: this.getAttribute('name') || '', " +
-            "    value: (this.value !== undefined ? String(this.value).slice(0,60) : undefined) };" +
-            "}",
+          functionDeclaration: NODE_DESCRIPTOR_FN,
           arguments: [{ value: ref }],
           returnByValue: true,
         });
@@ -181,6 +198,7 @@ export async function snapshotPrecise(maybeTabId: number | undefined, _args: OpA
         name: truncateAx(axValue(n.name)),
         selector: descriptor.tag ? descriptor.tag + descriptor.id : undefined,
         value: descriptor.value,
+        checked: descriptor.checked,
       });
     }
 

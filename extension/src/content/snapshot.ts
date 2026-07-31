@@ -45,6 +45,7 @@ function walkSnapshot() {
       name: nameOf(el),
       selector: cssSelectorOf(el),
       value: previewValue(el),
+      checked: checkedState(el),
     });
   }
   return { refCount: out.length, nodes: out, url: location.href, title: document.title };
@@ -154,11 +155,24 @@ export function nameOf(el: HTMLElement) {
 function previewValue(el: HTMLElement): string | undefined {
   if (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT") {
     const field = el as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
+    // A checkbox/radio's `value` is its submit payload — "on" unless the author
+    // set one — so reporting it reads as "this box is checked". Report the real
+    // state via `checked` instead and leave `value` off.
+    if (field.type === "checkbox" || field.type === "radio") return undefined;
     const v = field.value || "";
     if (field.type === "password") return v ? "••••••" : "";
     return truncate(v, 60);
   }
   return undefined;
+}
+
+// Checked state for the two input types that have one; undefined elsewhere so
+// the field simply doesn't appear on other nodes.
+function checkedState(el: HTMLElement): boolean | undefined {
+  if (el.tagName !== "INPUT") return undefined;
+  const field = el as HTMLInputElement;
+  if (field.type !== "checkbox" && field.type !== "radio") return undefined;
+  return !!field.checked;
 }
 
 function isVisible(el: HTMLElement) {

@@ -473,8 +473,8 @@ NEXT STEPS  (no extension-ID copying — it's pinned to $EXTENSION_ID)
    (Verify the ID under the name is $EXTENSION_ID — the manifest already
     trusts it, so nothing to patch.)
 
-2. Register the MCP server with your agent. Every MCP host discovers the 15
-   tools automatically once it has this no-args stdio server entry pointing at:
+2. Register the MCP server with your agent. Every MCP host discovers the tool
+   catalogue automatically once it has this no-args stdio server entry pointing at:
      $SERVER_CMD
 
    Auto-register (opt-in; runs the client's own CLI when present):
@@ -496,8 +496,8 @@ NEXT STEPS  (no extension-ID copying — it's pinned to $EXTENSION_ID)
 
 3. Restart Chrome (so it picks up the native messaging host manifest).
 
-4. In your agent, try "list my browser tabs". Approve new sites via the
-   Browser Bridge toolbar icon when prompted.
+4. In your agent, try "list my browser tabs". Tools act on any tab right away —
+   there is no per-site approval step.
 
 To uninstall later: ./install.sh --uninstall
    (add --unregister-claude-code / --unregister-codex / --unregister-openclaw

@@ -158,7 +158,10 @@ pub fn all() -> Vec<Tool> {
                  possible, and only use page_eval when those cannot achieve the goal (custom \
                  events, reading framework state, SPA routing, canvas/WebGL, etc.). Code runs in \
                  the page's global scope, wrapped as `async`, so you can `await` and `return` a \
-                 value. Async results are awaited. Errors are returned as {name, message}.",
+                 value. Async results are awaited. Errors are returned as {name, message}. A page \
+                 whose Content-Security-Policy omits 'unsafe-eval' blocks this tool outright (the \
+                 call fails with a message saying so); enable CDP mode in the extension's Options \
+                 to evaluate through chrome.debugger instead.",
             input_schema: schema(
                 &["code"],
                 &[("code", "string", "JavaScript code to execute")],
@@ -190,7 +193,9 @@ pub fn all() -> Vec<Tool> {
                 "Read cookies for the active tab (or a url/domain you specify). Includes httpOnly \
                  cookies (the main reason to use this over document.cookie). Read-only; \
                  there is no cookie_set (writing httpOnly cookies is a session-fixation risk). \
-                 Values are masked (JWT / long hex / long numbers) before being returned. If you \
+                 Values are masked before being returned — by pattern (JWT / long hex / long \
+                 digit runs / provider API keys) and by name, so a cookie called e.g. \
+                 `csrftoken` or `sessionid` is redacted whatever its value looks like. If you \
                  omit url/domain/name, cookies for the active tab's URL are returned.",
             input_schema: schema(
                 &[],
@@ -211,8 +216,10 @@ pub fn all() -> Vec<Tool> {
                 "Read the page's localStorage or sessionStorage (where frameworks like Auth0 / \
                  NextAuth / Firebase store tokens). Must run on the active tab; same-origin \
                  only (cross-origin iframes are not readable). Pass `key` to fetch one entry, \
-                 or omit it to dump all entries (capped at 500). Values are ALWAYS masked \
-                 (JWT / long hex / long numbers) — this masking is not toggleable. Read-only.",
+                 or omit it to dump all entries (capped at 500). Values are ALWAYS masked — by \
+                 pattern (JWT / long hex / long digit runs / provider API keys) and by key name, \
+                 so an entry called e.g. `apiKey` or `authToken` is redacted whatever its value \
+                 looks like. This masking is not toggleable. Read-only.",
             input_schema: schema(
                 &[],
                 &[

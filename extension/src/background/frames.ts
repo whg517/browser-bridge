@@ -20,6 +20,10 @@ interface SnapshotLike {
   title?: string;
 }
 
+// The tab's top document. Every page op must name a frame explicitly —
+// chrome.tabs.sendMessage without a frameId broadcasts to all frames.
+export const TOP_FRAME = 0;
+
 // Parse a frame-qualified ref like "f2:e3" → { frameId: 2, bareRef: "e3" }.
 // Returns null for a bare ref (e3), a precise ref (p3), or undefined.
 export function parseFrameRef(
@@ -28,6 +32,18 @@ export function parseFrameRef(
   if (!ref) return null;
   const m = /^f(\d+):(.+)$/.exec(ref);
   return m ? { frameId: Number(m[1]), bareRef: m[2] } : null;
+}
+
+// Restore the frame prefix on a sub-frame click/fill echo. The content script
+// is frame-agnostic and reports the bare ref it was given, so `{clicked:"e2"}`
+// coming out of frame 7 would otherwise name the *top* frame's e2.
+export function qualifyRefEcho(resp: unknown, frameId: number, bareRef: string): unknown {
+  if (!resp || typeof resp !== "object") return resp;
+  const out = { ...(resp as Record<string, unknown>) };
+  for (const k of ["clicked", "filled"]) {
+    if (out[k] === bareRef) out[k] = `f${frameId}:${bareRef}`;
+  }
+  return out;
 }
 
 // Merge a page_snapshot across frames: keep the top frame's refs bare (back-

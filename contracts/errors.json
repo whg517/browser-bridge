@@ -6,7 +6,7 @@
       "category": "protocol",
       "retryable": false,
       "message": "The tool arguments were missing or invalid.",
-      "rust": ["UnknownTool"]
+      "rust": ["UnknownTool", "InvalidArgument"]
     },
     {
       "code": "NOT_CONNECTED",

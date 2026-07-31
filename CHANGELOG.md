@@ -6,6 +6,52 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+Fixes from a live 16-tool regression sweep against a real Chrome (see the
+[QA runbook's regression log](tests/manual/canvas-embeddings/README.md#regression-log)).
+
+### Fixed
+- **`page_screenshot` no longer breaks on pages with iframes.** Page ops that
+  aren't frame-routed now address the top frame explicitly. They were sent
+  without a `frameId`, which makes Chrome broadcast to *every* frame and answer
+  with whichever replies first — so once any read op had injected all frames, a
+  page with 2+ iframes fired one `captureVisibleTab` per frame, exceeded
+  Chrome's 2/sec throttle, and failed with `capture failed` from then on.
+- **`page_scroll` reports the top document's position again.** The same
+  broadcast let a sub-frame answer, so `direction:bottom` on a long page could
+  report a 300 px iframe's scroll limit — and scrolled the iframes as a side
+  effect. `page_eval` likewise ran once per frame.
+- **`page_snapshot_precise` masks password fields.** It returned
+  `input[type=password]` values in cleartext while `page_snapshot` and the CDP
+  snapshot both masked them; masking now happens in the page, so the value never
+  reaches the extension.
+- **Cookie and storage masking reads the key name.** A value is redacted when
+  its key/cookie name names a secret (`csrftoken`, `apiKey`, `sessionid`), not
+  only when the value itself matches a pattern — `session_apikey` = `sk-proj-…`
+  used to come back in full. The pattern catalogue also learned provider API
+  keys (`sk-`/`sk_`, `ghp_`, `xoxb-`, `AKIA…`, `AIza…`), and the JWT rule no
+  longer needs 8+ characters in every segment.
+- **`page_snapshot` reports `checked` for checkboxes and radios** instead of
+  `value: "on"` (the submit payload, which reads as "ticked" whatever the real
+  state is). All three snapshot backends agree.
+- **An unknown `page_scroll` direction is an error**, not a silent no-op that
+  returned coordinates as if it had scrolled.
+- **Missing required arguments return `INVALID_ARGUMENT`** instead of
+  `EXECUTION_FAILED`. They are checked against the tool's published
+  `inputSchema` before the call reaches the browser, rather than being coerced
+  to `""`/`0` and failing in the page.
+- **A cross-frame `page_click`/`page_fill` echoes the ref it was given**
+  (`f7:e2`), not the bare `e2` that names a different element in the top frame.
+- **`page_eval` fails loudly when a Content-Security-Policy blocks it.** A page
+  whose `script-src` omits `'unsafe-eval'` forbids `new Function`; that used to
+  return success carrying a soft error object full of CSP text. It is now a tool
+  error naming the remedy (enable CDP mode), while ordinary JS errors keep
+  coming back as structured data. The limitation is documented on the tool.
+- **`page_screenshot` failures carry Chrome's own message** instead of a bare
+  `capture failed` — the service worker already forwarded the reason and the
+  content script was discarding it.
+- `install.sh` no longer prints a stale tool count or tells users to approve
+  sites through the toolbar icon, a flow removed in 0.5.0.
+
 ## [0.5.0] - 2026-07-27
 
 Additive over 0.4.0 — a link-extraction tool, richer page-reading options, and a

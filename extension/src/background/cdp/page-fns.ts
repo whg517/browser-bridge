@@ -134,11 +134,20 @@ export async function pageSnapshot(refAttr: string): Promise<{
   function previewValue(el: HTMLElement): string | undefined {
     if (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT") {
       const field = el as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
+      // Mirror content/snapshot.ts: a checkbox/radio reports `checked`, not the
+      // "on" submit payload that reads like a state.
+      if (field.type === "checkbox" || field.type === "radio") return undefined;
       const v = field.value || "";
       if (field.type === "password") return v ? "••••••" : "";
       return truncate(v, 60);
     }
     return undefined;
+  }
+  function checkedState(el: HTMLElement): boolean | undefined {
+    if (el.tagName !== "INPUT") return undefined;
+    const field = el as HTMLInputElement;
+    if (field.type !== "checkbox" && field.type !== "radio") return undefined;
+    return !!field.checked;
   }
   function isVisible(el: HTMLElement): boolean {
     if (!el || !el.getClientRects) return false;
@@ -202,6 +211,7 @@ export async function pageSnapshot(refAttr: string): Promise<{
       name: string;
       selector: string;
       value: string | undefined;
+      checked: boolean | undefined;
     }> = [];
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT, {
       acceptNode: (el) =>
@@ -218,6 +228,7 @@ export async function pageSnapshot(refAttr: string): Promise<{
         name: nameOf(el),
         selector: cssSelectorOf(el),
         value: previewValue(el),
+        checked: checkedState(el),
       });
     }
     return { refCount: out.length, nodes: out, url: location.href, title: document.title };
@@ -331,6 +342,12 @@ export function pageScroll(args: { pixels?: number; direction?: string }): {
       case "bottom":
         window.scrollTo(0, document.body.scrollHeight);
         break;
+      default:
+        // Same rejection as the content-script path (content/actions.ts): an
+        // unhandled direction must not fall through and report coordinates as
+        // though it had scrolled. This function is stringified into the page,
+        // so it can't import the shared list.
+        throw new Error(`scroll: unknown direction "${args.direction}" (use up|down|top|bottom)`);
     }
   } else {
     throw new Error("scroll needs `direction` or `pixels`");
