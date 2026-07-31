@@ -6,6 +6,7 @@
 import { getSetting } from "../shared/settings";
 import {
   originGlobOf,
+  effectiveOriginGlob,
   hostFromOriginGlob,
   normalizeCookieDomain,
   matchesAny,
@@ -38,14 +39,29 @@ export async function ensureDomainAllowed(domain: string) {
   }
 }
 
-// Non-prompting allowlist check. Used to gate same-origin sub-frames during
-// allFrames reading — we must NOT prompt for every sub-frame, so frames whose
-// origin isn't already allowed are silently skipped rather than surfaced.
-export async function isAllowed(url: string | undefined): Promise<boolean> {
-  const glob = originGlobOf(url);
+// Non-prompting gate for a sub-frame during allFrames reading — we must NOT
+// prompt for every sub-frame, so frames whose origin isn't already allowed are
+// silently skipped rather than surfaced. Gates on the frame's EFFECTIVE origin:
+// inherited-origin frames (about:srcdoc/about:blank, blob:) map to the embedder
+// / inner origin, so same-origin previews rendered into an iframe aren't wrongly
+// skipped (they were, pre-fix: about:srcdoc → about:///*, blob: → blob:///*).
+export async function isSubFrameAllowed(
+  frameUrl: string | undefined,
+  topUrl: string | undefined
+): Promise<boolean> {
+  const glob = effectiveOriginGlob(frameUrl, topUrl);
   if (!glob) return false;
   if ((await getSetting("allowAllSites")) === true) return true;
   return matchesAny(glob, await getAllowlist());
+}
+
+// Does the extension actually hold the host permission for a match pattern?
+// (Distinct from the allowlist glob, which only records user intent — the two
+// can drift, e.g. disabling "allow all sites" revokes <all_urls>.)
+function hasHostPermission(pattern: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    chrome.permissions.contains({ origins: [pattern] }, (has: boolean) => resolve(Boolean(has)));
+  });
 }
 
 export async function ensureAllowed(url: string | undefined) {
@@ -57,11 +73,25 @@ export async function ensureAllowed(url: string | undefined) {
   // injection works on any origin.
   if ((await getSetting("allowAllSites")) === true) return;
   const list = await getAllowlist();
-  if (matchesAny(glob, list)) return;
-  // Not allowlisted → ask the user. We raise a "!" toolbar badge + a pending
-  // record the popup reads; the popup grants/denies. Give the agent a distinct,
-  // actionable message per outcome (#79) — a bare "not allowed" reads as a
-  // permanent failure and doesn't tell the user what to click.
+  if (matchesAny(glob, list)) {
+    // Allowlisted — but the host permission can be MISSING even though the glob
+    // is recorded, e.g. after disabling "allow all sites" (which revokes
+    // <all_urls> and strands per-origin globs with no permission). In that state
+    // executeScript hard-fails with "Cannot access" and there's no recovery,
+    // since we'd otherwise return here without prompting. Detect the drift and
+    // fall through to re-request the permission via the popup.
+    const pattern = globToPermissionPattern(glob);
+    if (!pattern || (await hasHostPermission(pattern))) return;
+  }
+  // Not allowlisted (or allowlisted but the host permission was stripped) → ask
+  // the user. We raise a "!" toolbar badge + a pending record the popup reads;
+  // the popup grants/denies AND (re-)requests the host permission.
+  await runAllowPrompt(glob);
+}
+
+// Drive the popup approval flow for one origin glob and throw an actionable
+// error on denial/timeout (#79). On "granted" it returns normally.
+async function runAllowPrompt(glob: string) {
   const reason = await promptUserForAllow(glob);
   if (reason === "denied") {
     throw new Error(`The user denied browser-bridge access to ${glob}.`);
@@ -76,7 +106,7 @@ export async function ensureAllowed(url: string | undefined) {
         `Settings → Allowed sites.`
     );
   }
-  // reason === "granted" → allowed; fall through.
+  // reason === "granted" → allowed.
 }
 
 type AllowReason = "granted" | "denied" | "timeout";

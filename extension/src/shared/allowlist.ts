@@ -14,6 +14,31 @@ export function originGlobOf(url: string | undefined): string | null {
   }
 }
 
+// Map a sub-frame's URL to the origin glob it should be *gated* by, given the
+// (already user-approved) top document URL.
+//
+// Some frames inherit their embedder's origin but carry a URL that doesn't
+// encode it, so gating on the raw URL wrongly skips them (they're effectively
+// same-origin — e.g. an AI "canvas"/preview rendered into an iframe):
+//   • about:srcdoc / about:blank → inherit the embedder origin → gate by top.
+//   • blob:<origin>/<uuid>       → the real origin is embedded → gate by it.
+// Everything else gates by its own origin (a genuinely cross-origin frame still
+// needs its own grant). Returns null if unparseable.
+export function effectiveOriginGlob(
+  frameUrl: string | undefined,
+  topUrl: string | undefined
+): string | null {
+  if (!frameUrl) return null;
+  if (frameUrl === "about:srcdoc" || frameUrl === "about:blank") {
+    return originGlobOf(topUrl);
+  }
+  if (frameUrl.startsWith("blob:")) {
+    // Strip the "blob:" prefix to expose the inner origin URL.
+    return originGlobOf(frameUrl.slice("blob:".length));
+  }
+  return originGlobOf(frameUrl);
+}
+
 // Extract the lowercase host from an origin glob, or null if unparseable.
 export function hostFromOriginGlob(glob: string): string | null {
   try {
