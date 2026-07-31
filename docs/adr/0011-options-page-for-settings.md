@@ -107,5 +107,5 @@ The default values for configuration items are defined in separate `DEFAULTS` ob
 
 ## Relationship to Other ADRs
 
-- **[ADR-0004](./0004-allowlist-with-optional-host-permissions.md)**: allowAllSites is a "master switch" variant of the allowlist — it skips per-site approval but underneath still relies on the same optional host permissions mechanism. Manually adding to the allowlist fills in the add capability that was missing in v0.1
+- **ADR-0004 (removed; see [ADR-0024](./0024-remove-allowlist.md))**: allowAllSites is a "master switch" variant of the allowlist — it skips per-site approval but underneath still relies on the same optional host permissions mechanism. Manually adding to the allowlist fills in the add capability that was missing in v0.1
 - **[ADR-0009](./0009-page-snapshot-precise-debugger.md)**: the pre-precise-snapshot prompt originated here

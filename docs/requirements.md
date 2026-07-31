@@ -25,12 +25,12 @@ Users want to let AI (via an MCP client) operate their own browser directly: scr
 ### 2.1 Goals (v0.1)
 - **G1 Real browser**: operate the Chrome the user is currently using, preserving all login state, extensions, and cookies
 - **G2 Zero special launch**: install the extension once for lasting effect, no need to start with `--remote-debugging-port` every time
-- **G3 Secure and controllable**: new sites require user authorization (per-site allowlist); `page_eval` masks token-like values in its results; any tool can be turned off individually (including `page_eval`)
+- **G3 Secure and controllable**: the extension holds broad host access (`<all_urls>`) with no per-site approval — control rests on the pinned-ID native-host trust, a single MCP client owning the bridge, per-tool enable/disable (including `page_eval`), and always-on masking of token-like values (see [ADR-0024](./adr/0024-remove-allowlist.md))
 - **G4 MCP integration**: connect as a standard MCP server to MCP clients, with a stable and composable tool set
 - **G5 Single-binary distribution**: the entire backend compiles into a single Rust binary, deployment = copying one file
 
 ### 2.2 Non-Goals / Deferred Capabilities
-- ✅ **`page_eval` now complete**: early v0.1 did not implement arbitrary JS execution; phase two added it. It is gated by the per-tool disable (turn off `page_eval` in the Options page) and the per-site allowlist, and its return values are always masked (token-like values redacted)
+- ✅ **`page_eval` now complete**: early v0.1 did not implement arbitrary JS execution; phase two added it. It is gated only by the per-tool disable (turn off `page_eval` in the Options page) — there is no per-site gate — and its return values are always masked (token-like values redacted)
 - ✅ **Cookie/Storage read-only now complete**: phase three added `cookie_get` / `storage_get`, strictly read-only with redacted output. See [ADR-0010](./adr/0010-cookie-storage-readonly.md)
 - ✅ **Precise snapshot now complete**: `page_snapshot_precise` explicitly uses chrome.debugger, always shows an on-page informational notice before the call (not a blocking confirmation), and briefly shows an infobar during the call. The default `page_snapshot` still uses an approximate content script. See [ADR-0003](./adr/0003-content-script-snapshot-vs-chrome-debugger.md) and [ADR-0009](./adr/0009-page-snapshot-precise-debugger.md)
 - ❌ **No recording/replay or batch task orchestration**. That is the play layer of phase three
@@ -42,7 +42,7 @@ Users want to let AI (via an MCP client) operate their own browser directly: scr
 ### US-1: Scrape pages behind a login
 > As a developer, I want AI to read the content of my **logged-in** internal system pages, so it can help me analyze based on real data.
 
-Acceptance: AI calls `page_snapshot` + `page_text`; on first visit the extension shows an authorization popup, I click Allow; afterwards it can read the redacted page text.
+Acceptance: AI calls `page_snapshot` + `page_text` and reads the redacted page text directly — no per-site approval step, since the extension holds `<all_urls>`.
 
 ### US-2: Auto-fill forms
 > As an everyday user, I want AI to help me fill a long list of fields (address, order information) in a web form, reducing manual input.
@@ -55,9 +55,9 @@ Acceptance: AI calls `page_snapshot` to get field refs, and calls `page_fill` to
 Acceptance: AI calls `tab_list` → `tab_focus` → `page_snapshot`, working across tabs.
 
 ### US-4: Safety boundary
-> As a user, I want AI to act only on origins I have explicitly authorized, and I want to be able to disable risky tools, so I stay in control.
+> As a user, I accept that the extension can act on any tab in the Chrome I loaded it into, and I want to be able to disable risky tools so I stay in control.
 
-Acceptance: AI can only operate an origin after I add it to the allowlist; I can disable `page_eval` (or any individual tool) in the Options page (Tool enablement). Once an origin is allowlisted, actions on it run without a per-action prompt — keep the allowlist tight.
+Acceptance: the AI operates any tab with no per-site prompt; I can disable `page_eval` (or any individual tool) in the Options page (Tool enablement), and disabled tools are refused. Actions run without a per-action prompt — keep high-risk tools disabled unless needed, and only run the bridge in a Chrome you trust with agent access.
 
 ### US-5: Developer extension integration
 > As an MCP client user, I want to connect browser-bridge as an MCP server, and just say "list my tabs" directly in the conversation to use it.
@@ -69,7 +69,7 @@ Acceptance: after adding browser-bridge to the client's MCP server configuration
 ### FR-1 Tab Management
 - `tab_list` — list all tabs (id/title/url/active)
 - `tab_focus` — activate a specified tab
-- `tab_open(url)` — open a new tab (domain constrained by the allowlist)
+- `tab_open(url)` — open a new tab (any URL)
 - `tab_close(tabId)` — close a tab by id
 
 ### FR-2 Page Reading
@@ -83,16 +83,16 @@ Acceptance: after adding browser-bridge to the client's MCP server configuration
 - `page_fill(ref|selector, value)` — fill a form; uses the native setter to trigger the change detection of frameworks (React/Vue); password fields are recorded redacted
 - `page_scroll(direction|pixels)` — scroll
 - `page_wait_for(selector|text|nav, until, timeoutMs)` — wait for a selector/text, or `nav` for the page to load (`until`: `load` default, or `domcontentloaded`)
-- `page_eval(code)` — **high-risk**: execute arbitrary JS. Gated by the per-tool disable (turn `page_eval` off in the Options page) and the per-site allowlist. Return values are always masked (JWT/long hex/long numbers/sensitive keywords). Uses `new Function` to execute in the global scope, supporting await/return
+- `page_eval(code)` — **high-risk**: execute arbitrary JS. Gated only by the per-tool disable (turn `page_eval` off in the Options page) — there is no per-site gate. Return values are always masked (JWT/long hex/long numbers/sensitive keywords). Uses `new Function` to execute in the global scope, supporting await/return
 
 ### FR-4 Security Controls
-- **FR-4.1 Domain allowlist**: on the first operation against a new origin, the extension shows a popup requesting authorization; authorization simultaneously requests the host permission for that domain via `chrome.permissions.request`. The allowlist is stored in `chrome.storage.local` and can be revoked in the popup. See [ADR-0004](./adr/0004-allowlist-with-optional-host-permissions.md)
+- **FR-4.1 Broad host access, no per-site gate**: the extension declares `host_permissions: ["<all_urls>"]` in its manifest, granted by Chrome at install time; there is no runtime permission request and no per-site allowlist or approval popup. Page/tab/cookie ops run on any (injectable) origin. The boundary is the pinned-ID native-host trust + single-client bridge + the controls in FR-4.2/4.3/4.4, not origin gating. See [ADR-0024](./adr/0024-remove-allowlist.md)
 - **FR-4.2 Tool controls**: the controls are per-tool enable/disable (any tool can be turned off — "tool disabled in settings" — including `page_eval`, which is its kill switch), always-on masking of token-like values in `page_eval` results, and the always-on on-page notice for `page_snapshot_precise` (informational, not blocking)
 - **FR-4.3 Host authentication**: the native messaging manifest's `allowed_origins` hard-codes the extension ID; the bridge socket authenticates with a per-run secret + a lock file in the user directory (Unix mode 0600)
 - **FR-4.4 Redaction**: `page_text` masks `<input type=password>` and long numeric strings; `page_fill` redacts the password field value in the parameter echo
 
 ### FR-5 Cookie/Storage Read-Only (Phase Three)
-- **FR-5.1 `cookie_get`**: read cookies (including httpOnly), naturally constrained by host_permissions (reusing the allowlist); the output value is redacted, while structural fields (name/domain/httpOnly) are preserved
+- **FR-5.1 `cookie_get`**: read cookies (including httpOnly), scoped to the active tab's domain; the output value is redacted, while structural fields (name/domain/httpOnly) are preserved
 - **FR-5.2 `storage_get`**: read the page's localStorage/sessionStorage (content script, same-origin); output is always redacted (masking is not optional, since the token leakage risk is equivalent to eval)
 - **FR-5.3 No writes**: no cookie_set / cookie_remove / storage_set—cookie_set could forge httpOnly cookies (session fixation attacks), something even XSS cannot do. See [ADR-0010](./adr/0010-cookie-storage-readonly.md)
 
@@ -100,18 +100,18 @@ Acceptance: after adding browser-bridge to the client's MCP server configuration
 
 | Dimension | Requirement |
 |------|------|
-| **NFR-1 Performance** | single tool-call round trip (excluding first-visit allowlist authorization) < 500ms (local link) |
+| **NFR-1 Performance** | single tool-call round trip < 500ms (local link) |
 | **NFR-2 Resources** | release binary < 1MB; resident MCP server memory < 20MB |
 | **NFR-3 Zero runtime dependencies** | the user's machine only needs Rust at compile time; the runtime depends on no Python/Node/any runtime; introduces no native dependencies beyond libc |
 | **NFR-4 Robustness** | can automatically recover the connection after a 5-minute SW restart, native host crash, or Chrome restart |
-| **NFR-5 Auditability** | all security-related decisions (authorization, confirmation, rejection) have an ADR record; extension permission declarations are minimized |
+| **NFR-5 Auditability** | all security-related decisions (broad host access, tool enable/disable, masking) have an ADR record |
 | **NFR-6 PATH independence** | the host manifest uses absolute paths; does not depend on the user shell's PATH configuration (known constraint: the user's PATH does not include `/opt/homebrew/bin`) |
 
 ## 6. Scope Boundaries
 
 ### 6.1 Included in v0.1
 - 11 tools (see FR-1~FR-3); **phase two adds `page_eval` + `page_snapshot_precise`** (13 total); **phase three adds `cookie_get` + `storage_get`** (15 total)
-- Per-site allowlist as the primary security gate
+- Broad host access (`<all_urls>`, no per-site gate); the security boundary is the pinned-ID host trust + single-client bridge + per-tool disable + masking
 - content script-style snapshot
 - macOS/Windows/Linux + Chrome; Linux also supports Chromium; WSL supports both the Windows
   Chrome interop mode and the WSLg Linux browser mode
@@ -122,7 +122,7 @@ Acceptance: after adding browser-bridge to the client's MCP server configuration
   - ✅ `page_eval` — arbitrary JS execution, gated by the per-tool disable + always-on masking. **Complete**
   - ✅ `page_snapshot_precise` — debugger precise snapshot (informational on-page notice + infobar flash + p-prefixed ref). **Complete**, see [ADR-0009](./adr/0009-page-snapshot-precise-debugger.md)
 - **Phase three**:
-  - ✅ `cookie_get` / `storage_get` (read-only, limited to allowlisted domains, redacted output). **Complete**, see [ADR-0010](./adr/0010-cookie-storage-readonly.md)
+  - ✅ `cookie_get` / `storage_get` (read-only, scoped to the active tab's domain, redacted output). **Complete**, see [ADR-0010](./adr/0010-cookie-storage-readonly.md)
   - Skill layer (distilling high-frequency plays—scraping list pages, form filling, cross-tab operations—into skills)
   - Recording/replay, batch task orchestration
 
@@ -145,8 +145,8 @@ Acceptance: after adding browser-bridge to the client's MCP server configuration
 2. The MCP client can see `browser-bridge` as connected
 3. AI says "list tabs" in the conversation → sees the real list of tabs
 4. AI says "screenshot the current page" → AI can analyze the screenshot
-5. AI says "fill XXX in the search box and click search" → it really executes in the user's browser (on an already-allowlisted site, no per-action confirmation is shown)
-6. Visiting an unauthorized domain → the extension shows an authorization popup
+5. AI says "fill XXX in the search box and click search" → it really executes in the user's browser (no per-action confirmation is shown)
+6. Tools run on any site with no per-site approval popup; a disabled tool (e.g. `page_eval`) is refused with "tool disabled in settings"
 7. Protocol-layer end-to-end tests PASS (NM frames, MCP JSON-RPC, TCP bridge)
 
 ## 9. Glossary

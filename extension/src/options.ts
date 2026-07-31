@@ -39,41 +39,6 @@ function flashToast(msg: string) {
   toastTimer = setTimeout(() => el.classList.remove("show"), 1200);
 }
 
-// The "allow all sites" toggle is special: enabling it MUST also grant the
-// <all_urls> optional host permission (via a user-gesture permissions.request),
-// otherwise content-script injection silently fails on non-allowlisted origins.
-// If the user declines the permission prompt, roll the checkbox back to off.
-function wireAllowAllSites() {
-  const input = $("allowAllSites");
-  const warn = $("allowAllSites-warn");
-  const card = $("card-allowAllSites");
-  input.addEventListener("change", async (e: Event) => {
-    const target = e.target as HTMLInputElement;
-    const checked = target.checked;
-    if (checked) {
-      // Request the all-urls host permission. This must happen inside the
-      // change handler (a user-gesture context) — MV3 forbids requesting
-      // permissions from arbitrary async code.
-      const granted = await chrome.permissions.request({
-        origins: ["<all_urls>"],
-      });
-      if (!granted) {
-        // User declined the OS prompt → roll back.
-        target.checked = false;
-        flashToast(t("toast_allurls_denied"));
-        return;
-      }
-    } else {
-      // Turning off: release the host permission too.
-      await chrome.permissions.remove({ origins: ["<all_urls>"] });
-    }
-    if (warn) warn.style.display = checked ? "block" : "none";
-    if (card) card.classList.toggle("danger", checked);
-    await saveSetting("allowAllSites", checked);
-    flashToast(checked ? t("toast_all_allowed") : t("toast_persite_restored"));
-  });
-}
-
 // ---- render: tools grid ---------------------------------------------------
 
 function renderToolsGrid(disabledTools: string[]) {
@@ -106,77 +71,7 @@ function renderToolsGrid(disabledTools: string[]) {
   });
 }
 
-// ---- render: allowlist ----------------------------------------------------
-
-async function refreshAllowlist() {
-  const resp = await send({ type: "get_allowlist" });
-  const list = (resp?.list as string[]) || [];
-  const box = $("site-list");
-  if (list.length === 0) {
-    box.innerHTML = `<div class="empty">${escapeHtml(t("empty_no_sites"))}</div>`;
-    return;
-  }
-  box.innerHTML = list
-    .map(
-      (g) =>
-        `<div class="item"><code>${escapeHtml(g)}</code>` +
-        `<button class="danger" data-glob="${escapeAttr(g)}">${escapeHtml(t("btn_remove"))}</button></div>`
-    )
-    .join("");
-  box.querySelectorAll<HTMLButtonElement>("button").forEach((b) => {
-    b.onclick = async () => {
-      const glob = b.getAttribute("data-glob")!;
-      await send({ type: "remove_allow", glob });
-      refreshAllowlist();
-      flashToast(t("toast_removed"));
-    };
-  });
-}
-
-// Manual add. We only write to storage here — MV3 forbids
-// chrome.permissions.request outside a user-gesture action context, so the
-// actual host permission is requested on first visit via ensureAllowed().
-function wireAddSite() {
-  const input = $<HTMLInputElement>("new-site");
-  const btn = $("add-site");
-  async function add() {
-    const v = input.value.trim();
-    if (!v) return;
-    if (!/^https?:\/\/[^/]+\//.test(v) && !/^https?:\/\/[^/]+$/.test(v)) {
-      flashToast(t("toast_format_err"));
-      return;
-    }
-    // Normalize to an origin glob: https://host/*
-    let glob;
-    try {
-      const u = new URL(v);
-      glob = `${u.protocol}//${u.host}/*`;
-    } catch (_) {
-      flashToast(t("toast_parse_err"));
-      return;
-    }
-    const resp = await send({ type: "add_allow", glob });
-    if (resp && resp.ok) {
-      input.value = "";
-      refreshAllowlist();
-      flashToast(t("toast_added"));
-    } else {
-      flashToast((resp?.error as string) || t("toast_add_failed"));
-    }
-  }
-  btn.onclick = add;
-  input.addEventListener("keydown", (e: KeyboardEvent) => {
-    if (e.key === "Enter") add();
-  });
-}
-
 // ---- helpers --------------------------------------------------------------
-
-function send(msg: object): Promise<Record<string, unknown> | undefined> {
-  return new Promise((resolve) => {
-    chrome.runtime.sendMessage(msg, (resp) => resolve(resp));
-  });
-}
 
 const HTML_ESCAPES: Record<string, string> = {
   "&": "&amp;",
@@ -203,7 +98,7 @@ function escapeAttr(s: string) {
 
   // Language selector: "auto" follows the browser, "en"/"zh_CN" force it.
   // Changing it reloads the page so every rendered string (incl. the tools
-  // grid and allowlist, which are built in JS) refreshes.
+  // grid, which is built in JS) refreshes.
   {
     const sel = $<HTMLSelectElement>("language");
     sel.value = s.language;
@@ -232,31 +127,8 @@ function escapeAttr(s: string) {
     });
   }
 
-  // "Allow all sites" toggle — special wiring (permission request on enable).
-  // Derive the initial checkbox state from BOTH the stored setting and whether
-  // the <all_urls> permission is actually held, so they can't drift apart.
-  {
-    const held = await chrome.permissions.contains({ origins: ["<all_urls>"] });
-    const effective = s.allowAllSites === true && held;
-    const input = $<HTMLInputElement>("allowAllSites");
-    input.checked = effective;
-    // Persist the effective value in case they had drifted.
-    if (effective !== (s.allowAllSites === true)) {
-      await chrome.storage.local.set({ allowAllSites: effective });
-    }
-    const warn = $("allowAllSites-warn");
-    if (warn) warn.style.display = effective ? "block" : "none";
-    const card = $("card-allowAllSites");
-    if (card) card.classList.toggle("danger", effective);
-    wireAllowAllSites();
-  }
-
   // Tools grid.
   renderToolsGrid(s.disabledTools);
-
-  // Allowlist.
-  await refreshAllowlist();
-  wireAddSite();
 })();
 
 export {};

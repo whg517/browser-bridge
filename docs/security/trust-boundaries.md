@@ -41,9 +41,11 @@ MCP client ──①──▶ Rust MCP server ──②──▶ native host ─
 - **Direction of trust**: **the page is untrusted.** This is the security-
   critical boundary.
 - **Enforcement**:
-  - **Allowlist**: page-level ops only run on origins the user approved; a new
-    origin prompts the user and requests the host permission. The page cannot
-    self-approve.
+  - **No origin gate (accepted)**: the extension holds `<all_urls>` and runs
+    page-level ops on any tab with no per-site approval (see
+    [ADR-0024](../adr/0024-remove-allowlist.md)). This boundary
+    is therefore *not* defended by origin gating; the controls below plus the
+    upstream host-trust hops (③, ②) carry it.
   - **Per-tool disable**: any tool (including `page_eval`) can be turned off in
     the Options page; a disabled tool is refused at dispatch.
   - **Masking**: page text, cookies, storage, and eval output are masked before
@@ -57,8 +59,7 @@ MCP client ──①──▶ Rust MCP server ──②──▶ native host ─
 
 - stdout on either binary mode = protocol bytes only.
 - The bridge never serves a connection that failed the hello check.
-- The host manifest's `allowed_origins` always pins exactly our extension ID.
-- No page-level tool runs on a non-allowlisted origin (absent `allowAllSites`).
+- The host manifest's `allowed_origins` always pins exactly our extension ID(s).
 - No tool writes cookies or web storage.
 
 Changing any of these is a **security-relevant change** (see

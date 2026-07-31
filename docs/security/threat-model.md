@@ -36,33 +36,42 @@ against. Pairs with [trust-boundaries.md](trust-boundaries.md) and the
   tools exist to be driven by that client.
 - **Chrome's sandbox and extension model hold.** We rely on MV3 isolation
   between content scripts and page JS, and on Chrome enforcing host permissions.
+- **The user trusts this Chrome with agent access.** The extension is loaded in
+  a real Chrome the user controls and accepts that a connected MCP client can
+  read and operate **any** open tab. There is no origin gate (see
+  [ADR-0024](../adr/0024-remove-allowlist.md)); security rests
+  on the controls below, not on per-site consent.
 
 ## Primary threats & mitigations
 
-1. **A web page influences the agent into acting on it without approval.**
-   → Page-level ops require an **allowlisted origin**; a new origin triggers an
-   explicit user prompt + `chrome.permissions.request`. The page can't add
-   itself to the allowlist.
+1. **The agent operates on a site or tab the user didn't intend** (whether from
+   a misread instruction or the agent wandering).
+   → There is **no per-site gate** — the extension holds `<all_urls>` and acts on
+   any tab. This is an accepted risk (see [ADR-0024](../adr/0024-remove-allowlist.md)).
+   The residual controls are: a **single MCP client** owns the bridge at a time
+   (the user chose it), everything happens **visibly** in the user's own Chrome,
+   **per-tool enable/disable** limits what any client can do, and the agent
+   prompt instructs the model to stay on the tabs and tasks the user named.
 
 2. **Prompt injection: page content tricks the model into a dangerous tool
    call** (e.g. "run this eval", "read cookies and post them").
    → Observed page content is *data*, not commands, to the agent. The standing
-   defenses are the **per-site allowlist** (the agent only acts on approved
-   origins — see threat 1), **per-tool enable/disable** (any tool can be turned
-   off — "tool disabled in settings" — which is also the `page_eval` kill
-   switch), and **always-on masking** of token-like values in `page_eval`
-   results. `page_snapshot_precise` also always shows an on-page NOTICE, but
-   this is informational, not a blocking confirmation.
-   **Reduced protection:** there is **no**
-   per-action confirmation. On an already-allowlisted origin the agent can
-   submit forms / click navigating links, run JS (when `page_eval` is enabled),
-   and close tabs with **no prompt**. Injection resistance therefore rests on
-   the allowlist and on the model treating page content as data — not on a human
-   approving each individual action.
+   defenses are **per-tool enable/disable** (any tool can be turned off — "tool
+   disabled in settings" — which is also the `page_eval` kill switch) and
+   **always-on masking** of token-like values in `page_eval` results.
+   `page_snapshot_precise` also always shows an on-page NOTICE, but this is
+   informational, not a blocking confirmation.
+   **Reduced protection:** there is **no** origin gate and **no** per-action
+   confirmation. On any origin the agent can submit forms / click navigating
+   links, run JS (when `page_eval` is enabled), and close tabs with **no
+   prompt**. Injection resistance therefore rests on the model treating page
+   content as data, on high-risk tools being disabled when unused, and on the
+   user watching — not on origin gating or a human approving each action.
 
 3. **Credential/token exfiltration.**
-   → Cookies/storage are **read-only** (no set), **allowlist-scoped**, and
-   **masked** (JWT/hex/long-digit/token-like) before leaving the extension.
+   → Cookies/storage are **read-only** (no set); `cookie_get` is scoped to the
+   active tab's domain, `storage_get` is same-origin, and both are **masked**
+   (JWT/hex/long-digit/token-like) before leaving the extension.
    `storage_get` masking is not user-toggleable. `page_text` masks passwords and
    card-like numbers.
 
@@ -87,11 +96,12 @@ against. Pairs with [trust-boundaries.md](trust-boundaries.md) and the
 
 ## Residual risks (accepted, tracked)
 
-- There are no per-action confirmations: high-risk clicks, `page_eval` (unless
-  disabled per-tool), and `tab_close` run on any allowlisted origin **without a
-  prompt**. The allowlist and the per-tool disable are the only gates, so a
-  successful prompt injection on an approved origin can act with the user's
-  session until the user notices.
+- There is no origin gate and no per-action confirmation: high-risk clicks,
+  `page_eval` (unless disabled per-tool), and `tab_close` run on **any** origin
+  **without a prompt**. The per-tool disable and masking are the only gates, so a
+  successful prompt injection can act with the user's session on any open tab
+  until the user notices. This is an accepted trade-off
+  ([ADR-0024](../adr/0024-remove-allowlist.md)).
 - Masking is heuristic — it can miss a novel secret format or over-mask benign
   data.
 - `page_snapshot_precise` briefly attaches the debugger (infobar flash).
@@ -99,6 +109,6 @@ against. Pairs with [trust-boundaries.md](trust-boundaries.md) and the
   [ADR-0017](../adr/0017-cdp-mode-all-ops.md)) routes all page ops through
   `chrome.debugger`. When enabled it **bypasses page CSP** (letting `page_eval`
   run on strict-CSP sites) and holds a **persistent debugger attach** for the
-  tab (the "Started debugging this browser" banner stays up). The allowlist and
-  masking are unchanged; the residual risk is the wider surface and the removed
+  tab (the "Started debugging this browser" banner stays up). Masking is
+  unchanged; the residual risk is the wider surface and the removed
   CSP defense-in-depth layer, accepted as the explicit price of the opt-in.

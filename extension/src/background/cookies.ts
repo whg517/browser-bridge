@@ -1,12 +1,11 @@
-// cookie_get — read-only cookie access for allowlisted hosts (chrome.cookies
-// is SW-only). httpOnly cookies are readable here (that's the point — session
-// tokens live there). Values are masked before leaving the extension. No
-// set/remove: writing would allow forging httpOnly cookies (session fixation),
-// which even page XSS cannot do. See ADR-0010.
+// cookie_get — read-only cookie access (chrome.cookies is SW-only). httpOnly
+// cookies are readable here (that's the point — session tokens live there).
+// Values are masked before leaving the extension. No set/remove: writing would
+// allow forging httpOnly cookies (session fixation), which even page XSS cannot
+// do. See ADR-0010.
 
 import type { OpArgs } from "../shared/types";
 import { maskCookieValue } from "../shared/masking";
-import { ensureAllowed, ensureDomainAllowed } from "./allowlist-store";
 import { resolveTargetTab } from "./tabs";
 
 export async function cookieGet(maybeTabId: number | undefined, args: OpArgs) {
@@ -16,13 +15,7 @@ export async function cookieGet(maybeTabId: number | undefined, args: OpArgs) {
   const { domain, name } = args || {};
   if (!url && !domain) {
     const tab = await resolveTargetTab(maybeTabId);
-    await ensureAllowed(tab.url);
     url = tab.url;
-  } else if (url) {
-    await ensureAllowed(url);
-  }
-  if (domain) {
-    await ensureDomainAllowed(domain);
   }
 
   const filter: chrome.cookies.GetAllDetails = {};
@@ -35,7 +28,7 @@ export async function cookieGet(maybeTabId: number | undefined, args: OpArgs) {
     return {
       cookies: [],
       count: 0,
-      hint: "No cookies matched. If you expected some, verify the host is in the allowlist (popup → Allowed sites).",
+      hint: "No cookies matched the given url/domain/name.",
     };
   }
   // Mask the value only; keep name/domain/httpOnly etc. for diagnostics.

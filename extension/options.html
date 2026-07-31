@@ -140,25 +140,6 @@
   <div class="sub" data-i18n="opt_tools_sub">For any unchecked tool, an AI call receives a "tool disabled in settings" error. Note: the AI can still see that the tool exists, but cannot execute it.</div>
   <div class="tools" id="tools-grid"></div>
 
-  <!-- ===== Allowed sites ===== -->
-  <h2 data-i18n="opt_allowed">Allowed sites (allowlist)</h2>
-
-  <div class="card" id="card-allowAllSites">
-    <input type="checkbox" id="allowAllSites" />
-    <div class="body">
-      <div class="title" data-i18n="opt_allowall_title">Allow all sites (skip per-site approval)</div>
-      <div class="desc" data-i18n="opt_allowall_desc">When enabled, the AI can operate on any http(s) site directly, without a per-site authorization prompt for each new site. Enabling it requests the "&lt;all_urls&gt;" host permission. Suitable when you trust the AI to browse fully automatically; otherwise it's recommended to keep this off and use the per-site allowlist below.</div>
-      <div class="warn" id="allowAllSites-warn" style="display:none" data-i18n="opt_allowall_warn">⚠ When enabled, any site (including banking, email, and intranet sites) can be operated on without authorization. Use with care.</div>
-    </div>
-  </div>
-
-  <div class="sub" data-i18n-html="opt_add_format">Format: <code>https://domain/*</code>. After adding manually, Chrome's host-permission prompt still needs to be approved on first visit to that site.</div>
-  <div class="add-row">
-    <input type="text" id="new-site" placeholder="https://example.com/*" />
-    <button class="primary" id="add-site" data-i18n="btn_add">Add</button>
-  </div>
-  <div class="list" id="site-list"></div>
-
   <div class="toast" id="toast"></div>
   <script src="options.js"></script>
 </body>

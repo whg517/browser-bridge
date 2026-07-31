@@ -6,7 +6,6 @@
 // warned via an informational toast before attach. See ADR-0009.
 
 import type { OpArgs, PageResponse } from "../shared/types";
-import { ensureAllowed } from "./allowlist-store";
 import { resolveTargetTab, injectIfNeeded } from "./tabs";
 // The chrome.debugger primitives + the non-debuggable URL filter now live in
 // the CdpSession facade (ADR-0017); precise.ts reuses them rather than keeping
@@ -72,7 +71,6 @@ function axValue(v: AXValueLike | undefined): unknown {
 
 export async function snapshotPrecise(maybeTabId: number | undefined, _args: OpArgs) {
   const tab = await resolveTargetTab(maybeTabId);
-  await ensureAllowed(tab.url);
 
   if (!isDebuggable(tab.url)) {
     throw new Error(

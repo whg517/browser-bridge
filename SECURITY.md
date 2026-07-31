@@ -23,13 +23,12 @@ please allow reasonable time for a fix before any public disclosure.
 ## Scope
 
 In scope: the Rust binary (MCP server + native host), the native-messaging
-bridge and its auth, the MV3 extension (background/content), the allowlist,
-per-tool enable/disable and kill switches, masking, and the installer.
+bridge and its auth, the MV3 extension (background/content), per-tool
+enable/disable and kill switches, masking, and the installer.
 
-Examples of in-scope issues: bypassing the site allowlist or a per-tool
-disable; exfiltrating cookies/storage/page content past the mask; a page
-influencing the extension into acting on a
-non-approved origin; the bridge socket accepting an unauthenticated peer;
+Examples of in-scope issues: bypassing a per-tool disable; exfiltrating
+cookies/storage/page content past the mask; the native host trusting an
+extension ID it shouldn't; the bridge socket accepting an unauthenticated peer;
 privilege escalation via the native messaging host.
 
 Out of scope: anything requiring a pre-compromised machine or a malicious MCP
@@ -53,13 +52,15 @@ Key invariants:
   framed/NDJSON messages (a stray write corrupts the stream).
 - **Read-only credential access** — cookies/storage can be read (masked), never
   written. There is no `cookie_set`/`storage_set` by design.
-- **Approve-per-origin** — page ops need an allowlisted origin (ADR-0004); this
-  is the primary gate. Once an origin is approved there are **no per-action
-  prompts**: the AI can submit forms, click navigating links, run `page_eval`
-  and close tabs without interrupting the user. Residual controls scope this
-  down: any tool can be turned off in the Options page (including `page_eval`) —
-  that per-tool disable is the kill switch — and `page_eval` results are always
-  masked (token-like values redacted).
+- **Broad host access, no per-site gate** — the extension holds `<all_urls>` at
+  install and there is **no per-origin approval** (ADR-0024): the connected MCP
+  client can read/operate any tab, and there are **no per-action prompts**. The
+  primary boundary is instead the native host, which trusts only the pinned
+  extension IDs, and a single MCP client owning the bridge at a time. Residual
+  controls scope the blast radius: any tool can be turned off in the Options page
+  (including `page_eval`) — that per-tool disable is the kill switch — and
+  cookie/storage/`page_eval` results are always masked (token-like values
+  redacted).
 - **Bridge auth** — the localhost TCP bridge authenticates each connection with
   a per-run secret from a 0600 lock file.
 
@@ -72,7 +73,7 @@ trust boundary) the [threat model](docs/security/threat-model.md) — if it:
 
 - adds/broadens a Chrome permission or host permission,
 - adds a way to read new sensitive data, or any write capability,
-- changes allowlist, masking, per-tool enable/disable, or kill-switch logic,
+- changes masking, per-tool enable/disable, or kill-switch logic,
 - changes native-messaging auth, the lock file, or the run secret,
 - adds outbound network/IPC, or widens `page_eval`.
 

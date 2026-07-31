@@ -24,8 +24,7 @@ pub fn all() -> Vec<Tool> {
         },
         Tool {
             name: "tab_open",
-            description:
-                "Open a URL in a new tab. The host domain must be in the user's allowlist.",
+            description: "Open a URL in a new tab.",
             input_schema: schema(&["url"], &[("url", "string", "Absolute URL to open")]),
         },
         Tool {
@@ -189,8 +188,7 @@ pub fn all() -> Vec<Tool> {
             name: "cookie_get",
             description:
                 "Read cookies for the active tab (or a url/domain you specify). Includes httpOnly \
-                 cookies (the main reason to use this over document.cookie). Scoped to hosts in \
-                 the user's allowlist — unauthorized hosts silently return nothing. Read-only; \
+                 cookies (the main reason to use this over document.cookie). Read-only; \
                  there is no cookie_set (writing httpOnly cookies is a session-fixation risk). \
                  Values are masked (JWT / long hex / long numbers) before being returned. If you \
                  omit url/domain/name, cookies for the active tab's URL are returned.",

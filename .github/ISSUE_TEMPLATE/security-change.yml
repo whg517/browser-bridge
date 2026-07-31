@@ -9,7 +9,7 @@ body:
         [security advisory](https://github.com/whg517/browser-bridge/security/advisories/new).
 
         Use this for a *change* that affects permissions, credential access,
-        confirmation, allowlist, masking, bridge auth, or `page_eval`.
+        confirmation, masking, bridge auth, or `page_eval`.
   - type: textarea
     id: change
     attributes:
@@ -27,7 +27,6 @@ body:
         - New sensitive-data read
         - New write capability
         - Confirmation logic
-        - Allowlist logic
         - Masking logic
         - Native-messaging auth / lock file / run secret
         - Outbound network or IPC

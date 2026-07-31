@@ -8,8 +8,8 @@
 
 The compromise or suspected compromise of a protected asset from [threat-model.md](threat-model.md), for example:
 
-- Bypassing the site allowlist or the confirmation prompt to perform page actions on an **unauthorized origin**;
 - Leaking cookies / storage / page content / eval return values past redaction;
+- A disabled tool still executing (the per-tool disable gate being bypassed);
 - The bridge socket accepting an **unauthenticated** local peer, or the host manifest's `allowed_origins` being modified;
 - `page_eval` or its confirmation channel being abused to produce irreversible consequences.
 
@@ -29,10 +29,10 @@ After receiving a report, prioritize it using the following questions (aligned w
 
 1. **Which trust boundary was crossed?** (see [trust-boundaries.md](trust-boundaries.md) ①–④; ④, the page boundary, is the most critical)
 2. **What can be read/modified?** Does it reach credentials (cookie/storage token)? Are there write/irreversible consequences?
-3. **How strong are the preconditions?** Does it require the user to have already authorized an origin, to have the extension installed, or to be local with the same UID?
+3. **How strong are the preconditions?** Does it require the extension to be installed and connected to an MCP client, or the attacker to be local with the same UID? (Note: there is no per-origin precondition — the extension holds `<all_urls>` and acts on any tab.)
 4. **Is it reproducible?** Is there a PoC?
 
-Use this to decide between "immediate mitigation" and "scheduled fix." Credential leaks or allowlist/confirmation bypasses are the highest priority.
+Use this to decide between "immediate mitigation" and "scheduled fix." Credential leaks, masking bypasses, or tool-disable-gate bypasses are the highest priority.
 
 ## Immediate mitigation (user side, no code changes)
 
@@ -41,17 +41,18 @@ These are actions the user can take on their own to **contain the blast radius**
 - **Disable a single tool**: on the extension's Options page, add the offending tool to `disabledTools`
   (corresponding to `TOOL_DISABLED`, see [errors.json](../../contracts/errors.json)); high-risk tools such as
   `page_eval` should be disabled first.
-- **Revoke the allowlist / turn off all sites**: in Options / popup, remove the authorization for the relevant origin, and confirm that
-  `allowAllSites` is off (see [ADR-0004](../adr/0004-allowlist-with-optional-host-permissions.md),
-  [ADR-0011](../adr/0011-options-page-for-settings.md)). Removing the authorization also revokes that origin's
-  host permission.
+- **Disconnect the bridge**: because there is no per-site gate (the extension holds `<all_urls>` — see
+  [ADR-0024](../adr/0024-remove-allowlist.md)), containment is by cutting access, not by
+  revoking an origin. Exit the MCP client session to release the single-client bridge (use `doctor` to
+  confirm the server is not reachable, see [operations.md](../operations.md)), and disable high-risk tools
+  in Options ([ADR-0011](../adr/0011-options-page-for-settings.md)).
 - **Kill switch**: in `chrome://extensions`, disable or remove the Browser Bridge extension—once the
   extension stops, the native host receives a stdin EOF and exits, and the bridge is severed. If necessary, also exit the MCP client session
   to let the MCP server process terminate (use `doctor` to confirm it is not reachable, see [operations.md](../operations.md)).
 - **Uninstall the host manifest**: after the native messaging host manifest is deleted, Chrome can no longer spawn the host
   (path in [architecture.md §4.3](../architecture.md#43-installation-artifacts)).
 
-> Mitigation priority: disable high-risk tools first → revoke the allowlist → disable the extension → uninstall the manifest, from lightest to heaviest.
+> Mitigation priority: disable high-risk tools first → exit the MCP client session → disable the extension → uninstall the manifest, from lightest to heaviest.
 
 ## Fix and verification
 

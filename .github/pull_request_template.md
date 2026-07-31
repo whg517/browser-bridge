@@ -24,7 +24,7 @@
 
 ## Security-relevant?
 
-If this touches permissions, credential access, confirmation, allowlist,
+If this touches permissions, credential access, confirmation,
 masking, bridge auth, or `page_eval` (see [SECURITY.md](../SECURITY.md)):
 
 - [ ] Not security-relevant

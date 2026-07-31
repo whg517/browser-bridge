@@ -38,12 +38,12 @@
     },
     {
       "name": "tab_open",
-      "uiLabel": "Open a new tab (allowlist required)",
+      "uiLabel": "Open a new tab",
       "risk": "medium",
       "scope": "tab",
       "permission": "tabs",
       "confirmation": "none",
-      "description": "Open a URL in a new tab. The host domain must be in the user's allowlist.",
+      "description": "Open a URL in a new tab.",
       "inputSchema": {
         "properties": {
           "url": {
@@ -309,7 +309,7 @@
       "scope": "tab",
       "permission": "cookies",
       "confirmation": "none",
-      "description": "Read cookies for the active tab (or a url/domain you specify). Includes httpOnly cookies (the main reason to use this over document.cookie). Scoped to hosts in the user's allowlist — unauthorized hosts silently return nothing. Read-only; there is no cookie_set (writing httpOnly cookies is a session-fixation risk). Values are masked (JWT / long hex / long numbers) before being returned. If you omit url/domain/name, cookies for the active tab's URL are returned.",
+      "description": "Read cookies for the active tab (or a url/domain you specify). Includes httpOnly cookies (the main reason to use this over document.cookie). Read-only; there is no cookie_set (writing httpOnly cookies is a session-fixation risk). Values are masked (JWT / long hex / long numbers) before being returned. If you omit url/domain/name, cookies for the active tab's URL are returned.",
       "inputSchema": {
         "properties": {
           "domain": {

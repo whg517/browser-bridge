@@ -5,7 +5,6 @@
 # in review (see SECURITY.md).
 /src/ipc.rs @whg517
 /src/protocol.rs @whg517
-/extension/src/background/allowlist-store.ts @whg517
 /extension/src/content/eval.ts @whg517
 /extension/src/content/toast.ts @whg517
 /extension/manifest.json @whg517

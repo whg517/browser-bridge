@@ -20,13 +20,15 @@ browser-bridge drives a **real, authenticated Chrome**. It can read page
 content, cookies (including `httpOnly`), and web storage, and can run
 JavaScript in your pages. The guardrails that keep that safe:
 
-- **Approve every site.** A new origin triggers a popup prompt; nothing runs on
-  a site you haven't approved (which also grants the host permission the content
-  script needs).
+- **Broad host access, no per-site approval.** The extension holds
+  `<all_urls>` host access, granted at install, and acts on **any** tab with no
+  per-site prompt. Origin gating is *not* a boundary here — the controls below
+  are. Only run the bridge in a Chrome you already trust with agent access.
 - **Kill switch + always-on masking, not per-action prompts.** Any tool can be
   disabled in the Options page (including `page_eval`, arbitrary JS), and
   `page_eval` results are always masked. There are no per-action confirmation
-  prompts — the allowlist above is the gate, so keep it tight.
+  prompts — the per-tool disable and masking are the gate, so keep high-risk
+  tools off unless you need them.
 - **Read-only credentials.** Cookies and storage can be *read* (always masked —
   JWTs, long hex, long digit runs), never written. There is no `cookie_set` /
   `storage_set` by design.
@@ -148,8 +150,8 @@ stdio). Use an **absolute path**; most clients don't expand `~`.
 ### 4. Restart Chrome & try it
 
 Restart Chrome so it loads the native-host manifest, then reconnect your MCP
-client and ask: **"list my browser tabs."** The first time you target a new
-site, click the Browser Bridge toolbar icon and approve it.
+client and ask: **"list my browser tabs."** Tools run on any tab immediately —
+there's no per-site approval step.
 
 **First time? Paste this to your AI** to teach it the workflow and safety gates
 in one shot (source: [docs/agent-prompt.md](./docs/agent-prompt.md)):
@@ -170,12 +172,9 @@ visible on my screen and uses my real accounts. Work carefully:
   nothing but your own judgement stops a mistake — double-check before acting.
 - Never exfiltrate secrets. Cookie and storage reads come back masked; don't
   try to defeat that or forward credentials off-origin.
-- The allowlist is the gate. A new site needs me to click Allow in the Browser
-  Bridge popup (its toolbar icon shows a red "!" badge). Your call waits for my
-  response: if I decline you get a "user denied…" error (stop and ask me why); if
-  I don't respond in time you get a "…timed out, retry…" error — on a timeout,
-  retry the call once so the prompt re-opens, then ask me to click Allow. Don't
-  retry in a tight loop.
+- There's no per-site gate. The extension can act on any tab I have open, with
+  no approval prompt — so you carry the responsibility to stay on the tabs and
+  tasks I asked about. Don't wander to other tabs or origins on your own.
 
 Then tell me what you can help with, or ask what I'd like to do in the browser.
 ```
@@ -205,7 +204,7 @@ Grouped from the single source of truth,
 |------|------|------|
 | `tab_list` | List open tabs (id, title, url, active) | low |
 | `tab_focus` | Bring a tab to the foreground | low |
-| `tab_open` | Open a URL in a new tab (host must be allowlisted) | medium |
+| `tab_open` | Open a URL in a new tab (any URL) | medium |
 | `tab_close` | Close a tab by `tabId` | high |
 
 ### Inspect a page
@@ -233,7 +232,7 @@ Grouped from the single source of truth,
 ### Read credentials (read-only, always masked)
 | Tool | Does | Risk |
 |------|------|------|
-| `cookie_get` | Read cookies for the active tab, incl. `httpOnly`; allowlisted hosts only | high |
+| `cookie_get` | Read cookies for the active tab, incl. `httpOnly` (values masked) | high |
 | `storage_get` | Read the page's `localStorage` / `sessionStorage` (same-origin) | high |
 
 *No write tools by design — cookie/storage writes are out of scope
@@ -348,7 +347,7 @@ Two things it deliberately leaves to you (and prints reminders for):
    or delete the `browser-bridge` entry from Claude Desktop's `mcpServers` /
    the `[mcp_servers.browser-bridge]` block in `~/.codex/config.toml`.
 
-The extension's stored data (allowlist, settings) lives in Chrome and is cleared
+The extension's stored data (settings) lives in Chrome and is cleared
 when you remove the extension.
 
 ---

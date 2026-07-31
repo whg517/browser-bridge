@@ -14,7 +14,7 @@ export interface ToolInfo {
 export const TOOLS: ToolInfo[] = [
   { op: "tab_list", desc: "List all tabs" },
   { op: "tab_focus", desc: "Switch to a tab" },
-  { op: "tab_open", desc: "Open a new tab (allowlist required)" },
+  { op: "tab_open", desc: "Open a new tab" },
   { op: "tab_close", desc: "Close a tab" },
   { op: "page_snapshot", desc: "Snapshot interactive elements" },
   { op: "page_click", desc: "Click an element" },

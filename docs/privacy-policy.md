@@ -1,6 +1,6 @@
 # Privacy Policy — Browser Bridge
 
-_Last updated: 2026-07-25_
+_Last updated: 2026-08-01_
 
 Browser Bridge is an open-source Chrome extension that connects an MCP client
 (such as Claude Code, Claude Desktop, or Codex) to your local Chrome through a
@@ -11,13 +11,19 @@ the extension accesses and what it does — and does not — do with that data.
 
 **Browser Bridge does not collect, transmit, or sell any personal data.** It has
 no analytics, no telemetry, and no remote servers. Everything the extension does
-happens on your own machine, and it only operates on sites you have explicitly
-approved.
+happens on your own machine.
+
+The extension requests **broad host access to all sites** (`<all_urls>`), which
+Chrome grants when you install it. There is **no per-site approval step**: once
+installed and connected to your MCP client, the extension can operate **any tab
+you have open**, on any site. You control this by choosing which Chrome profile
+you install it in and which MCP client you connect — not by approving individual
+sites.
 
 ## What the extension can access
 
-To let an approved AI agent operate the pages you are already signed into, the
-extension can, **only on sites you have explicitly approved**:
+To let an AI agent operate the pages you are already signed into, the extension
+can, **on any site you have open**:
 
 - Read the content of the current page (DOM, text, form fields).
 - Read cookies for the active site, including `httpOnly` cookies.
@@ -44,8 +50,12 @@ being returned.
 
 ## Consent and control
 
-- **Per-site approval.** A site does nothing until you approve its origin in a
-  popup prompt.
+The extension does **not** gate access per site, so your controls are:
+
+- **Install-time choice.** The extension acts only in the Chrome profile you
+  install it in, and only while it is connected to a single MCP client on your
+  machine. Uninstalling or disabling the extension, or disconnecting the MCP
+  client, stops all access.
 - **Per-tool control.** Any tool — including JavaScript evaluation (`page_eval`)
   — can be disabled in the extension's Options page, and a disabled tool is
   refused. Credential-bearing reads (cookies, web storage) are always masked.
@@ -55,8 +65,7 @@ being returned.
 The extension stores a small amount of configuration in Chrome's local
 extension storage (`chrome.storage.local`) on your device only:
 
-- Your list of approved sites (the allowlist).
-- Your extension settings/preferences.
+- Your extension settings/preferences (such as which tools are enabled).
 
 This data never leaves your device and is removed when you uninstall the
 extension.

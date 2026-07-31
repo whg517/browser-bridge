@@ -280,9 +280,8 @@ impl Session {
             }
         }
 
-        // Wait for the response. Generous timeout: the extension may need to
-        // wait on the user to approve a new site in the allowlist popup, which
-        // can take a while.
+        // Wait for the response. Generous timeout: a page op (navigation,
+        // waiting on a selector, a slow render) can take a while.
         let timeout = Duration::from_secs(120);
         match rx.recv_timeout(timeout) {
             Ok(resp) => {

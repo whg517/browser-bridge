@@ -35,7 +35,7 @@ A change is done when:
 
 - inputs are typed and (for tools) schema-validated;
 - a new/changed tool has a risk level in the [risk matrix](docs/security/tool-risk-matrix.md);
-- the permission/allowlist/confirmation path is clear;
+- the permission/confirmation path is clear;
 - there are **positive and negative** tests (negative especially for security);
 - errors have stable codes; logs contain no sensitive data;
 - docs / generated files / CHANGELOG are updated;
@@ -45,7 +45,7 @@ A change is done when:
 
 ## Security-relevant changes
 
-If a change touches permissions, credential access, confirmation, allowlist,
+If a change touches permissions, credential access, confirmation,
 masking, bridge auth, the lock file/secret, or widens `page_eval` (full list in
 [SECURITY.md](SECURITY.md)):
 

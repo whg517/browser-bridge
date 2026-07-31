@@ -6,8 +6,8 @@
 //   - cdpMode ON            → CdpBackend: run every op via chrome.debugger (CDP)
 //     in the page's MAIN world, bypassing page CSP.
 //
-// Both backends receive the already-resolved target tab; ensureAllowed and any
-// injection/attach happen inside the backend (preserving dispatch's ordering).
+// Both backends receive the already-resolved target tab; injection/attach
+// happens inside the backend.
 
 import type { OpArgs } from "../shared/types";
 import { ContentScriptBackend } from "./backends/content-script";

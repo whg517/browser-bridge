@@ -21,7 +21,7 @@ This directory is the **single source of truth** for the browser-bridge project.
 | [security/threat-model.md](./security/threat-model.md) | Threat model: assets, adversaries, per-threat mitigations, residual risks | Maintainers, reviewers |
 | [security/tool-risk-matrix.md](./security/tool-risk-matrix.md) | Per-tool risk matrix: blast radius and gating for each tool | Maintainers, reviewers |
 | [security/trust-boundaries.md](./security/trust-boundaries.md) | Trust boundaries across the three processes / four protocol hops, plus invariants that must not regress | Maintainers, reviewers |
-| [security/incident-response.md](./security/incident-response.md) | Security incident response runbook: reporting, triage, mitigation (disabling tools/revoking the allowlist/master switch), disclosure | Maintainers, reporters |
+| [security/incident-response.md](./security/incident-response.md) | Security incident response runbook: reporting, triage, mitigation (disabling tools / unloading the extension), disclosure | Maintainers, reporters |
 | [adr/](./adr/) | Architecture Decision Records (ADRs): a traceable record of every "why this choice was made" | Reviewers, future contributors |
 
 > The single source of truth for the cross-process contract (tool catalog, error
@@ -46,7 +46,6 @@ An ADR (Architecture Decision Record) documents decisions where **there were mul
 | [0001](./adr/0001-use-rust-single-binary.md) | Rust single binary + subcommand dispatch | Accepted |
 | [0002](./adr/0002-three-process-architecture-localhost-tcp.md) | Three-process architecture + localhost TCP bridge | Accepted |
 | [0003](./adr/0003-content-script-snapshot-vs-chrome-debugger.md) | Snapshot via content script rather than chrome.debugger | Accepted |
-| [0004](./adr/0004-allowlist-with-optional-host-permissions.md) | Allowlist + optional host permissions granted on demand | Accepted |
 | [0007](./adr/0007-mcp-protocol-version-2025-06-18.md) | Lock the MCP protocol version to 2025-06-18 | Accepted |
 | [0009](./adr/0009-page-snapshot-precise-debugger.md) | page_snapshot_precise uses chrome.debugger to obtain the authoritative a11y tree | Accepted |
 | [0010](./adr/0010-cookie-storage-readonly.md) | Read-only Cookie/Storage access | Accepted |
@@ -60,8 +59,8 @@ An ADR (Architecture Decision Record) documents decisions where **there were mul
 | [0018](./adr/0018-tab-workspace-group.md) | Group AI tabs into the "Browser Bridge" group (workspace) | Accepted |
 | [0019](./adr/0019-chrome-web-store-distribution.md) | Distribute via the Chrome Web Store (dual ID) | Accepted |
 | [0021](./adr/0021-extension-i18n.md) | Extension UI i18n (English + Simplified Chinese) via `_locales` + a runtime toggle | Accepted |
-| [0022](./adr/0022-allframes-page-reading.md) | Read same-origin sub-frames (SW-orchestrated allFrames; frame-namespaced refs) | Accepted |
-| [0023](./adr/0023-subframe-origin-gating.md) | Effective-origin gating for inherited-origin sub-frames (srcdoc/blob/about:blank) + permission-drift recovery | Accepted |
+| [0022](./adr/0022-allframes-page-reading.md) | Read sub-frames (SW-orchestrated allFrames; frame-namespaced refs) | Accepted |
+| [0024](./adr/0024-remove-allowlist.md) | Remove the per-site allowlist; declare `<all_urls>` outright | Accepted |
 
 ## ADR Writing Conventions
 

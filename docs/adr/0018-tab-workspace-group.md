@@ -50,5 +50,5 @@ Tabs opened by `tab_open` are **automatically placed into a tab group named "Bro
 
 ## Relationship to Other ADRs
 
-- Orthogonal to [ADR-0004](./0004-allowlist-with-optional-host-permissions.md): grouping does not change the allowlist/authorization
+- Orthogonal to ADR-0004 (removed; see [ADR-0024](./0024-remove-allowlist.md)): grouping does not change the allowlist/authorization
 - Complementary to (not a replacement for) the "multi-client broker" (see the RFC example in [GOVERNANCE.md](../../GOVERNANCE.md))

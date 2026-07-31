@@ -8,7 +8,6 @@
 
 import type { OpArgs, PageResponse } from "../../shared/types";
 import type { PageBackend } from "../page-backend";
-import { ensureAllowed, isSubFrameAllowed } from "../allowlist-store";
 import { injectIfNeeded, injectAllFrames, enumerateFrames } from "../tabs";
 import { parseFrameRef, mergeSnapshot, mergeText, mergeLinks, type FrameResult } from "../frames";
 
@@ -17,20 +16,19 @@ const REF_OPS = new Set(["page_click", "page_fill"]);
 
 export class ContentScriptBackend implements PageBackend {
   async run(op: string, args: OpArgs, tab: chrome.tabs.Tab): Promise<unknown> {
-    await ensureAllowed(tab.url); // gates the TOP origin (may prompt)
     await injectIfNeeded(tab.id!);
     const tabId = tab.id!;
 
     // A click/fill carrying a frame-qualified ref routes to that sub-frame.
     if (REF_OPS.has(op)) {
       const parsed = parseFrameRef(args.ref);
-      if (parsed) return await this.runInFrame(tabId, tab.url, op, args, parsed);
+      if (parsed) return await this.runInFrame(tabId, op, args, parsed);
       return await this.send(tabId, undefined, op, args);
     }
 
-    // Read ops aggregate same-origin sub-frames (default-on).
+    // Read ops aggregate sub-frames (default-on).
     if (READ_OPS.has(op)) {
-      const merged = await this.runReadAcrossFrames(tabId, tab.url, op, args);
+      const merged = await this.runReadAcrossFrames(tabId, op, args);
       if (merged !== undefined) return merged;
     }
 
@@ -51,42 +49,32 @@ export class ContentScriptBackend implements PageBackend {
     return resp;
   }
 
-  // Route a click/fill to the sub-frame named by an f<N>: ref. Defense in depth:
-  // only act in a frame whose origin is allowlisted (a snapshot only emits refs
-  // for gated frames, but don't trust a fabricated ref).
+  // Route a click/fill to the sub-frame named by an f<N>: ref.
   private async runInFrame(
     tabId: number,
-    topUrl: string | undefined,
     op: string,
     args: OpArgs,
     parsed: { frameId: number; bareRef: string }
   ): Promise<unknown> {
     const frames = await enumerateFrames(tabId);
     const frame = frames.find((f) => f.frameId === parsed.frameId);
-    if (!frame || !(await isSubFrameAllowed(frame.url, topUrl))) {
-      throw new Error(
-        `frame ${parsed.frameId} is not available or not allowlisted — re-run page_snapshot`
-      );
+    if (!frame) {
+      throw new Error(`frame ${parsed.frameId} is not available — re-run page_snapshot`);
     }
     await injectAllFrames(tabId);
     return await this.send(tabId, parsed.frameId, op, { ...args, ref: parsed.bareRef });
   }
 
-  // Run a read op in the top frame + every allowlisted sub-frame, then merge.
-  // Returns undefined when there are no readable sub-frames, so the caller falls
-  // back to the plain top-frame path (no ref prefixing for a single-frame page).
+  // Run a read op in the top frame + every sub-frame, then merge. Returns
+  // undefined when there are no readable sub-frames, so the caller falls back to
+  // the plain top-frame path (no ref prefixing for a single-frame page).
   private async runReadAcrossFrames(
     tabId: number,
-    topUrl: string | undefined,
     op: string,
     args: OpArgs
   ): Promise<unknown | undefined> {
     const frames = await enumerateFrames(tabId);
-    const subs: Array<{ frameId: number; url: string }> = [];
-    for (const f of frames) {
-      if (f.frameId === 0) continue; // top handled separately
-      if (await isSubFrameAllowed(f.url, topUrl)) subs.push(f);
-    }
+    const subs = frames.filter((f) => f.frameId !== 0); // top handled separately
     if (subs.length === 0) return undefined;
 
     await injectAllFrames(tabId);
