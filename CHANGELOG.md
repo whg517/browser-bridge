@@ -6,6 +6,31 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **The MCP server now knows which extension it is talking to, and says so when
+  they disagree.** On connect the extension announces its version, the bridge
+  protocol version and the browser version; if its release version differs from
+  the host binary's, the next tool result carries a short advisory naming both
+  versions, saying which side is behind, and telling the agent to raise it with
+  the user rather than working around it
+  ([ADR-0027](docs/adr/0027-version-announce-and-drift-advisory.md)). This
+  matters because the two halves update through separate channels — the
+  extension automatically from the Chrome Web Store, the binary by hand — so a
+  mismatch is the normal state for a while after every release, and it used to
+  surface only as an unexplained "unknown op".
+  - Shown **once per connection** (a reconnect re-arms it), and stays silent
+    when either side reports the `0.0.0` local-build placeholder.
+  - **Advisory only.** No connection is refused and no tool is blocked. The
+    announced `protocolVersion` is recorded and logged but not enforced;
+    `PROTOCOL_MISMATCH` is still deliberately unwired.
+  - The announce rides the `BridgeResp` envelope on the reserved id `0`, so an
+    older host parses it harmlessly instead of dropping the connection — which
+    matters, since "old binary + new extension" is exactly the case being
+    reported.
+  - `contracts/protocol-version.json` has code consumers on both sides at last:
+    asserted in `cargo test` (`src/peer.rs`) and generated into
+    `extension/src/shared/ops.ts` by `make gen`.
+
 ### Changed
 - **The git tag is now the only source of the release version.** The repository
   permanently carries the placeholder `0.0.0` in `Cargo.toml`, `Cargo.lock`,

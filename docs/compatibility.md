@@ -27,11 +27,38 @@ Beyond the protocol version, a connection must also negotiate a **capability set
 `permission`/`scope` notions in `tools.json`. The design intent is: on connection, the extension/native host reports the **actually available**
 capability ids (permission granted, tool not disabled), and a tool may only be called when its capability is advertised.
 
-## Handshake and Fast Failure (Contract Defined, Wiring Pending)
+## What Landed: the Announce Frame and the Drift Advisory
+
+On every connect the extension sends **one unsolicited frame** describing itself, layered on top of the
+existing `hello` secret authentication ([ADR-0002](./adr/0002-three-process-architecture-localhost-tcp.md)):
+
+```json
+{"id":0,"ok":true,"data":{"announce":{
+  "protocolVersion":1,"version":"0.6.0",
+  "browser":{"name":"Chrome","version":"141.0.7390.55"}}}}
+```
+
+It wears the `BridgeResp` envelope on the **reserved id `0`** deliberately. "Old binary + new extension" is
+exactly the drift being reported, so the frame must be harmless to a server that predates it: the Rust side
+deserializes every inbound line into `BridgeResp` (`id`/`ok` required), and a line that fails to parse kills
+the reader loop and drops the connection. As a legal `BridgeResp` it parses everywhere, and since request ids
+start at 1 it can never collide with a reply. Being purely additive, it did **not** bump `protocolVersion`.
+
+What the server does with it ([ADR-0027](./adr/0027-version-announce-and-drift-advisory.md)):
+
+- **Release-version mismatch → advise, never enforce.** The next tool result carries a prepended text block
+  naming both versions, saying which side is behind, and telling the agent to raise it with the user instead
+  of working around it. One-shot per connection; a reconnect re-arms it. Silent when either side reports the
+  `0.0.0` local-build placeholder ([ADR-0026](./adr/0026-release-time-version-stamping.md)).
+- **`protocolVersion` → recorded and logged only.** No connection is refused; `PROTOCOL_MISMATCH` stays unused.
+
+`browser-bridge doctor` still reports only the host's own version: it runs as a separate process with no
+session, and putting peer state in the lock file (which holds the port and the bridge secret) is not worth it.
+
+## Handshake and Fast Failure (Contract Defined, Wiring Still Pending)
 
 The `handshake` section of [`protocol-version.json`](../contracts/protocol-version.json) describes
-the **intended** negotiation flow, layered on top of the existing `hello` secret authentication (see
-[ADR-0002](./adr/0002-three-process-architecture-localhost-tcp.md)):
+the **intended** negotiation flow, the enforcing half that the announce frame above does not implement:
 
 1. After the secret check passes, the extension reports its own `protocolVersion` and list of capability ids.
 2. The server compares protocol versions: **on incompatibility it fails fast**, returning
@@ -40,12 +67,17 @@ the **intended** negotiation flow, layered on top of the existing `hello` secret
    only blowing up late on some `tools/call` with an "unknown op".
 3. A capability required by a tool is not advertised → reject that tool call up front, rather than dispatching an op the extension cannot handle.
 
-**An honest note on the current state**: this "version + capability handshake" is currently **defined only in the contracts** (`protocol-version.json`
-+ `capabilities.json`); the handshake **wiring on the code side has not yet been connected** — it is intentionally deferred, to be wired up once the binary and
-extension can be upgraded independently (such as when listed on the Chrome Web Store or when release cadences diverge). What has landed so far is the **first stage**:
-pending requests are bound to the connection generation, and generation-guarded reconnection keeps an old connection from affecting a new one
-(see [architecture.md §5.2](./architecture.md#52-native-host-reconnection-flow)).
-The `PROTOCOL_MISMATCH` error code is already in place in the contracts and can be enabled as soon as the wiring lands.
+**An honest note on the current state**: only the *reporting* half of this is wired. The announce frame above carries
+the extension's `protocolVersion`, and the server records and logs it — but it never rejects a connection, and
+`PROTOCOL_MISMATCH` remains unused. Capability negotiation (`capabilities.json`) is not wired at all: no capability list
+is advertised and no tool call is gated on one.
+
+Enforcement stays deferred on purpose. A bug in a fail-fast path means **no bridge at all**, which is a far worse
+outcome than the drift it would guard against, and there is no protocol v2 to reject yet. The pieces already in place
+for when it lands: pending requests are bound to the connection generation, and generation-guarded reconnection keeps an
+old connection from affecting a new one (see [architecture.md §5.2](./architecture.md#52-native-host-reconnection-flow));
+the `PROTOCOL_MISMATCH` code is defined in the contracts; and both sides now read `protocolVersion` from
+`protocol-version.json` (asserted in `cargo test` via `src/peer.rs`, generated into `ops.ts` via `make gen`).
 
 ## See Also
 

@@ -141,11 +141,37 @@ class McpClient:
         return self.recv()
 
 
-def mock_extension(lf, responder):
+def read_stderr(proc, timeout=5):
+    """Drain a finished process's stderr without ever blocking indefinitely.
+
+    A plain `proc.stderr.read()` blocks until EOF, and EOF only arrives once
+    EVERY holder of the pipe's write end has closed it — including any child
+    that inherited the fd, such as a `--native-host` the server spawned or an
+    orphan left by an earlier test. One lingering grandchild is therefore enough
+    to hang the whole suite forever (observed: a run wedged for 4h), which in CI
+    means burning the job's entire timeout instead of failing.
+
+    So: read on a daemon thread and abandon it on timeout. Losing the log text
+    costs one assertion; hanging costs the run."""
+    out = []
+    t = threading.Thread(target=lambda: out.append(proc.stderr.read()), daemon=True)
+    t.start()
+    t.join(timeout)
+    return (out[0] if out else "") or ""
+
+
+def mock_extension(lf, responder, announce=None):
     """Connect to the bridge socket as the extension would, answer requests
-    using `responder(req) -> dict`."""
+    using `responder(req) -> dict`.
+
+    `announce` (optional) is the payload the real extension posts right after
+    connecting (shared/announce.ts). It rides the BridgeResp envelope on the
+    reserved id 0; see src/peer.rs for why."""
     s = socket.create_connection(("127.0.0.1", lf["port"]), timeout=5)
     s.sendall((json.dumps({"hello": lf["secret"]}) + "\n").encode())
+    if announce is not None:
+        frame = {"id": 0, "ok": True, "data": {"announce": announce}}
+        s.sendall((json.dumps(frame) + "\n").encode())
     buf = bytearray()
 
     def readline():
@@ -592,11 +618,142 @@ def test_unknown_method_returns_32601():
         mcp.wait(timeout=3)
 
 
+def test_announce_is_absorbed_not_routed():
+    """The extension's announce frame must reach the server without disturbing
+    anything else on the connection.
+
+    It rides the BridgeResp envelope on the reserved id 0 precisely so an older
+    server can't choke on it (a frame that fails to deserialize kills the reader
+    loop and drops the connection). This asserts the *new* server's half: the
+    announce is consumed and recorded, and the very next tool call still works.
+
+    Note on coverage: the drift advisory itself cannot fire here. This binary is
+    built from the repo, so it reports the 0.0.0 placeholder (ADR-0026), and the
+    policy is deliberately silent whenever either side is a local build. The
+    positive advisory path is covered by the Rust unit tests in src/peer.rs,
+    src/session.rs and src/mcp_server.rs; what this proves is the wiring that
+    gets an announce from the wire into the session, plus the guarantee that a
+    mismatched pairing never *breaks* the bridge."""
+    print("\n[test] version announce is absorbed, not routed")
+    try:
+        os.remove(LOCK)
+    except FileNotFoundError:
+        pass
+    env = dict(os.environ, BB_LOG="info")
+    mcp = subprocess.Popen([BIN], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                           stderr=subprocess.PIPE, text=True, encoding="utf-8", env=env)
+    try:
+        lf = wait_lock(mcp)
+        check(lf is not None, "lock file written")
+
+        def responder(req):
+            return {"id": req["id"], "ok": True,
+                    "data": [{"id": 1, "title": "T", "url": "https://x", "active": True}]}
+
+        # A version that differs from any release, announced the way the real
+        # extension does on connect.
+        s, serve = mock_extension(lf, responder, announce={
+            "protocolVersion": 1,
+            "version": "9.9.9",
+            "browser": {"name": "Chrome", "version": "141.0.7390.55"},
+        })
+        c = McpClient(mcp)
+        c.initialize()
+        c.initialized()
+        time.sleep(0.2)  # let hello + announce land
+
+        t = threading.Thread(target=serve)
+        t.start()
+        r = c.call("tab_list", {}, _id=20)
+        t.join(timeout=5)
+
+        # The announce must not have been mistaken for a reply to a request, nor
+        # have consumed the response the real call is waiting for — a payload
+        # coming back proves both.
+        check(r["result"].get("isError") is False, "tool call succeeded")
+        blocks = r["result"]["content"]
+        check(len(blocks) == 1,
+              "no advisory block in a 0.0.0 dev build (drift policy is dev-quiet)")
+        check(json.loads(blocks[0]["text"])[0]["title"] == "T",
+              "the tool's own payload is untouched")
+        s.close()
+    finally:
+        try:
+            mcp.stdin.close()
+        except Exception:
+            pass
+        mcp.wait(timeout=3)
+        err = read_stderr(mcp)
+        # Proves the frame was parsed and recorded, not silently dropped.
+        check("extension v9.9.9" in err,
+              "server logged the announced extension version")
+        check("no pending caller for id 0" not in err,
+              "announce was absorbed, not routed as a stray response")
+
+
+def test_unknown_id_zero_frame_does_not_break_the_loop():
+    """A frame on id 0 that ISN'T an announce falls through to normal routing.
+
+    Defensive: nothing sends this today, but the announce interception must not
+    swallow arbitrary id-0 traffic, and an unroutable frame must leave the
+    connection usable rather than tearing it down."""
+    print("\n[test] a non-announce id-0 frame leaves the bridge usable")
+    try:
+        os.remove(LOCK)
+    except FileNotFoundError:
+        pass
+    env = dict(os.environ, BB_LOG="info")
+    mcp = subprocess.Popen([BIN], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                           stderr=subprocess.PIPE, text=True, encoding="utf-8", env=env)
+    try:
+        lf = wait_lock(mcp)
+        check(lf is not None, "lock file written")
+
+        def responder(req):
+            return {"id": req["id"], "ok": True,
+                    "data": [{"id": 3, "title": "STILL ALIVE", "url": "https://x",
+                              "active": True}]}
+
+        # data present, but no `announce` key -> not an announce.
+        s, serve = mock_extension(lf, responder, announce=None)
+        s.sendall((json.dumps({"id": 0, "ok": True, "data": {"junk": 1}}) + "\n").encode())
+
+        c = McpClient(mcp)
+        c.initialize()
+        c.initialized()
+        time.sleep(0.2)
+        # Deliberately no assertion on the serve thread itself: the tool call
+        # below can only return a payload if the server's reader survived the
+        # stray frame, delivered the BridgeReq and matched the reply — which is
+        # the whole property under test, without depending on thread timing.
+        t = threading.Thread(target=serve)
+        t.start()
+        r = c.call("tab_list", {}, _id=21)
+        t.join(timeout=5)
+        check(r["result"].get("isError") is False, "tool call succeeded")
+        check(json.loads(r["result"]["content"][0]["text"])[0]["title"] == "STILL ALIVE",
+              "bridge still round-trips after a stray id-0 frame")
+        s.close()
+    finally:
+        try:
+            mcp.stdin.close()
+        except Exception:
+            pass
+        mcp.wait(timeout=3)
+        err = read_stderr(mcp)
+        # A frame that isn't an announce must fall through to ordinary routing
+        # (and be reported as unroutable) rather than being silently swallowed.
+        check("no pending caller for id 0" in err,
+              "a non-announce id-0 frame falls through to normal routing")
+
+
 def main():
     ensure_binary()
     print(f"binary: {BIN}")
     test_stale_lock_is_replaced()
     test_mcp_handshake_and_tools()
+    test_announce_is_absorbed_not_routed()
+    test_unknown_id_zero_frame_does_not_break_the_loop()
     test_tab_list_round_trip()
     test_page_eval_round_trip()
     test_page_snapshot_precise_round_trip()
