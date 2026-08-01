@@ -14,8 +14,18 @@ export const SENSITIVE_KEY = /(token|cookie|password|passwd|secret|api[_-]?key|a
 // core of both maskString and maskCookieValue.
 export function maskPatterns(s: string): string {
   let out = s;
-  // JWT (eyJ... . ... . ...)
-  out = out.replace(/ey[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g, "••••[jwt]");
+  // Provider API keys. These carry no hex/digit run and no `key=` prefix, so
+  // nothing below catches them: an `sk-…` sitting in localStorage came back in
+  // full. Match the issuer prefixes first so they claim the whole token.
+  out = out.replace(/\bsk[-_][A-Za-z0-9_-]{16,}/g, "••••[key]"); // OpenAI / Anthropic / Stripe
+  out = out.replace(/\bgh[pousr]_[A-Za-z0-9]{16,}/g, "••••[key]"); // GitHub
+  out = out.replace(/\bxox[baprs]-[A-Za-z0-9-]{10,}/g, "••••[key]"); // Slack
+  out = out.replace(/\bAKIA[0-9A-Z]{16}\b/g, "••••[key]"); // AWS access key id
+  out = out.replace(/\bAIza[0-9A-Za-z_-]{35}\b/g, "••••[key]"); // Google API key
+  // JWT (eyJ... . ... . ...). The payload/signature segments are only required
+  // to be 4+ chars: real tokens are far longer, but a short-signature JWT is
+  // still a credential and used to slip through a {8,} floor.
+  out = out.replace(/ey[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}/g, "••••[jwt]");
   // Long hex (>=32): secrets, hashes, API keys
   out = out.replace(/\b[a-fA-F0-9]{32,}\b/g, "••••[hex]");
   // Long digit runs (>=12): card numbers, account ids
@@ -41,10 +51,27 @@ export function maskString(s: string): string {
 
 // Cookie value masking: non-strings and short values pass through unchanged;
 // otherwise apply only the pattern catalogue (no full-mask — see note above).
-export function maskCookieValue(v: unknown): unknown {
+// Pass the cookie's NAME to also honour the key-name signal: a cookie called
+// `csrftoken` or `sessionid` is a credential whatever its value looks like.
+export function maskCookieValue(v: unknown, name?: string): unknown {
   if (typeof v !== "string") return v;
+  if (name && SENSITIVE_KEY.test(name)) return "••••[sensitive]";
   if (v.length < 8) return v;
   return maskPatterns(v);
+}
+
+// Mask a value using its KEY as evidence. The name is the strongest signal
+// available — an `sk-…` or a 32-char CSRF token under `apiKey` / `csrftoken`
+// matches no value pattern, but the key says exactly what it is — so a
+// secret-named entry is masked outright. Otherwise fall back to the value-only
+// catalogue. Used by the two silent credential readers (storage_get,
+// cookie_get); note maskString tests the VALUE for those same words, which
+// only helps when the secret happens to describe itself.
+export function maskNamedValue(key: string, value: unknown): unknown {
+  if (typeof value !== "string") return value;
+  if (value === "") return value;
+  if (SENSITIVE_KEY.test(key)) return "••••[sensitive]";
+  return maskString(value);
 }
 
 // Mask a long integer that looks card-like / id-like.

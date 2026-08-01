@@ -5,7 +5,7 @@
 // storage reads are silent. See ADR-0010.
 
 import type { OpArgs } from "../shared/types";
-import { maskString } from "../shared/masking";
+import { maskNamedValue } from "../shared/masking";
 
 export function storageGet(args: OpArgs) {
   const type = args.type === "session" ? "session" : "local";
@@ -19,17 +19,17 @@ export function storageGet(args: OpArgs) {
   if (key !== undefined && key !== null && key !== "") {
     const raw = store.getItem(key);
     if (raw === null) return { key, found: false };
-    return { key, found: true, value: maskString(raw) };
+    return { key, found: true, value: maskNamedValue(key, raw) };
   }
   // No key → dump all entries (masked). Cap to avoid huge payloads.
-  const entries: Record<string, string> = {};
+  const entries: Record<string, unknown> = {};
   let count = 0;
   const MAX = 500;
   for (let i = 0; i < store.length && count < MAX; i++) {
     const k = store.key(i);
     if (k === null) continue;
     try {
-      entries[k] = maskString(store.getItem(k) || "");
+      entries[k] = maskNamedValue(k, store.getItem(k) || "");
     } catch {
       entries[k] = "[unreadable]";
     }

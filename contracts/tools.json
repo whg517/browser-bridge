@@ -269,7 +269,7 @@
       "scope": "page",
       "permission": "scripting",
       "confirmation": "none",
-      "description": "HIGH RISK — execute arbitrary JavaScript on the active tab. The return value is masked (JWT / long hex / long numbers / token-like strings). This is the most powerful tool: prefer page_click / page_fill / page_snapshot whenever possible, and only use page_eval when those cannot achieve the goal (custom events, reading framework state, SPA routing, canvas/WebGL, etc.). Code runs in the page's global scope, wrapped as `async`, so you can `await` and `return` a value. Async results are awaited. Errors are returned as {name, message}.",
+      "description": "HIGH RISK — execute arbitrary JavaScript on the active tab. The return value is masked (JWT / long hex / long numbers / token-like strings). This is the most powerful tool: prefer page_click / page_fill / page_snapshot whenever possible, and only use page_eval when those cannot achieve the goal (custom events, reading framework state, SPA routing, canvas/WebGL, etc.). Code runs in the page's global scope, wrapped as `async`, so you can `await` and `return` a value. Async results are awaited. Errors are returned as {name, message}. A page whose Content-Security-Policy omits 'unsafe-eval' blocks this tool outright (the call fails with a message saying so); enable CDP mode in the extension's Options to evaluate through chrome.debugger instead.",
       "inputSchema": {
         "properties": {
           "code": {
@@ -309,7 +309,7 @@
       "scope": "tab",
       "permission": "cookies",
       "confirmation": "none",
-      "description": "Read cookies for the active tab (or a url/domain you specify). Includes httpOnly cookies (the main reason to use this over document.cookie). Read-only; there is no cookie_set (writing httpOnly cookies is a session-fixation risk). Values are masked (JWT / long hex / long numbers) before being returned. If you omit url/domain/name, cookies for the active tab's URL are returned.",
+      "description": "Read cookies for the active tab (or a url/domain you specify). Includes httpOnly cookies (the main reason to use this over document.cookie). Read-only; there is no cookie_set (writing httpOnly cookies is a session-fixation risk). Values are masked before being returned — by pattern (JWT / long hex / long digit runs / provider API keys) and by name, so a cookie called e.g. `csrftoken` or `sessionid` is redacted whatever its value looks like. If you omit url/domain/name, cookies for the active tab's URL are returned.",
       "inputSchema": {
         "properties": {
           "domain": {
@@ -336,7 +336,7 @@
       "scope": "page",
       "permission": "scripting",
       "confirmation": "none",
-      "description": "Read the page's localStorage or sessionStorage (where frameworks like Auth0 / NextAuth / Firebase store tokens). Must run on the active tab; same-origin only (cross-origin iframes are not readable). Pass `key` to fetch one entry, or omit it to dump all entries (capped at 500). Values are ALWAYS masked (JWT / long hex / long numbers) — this masking is not toggleable. Read-only.",
+      "description": "Read the page's localStorage or sessionStorage (where frameworks like Auth0 / NextAuth / Firebase store tokens). Must run on the active tab; same-origin only (cross-origin iframes are not readable). Pass `key` to fetch one entry, or omit it to dump all entries (capped at 500). Values are ALWAYS masked — by pattern (JWT / long hex / long digit runs / provider API keys) and by key name, so an entry called e.g. `apiKey` or `authToken` is redacted whatever its value looks like. This masking is not toggleable. Read-only.",
       "inputSchema": {
         "properties": {
           "key": {

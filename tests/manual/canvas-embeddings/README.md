@@ -102,3 +102,69 @@ client, or headless from the repo root:
     `page_screenshot` (~260 KB PNG), `page_snapshot_precise` (CDP), `tab_*` all OK.
   - `storage_get` value masked `••••[sensitive]`; `cookie_get` returned structure
     (masking is selective — secret-shaped values only).
+
+  > **Superseded the same day — "16/16 green" was too generous.** A second
+  > sweep on the same build, this time asserting each result against the DOM
+  > fixture rather than eyeballing the payload, found four defects the pass
+  > above missed. Cross-frame reading really is solid; the tools *around* it
+  > were not. See the entry below.
+
+- **2026-08-01 (second sweep)** — same build, all 16 tools re-run against
+  `tests/fixtures/page.html` plus the six-embedding page, every result checked
+  against known-good expectations. **12/16 clean, 4 defects**, all fixed in
+  `fix/frame-scoped-ops-and-masking`:
+  - **`page_screenshot` dies on any page with ≥2 iframes.** Deterministic on one
+    tab: screenshot-first succeeds (54 KB PNG), then one `page_snapshot` runs
+    `injectAllFrames` and every later screenshot fails with `capture failed`.
+    Root cause was `chrome.tabs.sendMessage` without a `frameId`, which
+    broadcasts to every frame — N frames each called `captureVisibleTab` and
+    blew past Chrome's 2/sec throttle. 1 iframe stayed under the limit, which is
+    why the first sweep (`page_screenshot` before any read op) didn't see it.
+  - **Same broadcast made `page_scroll` answer from a random frame** — a single
+    `direction:bottom` on a ~2500 px page reported `scrollY: 61.5`, the scroll
+    limit of a 300 px iframe, while `down` reported the top frame's 1001. It
+    also scrolled the sub-frames. `page_eval` ran once per frame for the same
+    reason.
+  - **`page_snapshot_precise` returned `input#pw` as `supersecret`** while
+    `page_snapshot` returned `••••••` — the precise path never had the password
+    mask the other two snapshot paths carry.
+  - **Masking never consulted key names**: `session_apikey` = `sk-proj-…` and a
+    cookie named `csrftoken` both came back in cleartext, because only the value
+    was pattern-matched.
+  - Also: unknown `page_scroll` directions silently "succeeded"; unchecked
+    checkboxes reported `value:"on"` with no `checked` field; cross-frame
+    click/fill echoed the bare ref (`e2` for `f7:e2`); a missing required arg
+    surfaced as `EXECUTION_FAILED` rather than `INVALID_ARGUMENT`.
+  - **`page_eval` was blocked on every page tested** (localhost fixture and
+    `https://example.com`, neither sending a CSP) by a globally-injected
+    `script-src` without `'unsafe-eval'` — environment-specific to that Chrome
+    profile. The product gap was that `new Function` has no fallback and the
+    failure returned exit 0 with a soft error object; it now fails loudly and
+    names CDP mode as the remedy.
+
+- **2026-08-01 (acceptance of `fix/frame-scoped-ops-and-masking`)** — same
+  method, same fixtures, asserting each result. **14/14 green**, plus all 16
+  tools re-run clean:
+  - `page_screenshot` now survives `injectAllFrames` on a 4-iframe page
+    (before / after / again all return a PNG).
+  - `direction:bottom` on the six-embedding page reports 1724 and re-reads
+    identically, instead of a 300 px iframe's 61.5; `direction:"sideways"`
+    exits 1; cross-frame reading still returns **18 refs**.
+  - `page_click {f<N>:e2}` echoes `f<N>:e2`; `page_snapshot_precise` returns
+    `••••••` for `input#pw`; an unchecked box reports `checked:false` with no
+    `value`; `session_apikey` and cookies named `csrftoken` / `qa_session`
+    return `••••[sensitive]` while `qa_plain` stays readable; a missing
+    required arg returns `INVALID_ARGUMENT`.
+  - `page_eval` under the injected CSP now exits 1 with the CDP-mode remedy
+    (it returned exit 0 and a soft error object before).
+  - **Mind which backend you are testing.** The first acceptance attempt ran
+    with **CDP mode on**, so `page_screenshot` / `page_scroll` / `page_eval`
+    went through `backends/cdp.ts` and proved nothing about the content-script
+    fixes — and it surfaced a real gap: the CDP copy of `pageScroll` had the
+    same missing `default` case, fixed here too. Probe the active backend by
+    running any page op against a `chrome://` tab: CDP mode says "CDP mode
+    cannot control this page", the content script says "Cannot access a
+    chrome:// URL".
+  - Serve fixtures with a cache-busting query (`?v=…`) after editing them —
+    Chrome served a stale `page.html` and made a masking check look like a
+    failure.

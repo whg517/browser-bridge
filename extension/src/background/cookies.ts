@@ -31,10 +31,12 @@ export async function cookieGet(maybeTabId: number | undefined, args: OpArgs) {
       hint: "No cookies matched the given url/domain/name.",
     };
   }
-  // Mask the value only; keep name/domain/httpOnly etc. for diagnostics.
+  // Mask the value only; keep name/domain/httpOnly etc. for diagnostics. The
+  // name is passed in as masking evidence: `csrftoken` / `sessionid` values
+  // match no pattern in the catalogue but are credentials all the same.
   const out = cookies.map((c) => ({
     name: c.name,
-    value: maskCookieValue(c.value),
+    value: maskCookieValue(c.value, c.name),
     domain: c.domain,
     path: c.path,
     httpOnly: c.httpOnly,

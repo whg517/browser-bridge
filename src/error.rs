@@ -32,6 +32,12 @@ pub enum CallError {
     #[error("unknown tool: {0}")]
     UnknownTool(String),
 
+    /// The call's arguments don't satisfy the tool's own `inputSchema`.
+    /// Rejected here rather than coerced to a default and sent on, so a
+    /// malformed call doesn't come back looking like a page failure.
+    #[error("{0}")]
+    InvalidArgument(String),
+
     /// The extension executed the op and reported a failure of its own.
     #[error("{0}")]
     Extension(String),
@@ -51,6 +57,7 @@ impl CallError {
             CallError::Timeout(_) => "RESPONSE_TIMEOUT",
             CallError::Disconnected => "CONNECTION_LOST",
             CallError::UnknownTool(_) => "INVALID_ARGUMENT",
+            CallError::InvalidArgument(_) => "INVALID_ARGUMENT",
             CallError::Extension(_) => "EXECUTION_FAILED",
         }
     }
@@ -96,6 +103,10 @@ mod tests {
             ("Timeout", CallError::Timeout(Duration::from_secs(1))),
             ("Disconnected", CallError::Disconnected),
             ("UnknownTool", CallError::UnknownTool("t".into())),
+            (
+                "InvalidArgument",
+                CallError::InvalidArgument("bad args".into()),
+            ),
             ("Extension", CallError::Extension("boom".into())),
         ];
 

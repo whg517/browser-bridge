@@ -1,5 +1,35 @@
 import { describe, it, expect } from "bun:test";
-import { parseFrameRef, mergeSnapshot, mergeText, mergeLinks, type FrameResult } from "./frames";
+import {
+  TOP_FRAME,
+  parseFrameRef,
+  qualifyRefEcho,
+  mergeSnapshot,
+  mergeText,
+  mergeLinks,
+  type FrameResult,
+} from "./frames";
+
+describe("TOP_FRAME", () => {
+  it("is frame 0 — page ops must name it rather than broadcasting", () => {
+    expect(TOP_FRAME).toBe(0);
+  });
+});
+
+describe("qualifyRefEcho", () => {
+  it("re-prefixes the bare ref a sub-frame echoed back", () => {
+    expect(qualifyRefEcho({ clicked: "e2", role: "button" }, 7, "e2")).toEqual({
+      clicked: "f7:e2",
+      role: "button",
+    });
+    expect(qualifyRefEcho({ filled: "e3" }, 12, "e3")).toEqual({ filled: "f12:e3" });
+  });
+  it("leaves other payloads untouched", () => {
+    // A selector-driven reply names the selector, not the ref — don't rewrite it.
+    expect(qualifyRefEcho({ clicked: "#go" }, 7, "e2")).toEqual({ clicked: "#go" });
+    expect(qualifyRefEcho(null, 7, "e2")).toBeNull();
+    expect(qualifyRefEcho("done", 7, "e2")).toBe("done");
+  });
+});
 
 describe("parseFrameRef", () => {
   it("parses a frame-qualified ref", () => {

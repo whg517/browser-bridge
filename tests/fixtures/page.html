@@ -68,6 +68,9 @@
       "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c");
     localStorage.setItem("plain", "hello world");
     localStorage.setItem("hexid", "5baa61e4c9b93f3f0682250b6cf8331b7ee68fd8");
+    // A secret betrayed only by its KEY: the value matches no pattern in the
+    // catalogue, so masking has to read the name to catch it.
+    localStorage.setItem("session_apikey", "plainlookingvalue");
     sessionStorage.setItem("stoken", "eyJhbGciOiJIUzI1NiJ9.sigpart.sigpart2");
   </script>
 </body>

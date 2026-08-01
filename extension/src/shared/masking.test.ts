@@ -3,6 +3,7 @@ import {
   maskPatterns,
   maskString,
   maskCookieValue,
+  maskNamedValue,
   maskNumber,
   maskKeyName,
   maskSensitive,
@@ -22,6 +23,40 @@ describe("maskPatterns", () => {
   });
   test("leaves ordinary text alone", () => {
     expect(maskPatterns("hello world")).toBe("hello world");
+  });
+  test("redacts provider API keys, which match no other pattern", () => {
+    expect(maskPatterns("sk-proj-QAtestKEY1234567890abcdefGHIJ")).toBe("••••[key]");
+    // Deliberately too short to look like a real Stripe key to secret scanners,
+    // but still past this rule's 16-char floor.
+    expect(maskPatterns("sk_live_QAFAKEKEY01")).toBe("••••[key]");
+    expect(maskPatterns("ghp_1234567890abcdefABCDEF1234567890")).toBe("••••[key]");
+    expect(maskPatterns("xoxb-123456789012-abcdefGHIJKL")).toBe("••••[key]");
+    expect(maskPatterns("AKIAIOSFODNN7EXAMPLE")).toBe("••••[key]");
+    expect(maskPatterns("AIza" + "a".repeat(35))).toBe("••••[key]");
+  });
+  test("ordinary words that merely contain a prefix are untouched", () => {
+    expect(maskPatterns("risk-assessment-2026-final")).toBe("risk-assessment-2026-final");
+    expect(maskPatterns("task-management-system-v2")).toBe("task-management-system-v2");
+  });
+  test("a JWT with short payload/signature segments is still masked", () => {
+    expect(maskPatterns("eyJhbGciOiJIUzI1NiJ9.sigpart.sigpart2")).toBe("••••[jwt]");
+  });
+});
+
+describe("maskNamedValue (key name as evidence)", () => {
+  test("masks a value whose KEY names a secret, whatever the value looks like", () => {
+    // Nothing in the value matches the catalogue — only the key betrays it.
+    expect(maskNamedValue("session_apikey", "plainlookingvalue")).toBe("••••[sensitive]");
+    expect(maskNamedValue("csrftoken", "f5qxPaVezMMD4gyHBVgpzLP9GfO2saUq")).toBe("••••[sensitive]");
+    expect(maskNamedValue("auth", "x")).toBe("••••[sensitive]");
+  });
+  test("an unremarkable key still gets the value catalogue", () => {
+    expect(maskNamedValue("profile", JWT)).toBe("••••[jwt]");
+    expect(maskNamedValue("theme", "dark")).toBe("dark");
+  });
+  test("non-strings and empties pass through", () => {
+    expect(maskNamedValue("token", 42)).toBe(42);
+    expect(maskNamedValue("token", "")).toBe("");
   });
 });
 
@@ -57,6 +92,20 @@ describe("maskCookieValue (pattern-only, no full-mask)", () => {
     // Same input that maskString fully masks stays pattern-only here.
     expect(maskCookieValue("session_tokenvalue")).toBe("session_tokenvalue");
     expect(maskString("session_tokenvalue")).toBe("••••[sensitive]");
+  });
+  test("a secret-named cookie is masked on the strength of its name", () => {
+    expect(maskCookieValue("f5qxPaVezMMD4gyHBVgpzLP9GfO2saUq", "csrftoken")).toBe(
+      "••••[sensitive]"
+    );
+    expect(maskCookieValue("abc123", "qa_session")).toBe("••••[sensitive]");
+  });
+  test("an ordinary cookie name keeps the structured value", () => {
+    // The reason cookies aren't full-masked by default: analytics/prefs cookies
+    // carry structure worth seeing.
+    expect(maskCookieValue("GS2.1.s1758527497$o10$g0", "_ga_YTFTXDTLGX")).toBe(
+      "GS2.1.s1758527497$o10$g0"
+    );
+    expect(maskCookieValue("zh", "i18n_redirected")).toBe("zh");
   });
 });
 

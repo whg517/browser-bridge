@@ -108,6 +108,38 @@ const HANDLERS: &[Handler] = &[
     },
 ];
 
+/// Reject a call whose arguments don't satisfy the tool's own `inputSchema`
+/// `required` list, before it reaches the extension.
+///
+/// The `build_*` helpers coerce a missing field to `""` / `0`, so
+/// `page_eval {}` used to travel all the way to the page and come back as
+/// EXECUTION_FAILED ("needs non-empty `code`") — a page-execution code for what
+/// is really a malformed call. Checking the published schema keeps the contract
+/// the model is shown and the contract enforced in one place.
+fn check_required(name: &str, args: &Value) -> Result<(), CallError> {
+    let Some(tool) = all().into_iter().find(|t| t.name == name) else {
+        return Ok(());
+    };
+    let Some(required) = tool.input_schema.get("required").and_then(|v| v.as_array()) else {
+        return Ok(());
+    };
+    for key in required.iter().filter_map(|k| k.as_str()) {
+        let present = args.get(key).is_some_and(|v| match v {
+            Value::Null => false,
+            // A blank string is as unusable as an absent one for every
+            // currently-required field (code / url / value).
+            Value::String(s) => !s.trim().is_empty(),
+            _ => true,
+        });
+        if !present {
+            return Err(CallError::InvalidArgument(format!(
+                "{name}: missing required argument `{key}`"
+            )));
+        }
+    }
+    Ok(())
+}
+
 /// The result of dispatching one tool call: the MCP content blocks, whether it
 /// is an error, and — on error — the stable taxonomy code (contracts/errors.json)
 /// so the caller can record it in the audit trail without re-parsing the text.
@@ -121,7 +153,8 @@ pub struct Outcome {
 /// and the isError flag. Errors are tool-level (isError=true), not RPC-level.
 pub fn dispatch(session: &Session, name: &str, args: &Value) -> Outcome {
     let result = match HANDLERS.iter().find(|h| h.name == name) {
-        Some(h) => call(session, name, None, (h.build_payload)(args)),
+        Some(h) => check_required(name, args)
+            .and_then(|()| call(session, name, None, (h.build_payload)(args))),
         None => Err(CallError::UnknownTool(name.to_string())),
     };
 
@@ -208,5 +241,46 @@ mod tests {
         );
         // Empty builder ignores extraneous args.
         assert_eq!(build("page_snapshot", json!({ "junk": 1 })), json!({}));
+    }
+
+    // A malformed call must be rejected here, with the argument code — not
+    // coerced to a default, sent to the page, and reported as EXECUTION_FAILED.
+    #[test]
+    fn missing_required_args_are_invalid_arguments() {
+        let err = check_required("page_eval", &json!({})).unwrap_err();
+        assert_eq!(err.code(), "INVALID_ARGUMENT");
+        assert!(
+            err.to_string().contains("`code`"),
+            "the message names the missing field: {err}"
+        );
+        // A blank or null value is as unusable as an absent one.
+        assert!(check_required("page_eval", &json!({ "code": "   " })).is_err());
+        assert!(check_required("page_eval", &json!({ "code": null })).is_err());
+        // The old failure mode: `expression` instead of `code`.
+        assert!(check_required("page_eval", &json!({ "expression": "1+1" })).is_err());
+        // Satisfied calls pass through.
+        assert!(check_required("page_eval", &json!({ "code": "1+1" })).is_ok());
+    }
+
+    #[test]
+    fn tools_without_required_args_are_unaffected() {
+        // Every tool whose schema requires nothing accepts an empty object.
+        for tool in all() {
+            let required = tool
+                .input_schema
+                .get("required")
+                .and_then(|v| v.as_array())
+                .map(|a| a.len())
+                .unwrap_or(0);
+            if required == 0 {
+                assert!(
+                    check_required(tool.name, &json!({})).is_ok(),
+                    "{} requires nothing but was rejected",
+                    tool.name
+                );
+            }
+        }
+        // …and an unknown name is left to the UnknownTool path.
+        assert!(check_required("does_not_exist", &json!({})).is_ok());
     }
 }

@@ -318,6 +318,7 @@ async function runAllTests(page: Page): Promise<void> {
   await test_storage_get(page);
   await test_wait_for_nav(page);
   await test_high_risk_click_no_confirm(page);
+  await test_scroll(page);
   await test_ping(page);
   await test_shadow_dom(page);
   await test_iframe(page);
@@ -366,6 +367,12 @@ async function test_snapshot(page: Page): Promise<void> {
 
   const cb = nodes.find((n: any) => n.selector && n.selector.includes("#cb"));
   check(cb?.role === "checkbox", "#cb role is checkbox");
+  // A checkbox reports its state as `checked`. It must NOT report value:"on"
+  // (the submit payload), which an agent reads as "this box is ticked".
+  check(cb?.checked === false, "#cb reports checked:false (got " + cb?.checked + ")");
+  check(cb?.value === undefined, "#cb has no bogus value (got " + cb?.value + ")");
+  const rb = nodes.find((n: any) => n.selector && n.selector.includes("#rb"));
+  check(rb?.checked === false, "#rb radio reports checked:false");
 
   // accessible-name via aria-labelledby.
   const email = nodes.find((n: any) => n.selector && n.selector.includes("#email"));
@@ -600,6 +607,18 @@ async function test_storage_get(page: Page): Promise<void> {
   const hexResp = await invoke(page, "storage_get", { type: "local", key: "hexid" });
   check(hexResp.value.includes("••••"), "long hex masked");
 
+  // Secret named by its key, with a value no pattern would catch.
+  const namedResp = await invoke(page, "storage_get", { type: "local", key: "session_apikey" });
+  check(
+    namedResp.value === "••••[sensitive]",
+    "a secret-named key is masked on its name (got " + namedResp.value + ")"
+  );
+  const dumpResp = await invoke(page, "storage_get", { type: "local" });
+  check(
+    dumpResp.entries?.session_apikey === "••••[sensitive]",
+    "the all-entries dump masks it too (got " + dumpResp.entries?.session_apikey + ")"
+  );
+
   // Missing key.
   const missingResp = await invoke(page, "storage_get", { key: "nonexistent" });
   check(missingResp.found === false, "missing key → found:false");
@@ -641,6 +660,32 @@ async function test_high_risk_click_no_confirm(page: Page): Promise<void> {
 }
 
 // ── test: ping ─────────────────────────────────────────────────────────────
+// ── test: page_scroll ──────────────────────────────────────────────────────
+async function test_scroll(page: Page): Promise<void> {
+  console.log("\n[test] page_scroll — pixels, directions, and rejected input");
+  await freshLoad(page);
+  // Make the fixture tall enough to actually scroll.
+  await page.evaluate(`document.body.style.height = "5000px"`);
+
+  const down = await invoke(page, "page_scroll", { pixels: 300 });
+  check(down.scrollY === 300, "pixels scrolls and reports the position (got " + down.scrollY + ")");
+
+  const top = await invoke(page, "page_scroll", { direction: "top" });
+  check(top.scrollY === 0, "direction:top returns to the origin");
+
+  // An unknown direction used to fall through the switch and still return
+  // coordinates, so a typo looked like a successful scroll.
+  const bogus = await invoke(page, "page_scroll", { direction: "sideways" });
+  check(!!bogus.__error, "unknown direction errors instead of silently succeeding");
+  check(
+    String(bogus.__error || "").includes("sideways"),
+    "the error names the bad direction (got " + bogus.__error + ")"
+  );
+
+  const noArgs = await invoke(page, "page_scroll", {});
+  check(!!noArgs.__error, "no direction and no pixels still errors");
+}
+
 async function test_ping(page: Page): Promise<void> {
   console.log("\n[test] ping op");
   await freshLoad(page);
