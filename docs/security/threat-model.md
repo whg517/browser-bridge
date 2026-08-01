@@ -105,10 +105,16 @@ against. Pairs with [trust-boundaries.md](trust-boundaries.md) and the
 - Masking is heuristic — it can miss a novel secret format or over-mask benign
   data.
 - `page_snapshot_precise` briefly attaches the debugger (infobar flash).
+- **`page_eval` cannot run at all without CDP mode.** The extension's
+  isolated-world CSP blocks `new Function` on every page under MV3, not just
+  strict-CSP ones ([ADR-0025](../adr/0025-page-eval-requires-cdp-mode.md)). The
+  extension deliberately does **not** attach a debugger by itself to get around
+  that — it fails with a message the agent relays, leaving the decision to grant
+  debugger-backed access with the operator.
 - **CDP mode** (`cdpMode`, opt-in, off by default — see
   [ADR-0017](../adr/0017-cdp-mode-all-ops.md)) routes all page ops through
-  `chrome.debugger`. When enabled it **bypasses page CSP** (letting `page_eval`
-  run on strict-CSP sites) and holds a **persistent debugger attach** for the
+  `chrome.debugger`. When enabled it **bypasses page CSP** (which is what makes
+  `page_eval` usable at all) and holds a **persistent debugger attach** for the
   tab (the "Started debugging this browser" banner stays up). Masking is
   unchanged; the residual risk is the wider surface and the removed
   CSP defense-in-depth layer, accepted as the explicit price of the opt-in.

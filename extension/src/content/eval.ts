@@ -4,27 +4,8 @@
 
 import type { OpArgs } from "../shared/types";
 import { maskSensitive } from "../shared/masking";
+import { CSP_EVAL_MESSAGE, isCspEvalBlock } from "../shared/csp-eval";
 import { truncate } from "./util";
-
-// A Content-Security-Policy that omits 'unsafe-eval' blocks `new Function`, so
-// page_eval cannot run through the content script at all on that page. That is
-// an environment problem the model cannot code its way around — unlike a normal
-// JS error — so say what to do about it. The CDP backend evaluates through
-// chrome.debugger in the main world, which CSP does not gate (ADR-0017).
-export const CSP_EVAL_MESSAGE =
-  "page_eval is blocked by the page's Content Security Policy " +
-  "(script-src without 'unsafe-eval' forbids new Function in the content script). " +
-  "Turn on CDP mode in the extension's Options page to evaluate through " +
-  "chrome.debugger instead, or use page_click / page_fill / page_snapshot / " +
-  "page_text, which do not need eval.";
-
-// Is this failure the CSP block rather than a fault in the caller's code?
-// Chrome raises EvalError; other engines only say so in the message.
-export function isCspEvalBlock(e: unknown): boolean {
-  const err = e as { name?: string; message?: string } | null;
-  if (err?.name === "EvalError") return true;
-  return /content security policy/i.test(String(err?.message || ""));
-}
 
 export async function runEval(args: OpArgs) {
   const code = args.code;
@@ -39,9 +20,9 @@ export async function runEval(args: OpArgs) {
     const fn = new Function('"use strict";\n' + "return (async () => {\n" + code + "\n})();");
     result = await fn();
   } catch (e: any) {
-    // A CSP block is a failed call, not a result: throw so it surfaces as a
-    // tool error with a remedy instead of a "successful" payload the model
-    // has to parse a wall of CSP text out of.
+    // The isolated-world CSP block is not a fault in the caller's code and the
+    // model cannot work around it — throw the marked error so the SW recognises
+    // it and re-runs the call through the debugger (background/eval-escalation).
     if (isCspEvalBlock(e)) throw new Error(CSP_EVAL_MESSAGE, { cause: e });
     // Ordinary JS errors stay structured data, so the model can react
     // (e.g. fix the code and retry).

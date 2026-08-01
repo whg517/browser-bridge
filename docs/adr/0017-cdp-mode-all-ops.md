@@ -8,7 +8,19 @@
 
 On the default path, page-level operations (snapshot / click / fill / text / screenshot / scroll / wait_for / eval / storage_get) are executed by the background injecting a content script and then dispatching through `chrome.tabs.sendMessage` (the decision in ADR-0003: avoid chrome.debugger's "You are debugging this browser" banner).
 
-This path has a hard limitation: **strict-CSP sites** (such as Bing, GitHub, and others that set `script-src` without `unsafe-eval`) block `new Function` / `eval` inside the content script, causing `page_eval` to fail outright. ADR-0009 already proved that chrome.debugger's `Runtime.evaluate` executes in the page's **MAIN world** and is not constrained by the page's CSP (because it is not the page itself doing the eval, but the debugger performing the evaluation). ADR-0009 only used CDP for a single tool, `page_snapshot_precise` (attach → grab tree → detach, so the banner only flashes briefly).
+This path has a hard limitation: **strict-CSP sites** (such as Bing, GitHub, and others that set `script-src` without `unsafe-eval`) block `new Function` / `eval` inside the content script, causing `page_eval` to fail outright.
+
+> **Correction (2026-08-01, [ADR-0025](./0025-page-eval-requires-cdp-mode.md)):** the
+> scope stated above is wrong, and it is wrong in the direction that matters. Under
+> MV3 the content script's isolated world is governed by the **extension's** CSP,
+> not the page's — and Chrome's default extension policy has no `'unsafe-eval'`.
+> So `new Function` is blocked in the content script on **every** site, including
+> ones sending no CSP at all, and including one that explicitly sends
+> `script-src 'self' 'unsafe-eval'` (verified). "Strict-CSP sites" is not the
+> boundary; there is no site where this works, which makes `cdpMode` a hard
+> prerequisite for `page_eval` rather than a bypass for awkward sites.
+
+ADR-0009 already proved that chrome.debugger's `Runtime.evaluate` executes in the page's **MAIN world** and is not constrained by the page's CSP (because it is not the page itself doing the eval, but the debugger performing the evaluation). ADR-0009 only used CDP for a single tool, `page_snapshot_precise` (attach → grab tree → detach, so the banner only flashes briefly).
 
 Requirement: provide a **global switch** that makes **all** page operations go through CDP instead, so that:
 

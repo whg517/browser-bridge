@@ -9,6 +9,21 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Fixes from a live 16-tool regression sweep against a real Chrome (see the
 [QA runbook's regression log](tests/manual/canvas-embeddings/README.md#regression-log)).
 
+### Changed
+- **`page_eval` now states its prerequisite instead of failing cryptically.**
+  MV3 governs the content script's isolated world with the *extension's* CSP,
+  which has no `'unsafe-eval'` — so `new Function` is blocked there on **every**
+  page, for every user, not just the "strict-CSP sites" ADR-0017 described. The
+  tool therefore requires the **CDP mode** setting, which was never documented as
+  a prerequisite and which nothing pointed you towards when the call failed.
+
+  The extension does **not** enable it for you: a blocked call fails with a
+  message written to be relayed, telling the agent to stop and ask you to turn
+  CDP mode on rather than retrying or routing around it. The same prerequisite
+  now appears in the tool's own description, the MCP `instructions` payload, and
+  the Options-page copy. Attaching a debugger stays the operator's decision
+  ([ADR-0025](docs/adr/0025-page-eval-requires-cdp-mode.md)).
+
 ### Fixed
 - **`page_screenshot` no longer breaks on pages with iframes.** Page ops that
   aren't frame-routed now address the top frame explicitly. They were sent

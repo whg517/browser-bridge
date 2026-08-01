@@ -22,7 +22,7 @@ content or navigates) · **High** (writes to the page, or reads credentials) ·
 | `page_screenshot` | Medium | viewport pixels | — | possibly (whatever's on screen) | `tabs` | — |
 | `page_scroll` | Low | scroll position | scrolls | no | `scripting` | — |
 | `page_wait_for` | Low | selector/text presence | — | no | `scripting` | — |
-| `page_eval` | **Critical** | anything the page can | **arbitrary JS** in the page | yes (can read tokens/cookies) | `scripting` (`<all_urls>`) | result always masked; per-tool disable is the only gate / kill switch — no origin gate, no per-action prompt |
+| `page_eval` | **Critical** | anything the page can | **arbitrary JS** in the page | yes (can read tokens/cookies) | `scripting` (`<all_urls>`) + `debugger` (needs CDP mode) | **off unless the user enables CDP mode**; result always masked; per-tool disable is the kill switch — no origin gate, no per-action prompt |
 | `page_snapshot_precise` | Medium | authoritative a11y tree (CDP) | — | no | `debugger` | always-on informational pre-warn notice (not a blocking confirm); "debugging" infobar flashes |
 | `cookie_get` | High | cookies incl. **httpOnly** | — (read-only) | **yes** | `cookies` (`<all_urls>`) | scoped to active tab's domain; values masked; no `cookie_set` by design |
 | `storage_get` | High | local/sessionStorage | — (read-only) | **yes** (tokens) | `scripting` | same-origin; values **always** masked |
@@ -49,13 +49,19 @@ prompt before running.
   run the bridge in a Chrome you trust with agent access.
 - **Read-only by design**: no `cookie_set` / `storage_set` (writing httpOnly
   cookies is a session-fixation risk — see [ADR-0010](../adr/0010-cookie-storage-readonly.md)).
+- **`page_eval` requires CDP mode** ([ADR-0025](../adr/0025-page-eval-requires-cdp-mode.md)).
+  MV3 governs the content script with the *extension's* CSP, which has no
+  `'unsafe-eval'`, so `new Function` is blocked there on **every** page — not
+  just strict-CSP ones. The extension does **not** attach a debugger on its own
+  to work around that: the call fails with a message the agent is expected to
+  relay, and enabling `cdpMode` stays the operator's decision.
 - **CDP mode (opt-in, off by default)**: the `cdpMode` setting reroutes **every**
   page-level op through `chrome.debugger` (CDP) in the page's MAIN world instead
   of a content script (see [ADR-0017](../adr/0017-cdp-mode-all-ops.md)). It does
   **not** change any tool's contract, permission, or masking — the same mask
   protections above still apply. Its two
-  security tradeoffs: it **bypasses page CSP** (so `page_eval` runs on strict-CSP
-  sites like Bing), and it holds a **persistent debugger attach** for the tab, so
+  security tradeoffs: it **bypasses page CSP** (which is what makes `page_eval`
+  work at all), and it holds a **persistent debugger attach** for the tab, so
   the "Started debugging this browser" banner stays up the whole time it's on.
 
 ## When you add or change a tool

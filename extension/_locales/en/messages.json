@@ -15,7 +15,7 @@
     "message": "Route all page operations through CDP (chrome.debugger)"
   },
   "opt_cdp_desc": {
-    "message": "When enabled, all page operations use CDP (chrome.debugger) instead of injecting content scripts; this allows page_eval to run on strict-CSP sites (such as Bing). Disabled by default (ADR-0017)."
+    "message": "When enabled, all page operations use CDP (chrome.debugger) instead of injecting content scripts. Required for page_eval: Chrome forbids this extension from evaluating code in the page on every site, so page_eval only works with this on. Disabled by default (ADR-0017)."
   },
   "opt_cdp_warn": {
     "message": "⚠ When enabled, Chrome persistently displays a \"Debugging this browser\" banner at the top (the debugger stays attached the whole time), and the access surface is larger. Only enable this when you need to bypass CSP or want unified deep control."

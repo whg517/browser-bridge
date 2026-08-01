@@ -136,11 +136,20 @@ client, or headless from the repo root:
     click/fill echoed the bare ref (`e2` for `f7:e2`); a missing required arg
     surfaced as `EXECUTION_FAILED` rather than `INVALID_ARGUMENT`.
   - **`page_eval` was blocked on every page tested** (localhost fixture and
-    `https://example.com`, neither sending a CSP) by a globally-injected
-    `script-src` without `'unsafe-eval'` — environment-specific to that Chrome
-    profile. The product gap was that `new Function` has no fallback and the
-    failure returned exit 0 with a soft error object; it now fails loudly and
-    names CDP mode as the remedy.
+    `https://example.com`, neither sending a CSP) by a `script-src` without
+    `'unsafe-eval'`. The product gap was that `new Function` has no fallback and
+    the failure returned exit 0 with a soft error object; it now fails loudly.
+
+    > **Correction.** This entry originally called the block
+    > "environment-specific to that Chrome profile". That was wrong. The policy
+    > doing the blocking is **the extension's own** — MV3 governs the content
+    > script's isolated world with the extension CSP, which has no
+    > `'unsafe-eval'` — so it blocks `page_eval` on every site, for every user,
+    > with `cdpMode` off. Proven with three pages differing only in their CSP,
+    > including one explicitly sending `script-src 'self' 'unsafe-eval'`: all
+    > three blocked. See [ADR-0025](../../../docs/adr/0025-page-eval-requires-cdp-mode.md),
+    > which makes CDP mode a documented prerequisite of `page_eval` rather than
+    > a workaround for awkward sites.
 
 - **2026-08-01 (acceptance of `fix/frame-scoped-ops-and-masking`)** — same
   method, same fixtures, asserting each result. **14/14 green**, plus all 16
