@@ -104,8 +104,12 @@ lint/build gates still find their config.
 
 ## Versioning & release
 
-`Cargo.toml` is the single source of truth; `make sync-version` propagates it.
-Tagging `vX.Y.Z` triggers the release build. SemVer discipline applies even
-pre-1.0 — a `0.x` bump is not a license to break compatibility silently
-(tool removal/rename, permission widening, protocol breaks are "major"-shaped).
+The **git tag is the single source of truth** for the version. The repo carries
+the placeholder `0.0.0` at all times, and tagging `vX.Y.Z` triggers a release
+build that stamps the real version into the tree before compiling
+([ADR-0026](docs/adr/0026-release-time-version-stamping.md)); `make stamp-version
+VERSION=x.y.z` does the same by hand. Nothing built off `main` may claim a
+release version. SemVer discipline applies even pre-1.0 — a `0.x` bump is not a
+license to break compatibility silently (tool removal/rename, permission
+widening, protocol breaks are "major"-shaped).
 See [docs/development.md](docs/development.md#releasing).

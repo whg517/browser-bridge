@@ -24,6 +24,14 @@
 //! pending sender tagged `G`, so those callers fail fast with
 //! [`CallError::Disconnected`] instead of waiting the full 120s timeout.
 //! Newer-generation pending entries survive.
+//!
+//! ## Peer announce
+//!
+//! The first frame a connection carries may be the extension's announce (see
+//! [`crate::peer`]). The reader intercepts it instead of routing it, records the
+//! peer's version, and — when it disagrees with this binary's — arms a one-shot
+//! advisory that the MCP layer attaches to the next tool result. Both are scoped
+//! to the connection: a reconnect re-announces and re-arms.
 
 use std::collections::HashMap;
 use std::io::{self, BufReader, BufWriter};
@@ -37,6 +45,7 @@ use serde_json::Value;
 
 use crate::error::CallError;
 use crate::ipc;
+use crate::peer::{self, PeerInfo, ANNOUNCE_ID};
 use crate::protocol::{bridge_read, bridge_write, BridgeReq, BridgeResp};
 
 /// The live connection to the native host, paired with the generation id that
@@ -99,6 +108,13 @@ pub struct Session {
     /// Monotonic per-connection generation counter. Starts at 1 so that
     /// generation 0 is reserved as the [`UNSENT_GENERATION`] sentinel.
     next_gen: Arc<AtomicU64>,
+    /// What the currently-connected extension announced about itself, paired
+    /// with the generation that announced it. Cleared when that generation's
+    /// reader ends, so a stale peer version can never outlive its connection.
+    peer: Arc<Mutex<Option<(u64, PeerInfo)>>>,
+    /// A version-drift advisory waiting to be attached to the next tool result.
+    /// Armed once per announce, taken once — see [`Session::take_advisory`].
+    advisory: Arc<Mutex<Option<String>>>,
 }
 
 impl Default for Session {
@@ -114,7 +130,61 @@ impl Session {
             pending: Arc::new(Mutex::new(HashMap::new())),
             next_id: Arc::new(AtomicU64::new(1)),
             next_gen: Arc::new(AtomicU64::new(1)),
+            peer: Arc::new(Mutex::new(None)),
+            advisory: Arc::new(Mutex::new(None)),
         }
+    }
+
+    /// What the connected extension announced about itself, if anything. `None`
+    /// when no host is attached, or when the extension predates the announce
+    /// frame (in which case it is simply treated as legacy).
+    pub fn peer(&self) -> Option<PeerInfo> {
+        self.peer.lock().unwrap().as_ref().map(|(_, p)| p.clone())
+    }
+
+    /// Take the pending version-drift advisory, leaving none behind.
+    ///
+    /// One-shot **per connection**, deliberately. Repeating it on every tool call
+    /// would flood the transcript and teach the agent to skip past it; saying it
+    /// once, on the first result after the extension announces, puts it where
+    /// the model is already reading. A reconnect re-announces and therefore
+    /// re-arms it, which is right — that is a genuinely new pairing.
+    pub fn take_advisory(&self) -> Option<String> {
+        self.advisory.lock().unwrap().take()
+    }
+
+    /// Record an announce for `generation` and arm the drift advisory if the
+    /// peer's version disagrees with ours.
+    fn record_announce(&self, generation: u64, info: PeerInfo) {
+        self.record_announce_against(peer::HOST_VERSION, generation, info)
+    }
+
+    /// [`Self::record_announce`] with the host version injected.
+    ///
+    /// Split out from the reader thread so the policy is unit-testable without
+    /// sockets, and parameterized on the host version because the real one is
+    /// whatever this build was stamped as — in the ordinary `0.0.0` dev build
+    /// (ADR-0026) *every* comparison is deliberately silent, so a test pinned to
+    /// `HOST_VERSION` could never observe an armed advisory.
+    pub(crate) fn record_announce_against(
+        &self,
+        host_version: &str,
+        generation: u64,
+        info: PeerInfo,
+    ) {
+        log_info!(
+            "session",
+            "generation {generation}: {}",
+            peer::describe(&info)
+        );
+        // Assigned unconditionally: a reconnect to a now-matching extension must
+        // *disarm* an advisory left over from the previous connection.
+        let advisory = peer::drift_advisory(host_version, &info);
+        if let Some(msg) = &advisory {
+            log_warn!("session", "{msg}");
+        }
+        *self.advisory.lock().unwrap() = advisory;
+        *self.peer.lock().unwrap() = Some((generation, info));
     }
 
     /// Take ownership of a freshly-accepted connection from the native host.
@@ -150,6 +220,7 @@ impl Session {
         // connection it actually owns.
         let pending = self.pending.clone();
         let conn_slot = self.conn.clone();
+        let session = self.clone();
         thread::spawn(move || {
             loop {
                 let resp: Option<BridgeResp> = match bridge_read(&mut reader) {
@@ -166,12 +237,23 @@ impl Session {
                         break;
                     }
                 };
-                // The first line after hello is a real response. (Hello itself
-                // was consumed above and is a Value, not a BridgeResp, so it
-                // can't reach here.) Ids are globally unique (a single monotonic
-                // counter), so routing by id alone never cross-wires
-                // connections. This path locks only the pending mutex, which is
-                // compatible with the conn→pending ordering used elsewhere.
+                // The extension's announce rides in on the reserved id 0 (see
+                // crate::peer for why it wears the BridgeResp envelope). Consume
+                // it here rather than routing it: id 0 is never a request id, so
+                // routing would only log "no pending caller" and throw the
+                // version away.
+                if resp.id == ANNOUNCE_ID {
+                    if let Some(info) = peer::parse_announce(resp.data.as_ref()) {
+                        session.record_announce(my_gen, info);
+                        continue;
+                    }
+                }
+                // Otherwise a real response. (Hello itself was consumed above
+                // and is a Value, not a BridgeResp, so it can't reach here.)
+                // Ids are globally unique (a single monotonic counter), so
+                // routing by id alone never cross-wires connections. This path
+                // locks only the pending mutex, which is compatible with the
+                // conn→pending ordering used elsewhere.
                 let entry = pending.lock().unwrap().remove(&resp.id);
                 if let Some((_gen, tx)) = entry {
                     let _ = tx.send(resp);
@@ -199,6 +281,17 @@ impl Session {
                 let mut pending_guard = pending.lock().unwrap();
                 drain_pending_for_generation(&mut pending_guard, my_gen)
             };
+            // 3. Forget what this connection told us about itself, under the
+            //    same generation guard: a newer host may already have announced,
+            //    and its version must survive our teardown. An un-taken advisory
+            //    dies with the connection it described.
+            {
+                let mut peer_guard = session.peer.lock().unwrap();
+                if peer_guard.as_ref().map(|(gen, _)| *gen) == Some(my_gen) {
+                    *peer_guard = None;
+                    *session.advisory.lock().unwrap() = None;
+                }
+            }
             // Senders drop here (locks already released), unblocking callers.
             drop(drained);
         });
@@ -318,6 +411,57 @@ mod tests {
         assert_eq!(session.current_generation(), None);
         // Same via Default, which just forwards to `new`.
         assert_eq!(Session::default().current_generation(), None);
+    }
+
+    fn peer_at(version: &str) -> PeerInfo {
+        PeerInfo {
+            version: Some(version.to_string()),
+            ..Default::default()
+        }
+    }
+
+    // Announcing a version that disagrees with ours records the peer AND arms
+    // exactly one advisory: the model must be told, but only once per pairing.
+    #[test]
+    fn announce_records_the_peer_and_arms_one_advisory() {
+        let session = Session::new();
+        assert!(session.peer().is_none());
+        assert!(session.take_advisory().is_none());
+
+        session.record_announce_against("0.2.0", 1, peer_at("0.1.0"));
+        assert_eq!(
+            session.peer().and_then(|p| p.version).as_deref(),
+            Some("0.1.0")
+        );
+
+        let msg = session.take_advisory().expect("drift is advised");
+        assert!(msg.contains("0.1.0") && msg.contains("0.2.0"), "{msg}");
+        assert!(
+            session.take_advisory().is_none(),
+            "the advisory must be one-shot"
+        );
+    }
+
+    // A matching version is recorded but says nothing — and, critically, must
+    // clear any advisory left armed by a previous connection, or a reconnect to
+    // a now-matching extension would keep nagging forever.
+    #[test]
+    fn matching_announce_records_but_disarms() {
+        let session = Session::new();
+        session.record_announce_against("0.2.0", 1, peer_at("0.1.0"));
+        session.record_announce_against("0.2.0", 2, peer_at("0.2.0"));
+        assert!(session.peer().is_some());
+        assert!(session.take_advisory().is_none());
+    }
+
+    // The real entry point still works end to end; in a 0.0.0 dev build the
+    // policy is silent by design, which is exactly what this asserts.
+    #[test]
+    fn record_announce_uses_the_built_in_host_version() {
+        let session = Session::new();
+        session.record_announce(1, peer_at(crate::peer::HOST_VERSION));
+        assert!(session.peer().is_some());
+        assert!(session.take_advisory().is_none());
     }
 
     #[test]

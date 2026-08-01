@@ -13,10 +13,14 @@ with a `workflow_dispatch` manual entry point as well):
 git tag v0.1.0 && git push --tags
 ```
 
-The first step of the pipeline is a **version consistency check**: after stripping the leading `v` and any `-dev`/`-rc` prerelease suffix from the tag,
-its core version must equal the `version` in `Cargo.toml`, otherwise it fails outright. Cargo is the single source of truth for the version
-(see [ADR-0013](./adr/0013-ci-and-toolchain.md)). A tag with a suffix (such as `v0.1.0-rc.1`)
-is marked as a prerelease.
+The first step of the pipeline is **version stamping**: the tag is the single source of the version
+(see [ADR-0026](./adr/0026-release-time-version-stamping.md)). The repo itself permanently carries the
+placeholder `0.0.0`, so `scripts/stamp-version.sh "${TAG#v}"` writes the real version into `Cargo.toml`,
+`Cargo.lock`, `extension/manifest.json` and `extension/package.json` **before** anything is built, on every
+matrix leg; `scripts/check-version.sh --stamped` then proves the stamp landed in all four. Chrome's manifest
+`version` takes only dot-separated integers, so a prerelease is stamped there as its numeric core
+(`v0.6.0-rc.1` → manifest `0.6.0`). A second gate fails the run if `CHANGELOG.md` has no `## [X.Y.Z]` section
+for the tag. A tag with a suffix (such as `v0.1.0-rc.1`) is marked as a prerelease.
 
 ## Build matrix and prebuilt tarball
 

@@ -18,6 +18,7 @@ pub mod error;
 pub mod ipc;
 pub mod mcp_server;
 pub mod native_host;
+pub mod peer;
 pub mod protocol;
 pub mod session;
 pub mod tools;

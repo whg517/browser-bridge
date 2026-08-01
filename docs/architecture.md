@@ -129,7 +129,8 @@ interface BridgeResp {
 | `native_host.rs` | `--native-host` mode: two threads (stdin→TCP, TCP→stdout), graceful exit on EOF |
 | `mcp_server.rs` | Default mode: TCP accept thread + stdin JSON-RPC main loop + message dispatch |
 | `tools/` | Schema definitions for 16 tools (`catalogue.rs`) + the `HANDLERS` registry (`{name, build_payload}` pure functions, `mod.rs`) + argument shaping (`handlers.rs`) → dispatch to session.call |
-| `session.rs` | Connection management + request/response pairing by id (an mpsc channel per id) + a per-connection generation id (fixes the writer-clobber race, drains to `Disconnected` on disconnect) + 120s timeout |
+| `session.rs` | Connection management + request/response pairing by id (an mpsc channel per id) + a per-connection generation id (fixes the writer-clobber race, drains to `Disconnected` on disconnect) + 120s timeout; absorbs the peer announce and arms the drift advisory |
+| `peer.rs` | What the extension announced about itself (version / protocol / browser) + the version-drift policy. See [ADR-0027](./adr/0027-version-announce-and-drift-advisory.md) and §11.2 |
 | `error.rs` | Typed error `CallError` at the tool-call boundary (thiserror); Display is the model-visible text. See [ADR-0014](./adr/0014-leveled-logging.md) for details |
 | `log.rs` | A leveled stderr logger controlled by `BB_LOG` (error/warn/info/debug, default info) + `log_*!` macros. See [ADR-0014](./adr/0014-leveled-logging.md) for details |
 
@@ -390,19 +391,26 @@ rather than each speaking its own language.
 
 ### 11.2 Capability / version handshake (capabilities.json + protocol-version.json)
 
-On top of the internal bridge protocol in §3.3, when the connection is established, beyond the `hello` secret
-authentication of §3.3, there is also the **intent** to do one more step of capability + version negotiation:
+On top of the internal bridge protocol in §3.3, once the `hello` secret authentication of §3.3 passes, the
+extension sends **one unsolicited announce frame** describing itself — a `BridgeResp` on the reserved id `0`
+carrying `data.announce` = `{protocolVersion, version, browser:{name,version}}`
+([ADR-0027](./adr/0027-version-announce-and-drift-advisory.md)). Riding the response envelope is what makes it
+safe against an *older* server: every inbound line is deserialized into `BridgeResp`, and a line that fails to
+parse kills the reader loop and drops the connection. Request ids start at 1, so id `0` never collides.
 
-- The native host / extension reports the internal protocol version it supports from
-  [`protocol-version.json`](../contracts/protocol-version.json) (currently `1`) and the set of available
-  capabilities (see [`capabilities.json`](../contracts/capabilities.json),
-  where capabilities are conceptually derived from the `permission`/`scope` notions in `tools.json`).
-- Version incompatibility → **fail fast**, returning `PROTOCOL_MISMATCH` (see errors.json) with a clear message,
-  rather than accepting the connection and only exploding late with "unknown op" on some future `tools/call`.
-- A tool's required capability not being advertised → reject that tool call up front, rather than dispatching an op the extension cannot handle.
+- **Release-version mismatch → the server advises the agent.** The next tool result gets a prepended text block
+  naming both versions and telling the agent to ask the user to update. One-shot per connection; silent when
+  either side reports the `0.0.0` local-build placeholder ([ADR-0026](./adr/0026-release-time-version-stamping.md)).
+- **`protocolVersion` → recorded and logged only, never enforced.** Fail-fast on incompatibility, returning
+  `PROTOCOL_MISMATCH` (see errors.json) instead of exploding late with "unknown op", remains the **intended**
+  design and is still deferred — a bug there costs the whole bridge, and there is no protocol v2 to reject yet.
+- **Capabilities are not negotiated at all yet.** Gating a tool call on an advertised capability (see
+  [`capabilities.json`](../contracts/capabilities.json), conceptually derived from the `permission`/`scope`
+  notions in `tools.json`) is likewise still intent, not code.
 
 Note the distinction between three "versions": the MCP JSON-RPC version `2025-06-18` (§3.2 / [ADR-0007](./adr/0007-mcp-protocol-version-2025-06-18.md)),
-the internal bridge protocol version (an integer, protocol-version.json), and the extension release version (sourced from Cargo) — all different from one another.
+the internal bridge protocol version (an integer, protocol-version.json), and the extension release version (sourced
+from the git tag — the repo carries `0.0.0` between releases) — all different from one another.
 
 > To troubleshoot these two chains at runtime (whether the connection is reachable, and whether the lockfile/port/manifest are in place), use the read-only
 > `browser-bridge doctor`; see [cli.md](./cli.md).

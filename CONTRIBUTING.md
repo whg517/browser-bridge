@@ -108,8 +108,12 @@ A new tool touches both sides (see architecture.md §10):
 
 ## Versioning
 
-`Cargo.toml` is the source of truth. Bump it, run `make sync-version`, and update
-`CHANGELOG.md`. CI fails if the crate and extension versions drift.
+**Don't bump a version in a PR.** The repo permanently carries the placeholder
+`0.0.0`; the release version is stamped from the git tag by the release
+workflow ([ADR-0026](./docs/adr/0026-release-time-version-stamping.md)), and CI
+fails if the tree has drifted off the placeholder. Land your change with a
+`CHANGELOG.md` entry under `[Unreleased]` — that is the only version-adjacent
+file a contributor touches.
 
 ## License
 

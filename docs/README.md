@@ -61,6 +61,8 @@ An ADR (Architecture Decision Record) documents decisions where **there were mul
 | [0021](./adr/0021-extension-i18n.md) | Extension UI i18n (English + Simplified Chinese) via `_locales` + a runtime toggle | Accepted |
 | [0022](./adr/0022-allframes-page-reading.md) | Read sub-frames (SW-orchestrated allFrames; frame-namespaced refs) | Accepted |
 | [0024](./adr/0024-remove-allowlist.md) | Remove the per-site allowlist; declare `<all_urls>` outright | Accepted |
+| [0026](./adr/0026-release-time-version-stamping.md) | The repo carries `0.0.0`; the release version is stamped from the tag | Accepted |
+| [0027](./adr/0027-version-announce-and-drift-advisory.md) | The extension announces its version; drift is reported to the agent, not enforced | Accepted |
 
 ## ADR Writing Conventions
 

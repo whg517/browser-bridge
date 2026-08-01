@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/whg517/browser-bridge/contracts/bridge-response.schema.json",
-  "$comment": "SINGLE SOURCE OF TRUTH for the internal bridge RESPONSE envelope shape (BridgeResp). Mirrors extension/src/shared/types.ts:BridgeResp; keep the two in sync (types.ts is not generated from this yet). `error` here is the extension-side free-text string per types.ts; the cross-process stable error CODES live in contracts/errors.json and are applied on the Rust side (see docs/architecture.md §11.1).",
+  "$comment": "SINGLE SOURCE OF TRUTH for the internal bridge RESPONSE envelope shape (BridgeResp). Mirrors extension/src/shared/types.ts:BridgeResp; keep the two in sync (types.ts is not generated from this yet). `error` here is the extension-side free-text string per types.ts; the cross-process stable error CODES live in contracts/errors.json and are applied on the Rust side (see docs/architecture.md §11.1). RESERVED ID: a frame with id 0 is the extension's ANNOUNCE, not a reply — see the `id` property below.",
   "title": "BridgeResp",
   "description": "The response posted back from the extension to the native host over the Port. Shape: { id, ok, data?, error? }.",
   "type": "object",
@@ -10,7 +10,7 @@
   "properties": {
     "id": {
       "type": ["integer", "string"],
-      "description": "Correlation id, echoed from the matching BridgeReq."
+      "description": "Correlation id, echoed from the matching BridgeReq. The value 0 is RESERVED and never a request id (the server's counter starts at 1): a frame with id 0 carrying `data.announce` is the extension's version announce, sent unsolicited right after connecting. It wears this envelope deliberately, so that a server predating the announce still parses it (an undeserializable line would kill its reader loop and drop the connection) and merely logs an unroutable id. See extension/src/shared/announce.ts and src/peer.rs."
     },
     "ok": {
       "type": "boolean",

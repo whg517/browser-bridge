@@ -3,6 +3,7 @@
 // automatically on startup and after any disconnect.
 
 import type { BridgeReq } from "../shared/types";
+import { announceFrame, buildAnnounce } from "../shared/announce";
 import { dispatch } from "./dispatch";
 
 const NATIVE_HOST = "com.browser_bridge.host";
@@ -27,10 +28,30 @@ export function connectNative() {
     console.log("[bb] native host connected");
     port.onMessage.addListener(onNativeMessage);
     port.onDisconnect.addListener(onNativeDisconnect);
+    // Tell the server which extension it just got, before any request arrives.
+    // Every reconnect re-announces — that is a new connection generation on the
+    // server, and the SW is recycled every ~5 min, so it must not be one-shot.
+    announce();
   } catch (e) {
     portOk = false;
     console.error("[bb] connectNative threw", e);
     scheduleReconnect();
+  }
+}
+
+/**
+ * Send the version announce. Best-effort by design: it is diagnostic context,
+ * so a failure here must never keep the bridge from carrying real tool calls —
+ * an older host that ignores the frame, or a port that dies in the same tick,
+ * both just mean the server treats this extension as an unknown version.
+ */
+function announce() {
+  if (!port) return;
+  try {
+    const { version } = chrome.runtime.getManifest();
+    port.postMessage(announceFrame(buildAnnounce(version, navigator.userAgent)));
+  } catch (e) {
+    console.warn("[bb] announce failed", e);
   }
 }
 

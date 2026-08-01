@@ -1,6 +1,6 @@
 # ADR-0013: Unified Toolchain and CI (Task Entry Point + GitHub Actions + Single Version Source)
 
-- **Status**: Accepted (task entry point later revised: justfile → Makefile-only)
+- **Status**: Accepted (task entry point later revised: justfile → Makefile-only; the version-source decision is superseded by [ADR-0026](./0026-release-time-version-stamping.md))
 - **Date**: 2026-07-10
 - **Deciders**: User + AI assistant
 
@@ -9,6 +9,12 @@
 > only the `Makefile`** (zero install, no need for `cargo install just`), and the `justfile` has been deleted. Below, wherever
 > `justfile` / `just <recipe>` is mentioned, it is now provided by `Makefile` / `make <target>` instead; the recipe names and aggregates
 > (`make ci`, etc.) are unchanged, and the rest of the decisions — CI, gates, version syncing, and so on — are unaffected.
+
+> **Superseded in part**: the "single version source = `Cargo.toml`" decision below, and the `sync-version` flow that
+> implemented it, are replaced by [ADR-0026](./0026-release-time-version-stamping.md): the git tag is now the only source of
+> the release version, the repo permanently carries `0.0.0`, and `scripts/sync-version.sh` has become
+> `scripts/stamp-version.sh`. The `version-consistency` CI job survives under the same name with inverted semantics (it now
+> asserts the tree has *not* drifted off the placeholder). Every other decision in this ADR stands.
 
 ## Context
 

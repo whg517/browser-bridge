@@ -10,7 +10,7 @@ EXT_NM := extension/node_modules
 .PHONY: help build fmt fmt-check lint lint-scripts audit gen gen-check \
 	test-rust test-e2e ext-deps ext-build ext-typecheck ext-lint \
 	ext-format-check ext-test ext-package test-browser test-integration test ci \
-	install sync-version check-extension-id check-version release
+	install stamp-version check-extension-id check-version release
 
 help: ## List available targets
 	@grep -hE '^[a-zA-Z0-9_-]+:.*## ' $(MAKEFILE_LIST) \
@@ -83,6 +83,16 @@ ext-package: ext-build ## Zip the built extension: load-unpacked + store zips (-
 	(cd dist-artifacts/store-pkg && zip -qrX "$(CURDIR)/dist-artifacts/browser-bridge-extension-store.zip" . -x ".*")
 	@rm -rf dist-artifacts/store-pkg
 	@echo "packaged in dist-artifacts/:  browser-bridge-extension.zip (key KEPT — Load unpacked)  +  browser-bridge-extension-store.zip (key STRIPPED — Chrome Web Store)"
+	@# A local package is built off the 0.0.0 placeholder, so the store zip is
+	@# unpublishable (the CWS rejects 0.0.0 / duplicate versions). Warn rather than
+	@# fail: packaging for Load-unpacked is a legitimate everyday dev action, and
+	@# release.yml stamps the real version before it builds its own zips.
+	@./scripts/check-version.sh >/dev/null 2>&1 && { \
+		echo ""; \
+		echo "WARNING: this tree is at the 0.0.0 placeholder, so the store zip is NOT"; \
+		echo "         uploadable. Publish the -store.zip from a tagged release instead"; \
+		echo "         (docs/chrome-web-store.md)."; \
+	} || true
 
 test-browser: ext-build ## DOM + smoke tests (needs bun + Chrome; builds first)
 	cd tests && bun dom_test.ts
@@ -98,14 +108,17 @@ ci: fmt-check lint lint-scripts test-rust gen-check ext-typecheck ext-lint ext-f
 install: ## Install locally (build + copy binary + host manifest)
 	./install/install.sh
 
-sync-version: ## Propagate the Cargo.toml version into the extension files
-	./scripts/sync-version.sh
+stamp-version: ## Stamp VERSION=x.y.z across crate+extension (no VERSION resets to 0.0.0)
+	./scripts/stamp-version.sh $(VERSION)
 
-check-version: ## Verify the crate and extension versions agree
+check-version: ## Verify the tree holds the 0.0.0 placeholder consistently
 	./scripts/check-version.sh
 
 check-extension-id: ## Verify the manifest key and installer extension IDs agree
 	node scripts/check-extension-id.mjs
 
 release: ci ## Pre-release gate: full local CI green (versions + IDs included)
-	@echo "Release checks passed. Now tag the release, e.g.: git tag v$$(./scripts/check-version.sh | awk '/Cargo.toml/{print $$2}')"
+	@echo "Release checks passed. The version is stamped from the tag by the release"
+	@echo "workflow (ADR-0026) — this tree stays at the 0.0.0 placeholder. Add the"
+	@echo "CHANGELOG section for the version you are releasing, then tag it:"
+	@echo "    git tag vX.Y.Z && git push --tags"

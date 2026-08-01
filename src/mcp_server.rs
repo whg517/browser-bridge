@@ -308,7 +308,10 @@ fn handle(session: &Session, msg: &JsonRpc) -> Option<JsonRpc> {
                 ("code", out.error_code.unwrap_or("-")),
                 ("dur_ms", dur_s.as_str()),
             ]);
-            let result = json!({ "content": out.content, "isError": out.is_error });
+            let result = json!({
+                "content": with_advisory(session, out.content),
+                "isError": out.is_error,
+            });
             Some(JsonRpc::ok(id, result))
         }
         // Unknown method → JSON-RPC method-not-found.
@@ -318,6 +321,29 @@ fn handle(session: &Session, msg: &JsonRpc) -> Option<JsonRpc> {
             format!("method not found: {method}"),
         )),
     }
+}
+
+/// Prepend a pending version-drift advisory to a tool result's content blocks.
+///
+/// The advisory is delivered inside a tool result rather than as an MCP logging
+/// notification because that is the one channel the model is guaranteed to read:
+/// client support for `notifications/message` varies, and most clients never
+/// surface it to the model at all. It cannot ride on `initialize.instructions`
+/// either — the extension usually has not connected yet when that is answered.
+///
+/// Prepending (rather than appending) keeps it ahead of a potentially large
+/// payload, and works uniformly for the image blocks `page_screenshot` returns.
+/// [`Session::take_advisory`] is one-shot, so this is a no-op on every later call.
+fn with_advisory(session: &Session, content: Value) -> Value {
+    let Some(msg) = session.take_advisory() else {
+        return content;
+    };
+    let Value::Array(blocks) = content else {
+        return content; // dispatch always returns an array; be defensive anyway
+    };
+    let mut out = vec![json!({ "type": "text", "text": msg })];
+    out.extend(blocks);
+    Value::Array(out)
 }
 
 /// Block SIGTERM/SIGINT process-wide and run `f` on a dedicated thread when
@@ -472,6 +498,63 @@ mod initialize_tests {
         );
         assert!(instructions.contains("Browser Bridge"));
         assert!(instructions.contains("page_eval"));
+    }
+}
+
+#[cfg(test)]
+mod advisory_tests {
+    use super::with_advisory;
+    use crate::peer::PeerInfo;
+    use crate::session::Session;
+    use serde_json::json;
+
+    fn armed_session() -> Session {
+        let session = Session::new();
+        // Inject the host version rather than using this build's: a 0.0.0 dev
+        // build (ADR-0026) silences every comparison by design, so no announce
+        // could arm an advisory here.
+        session.record_announce_against(
+            "0.2.0",
+            1,
+            PeerInfo {
+                version: Some("0.1.0".into()),
+                ..Default::default()
+            },
+        );
+        session
+    }
+
+    #[test]
+    fn passes_content_through_when_nothing_is_armed() {
+        let content = json!([{ "type": "text", "text": "{}" }]);
+        assert_eq!(with_advisory(&Session::new(), content.clone()), content);
+    }
+
+    // The advisory goes FIRST so it is not buried under a large payload, the
+    // original blocks survive untouched, and it appears only once.
+    #[test]
+    fn prepends_once_then_stops() {
+        let session = armed_session();
+        let content = json!([{ "type": "text", "text": "payload" }]);
+
+        let first = with_advisory(&session, content.clone());
+        let blocks = first.as_array().expect("content stays an array");
+        assert_eq!(blocks.len(), 2);
+        assert!(blocks[0]["text"].as_str().unwrap().contains("0.1.0"));
+        assert_eq!(blocks[1], content[0]);
+
+        assert_eq!(with_advisory(&session, content.clone()), content);
+    }
+
+    // page_screenshot returns an image block; the advisory must ride along
+    // without mangling it.
+    #[test]
+    fn prepends_ahead_of_an_image_block() {
+        let content = json!([{ "type": "image", "data": "iVBOR", "mimeType": "image/png" }]);
+        let out = with_advisory(&armed_session(), content.clone());
+        let blocks = out.as_array().unwrap();
+        assert_eq!(blocks[0]["type"], "text");
+        assert_eq!(blocks[1], content[0]);
     }
 }
 

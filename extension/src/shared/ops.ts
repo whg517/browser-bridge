@@ -1,10 +1,16 @@
-// GENERATED from contracts/tools.json by scripts/gen-ops.mjs — DO NOT EDIT.
+// GENERATED from contracts/tools.json + contracts/protocol-version.json by
+// scripts/gen-ops.mjs — DO NOT EDIT.
 // Edit the contract, then run `make gen` (or `node scripts/gen-ops.mjs`).
 //
 // The tool catalogue, JS side: op names + Chinese UI labels for the options
 // page, policy metadata (risk / scope / permission / confirmation), and the
 // per-tool request shapes (BridgeCommand, derived from each inputSchema).
 // tools.rs is verified against the same contract in `cargo test`.
+
+// The internal bridge protocol version, advertised in the announce frame
+// (shared/announce.ts). Bumped only when the wire contract changes
+// incompatibly; src/peer.rs asserts the same value against the same contract.
+export const PROTOCOL_VERSION = 1;
 
 export interface ToolInfo {
   op: string;

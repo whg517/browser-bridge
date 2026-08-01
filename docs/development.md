@@ -28,7 +28,7 @@ extension/
   build.mjs          esbuild driver
   manifest.json, *.html, toast.css, icons/   static assets, copied into dist/
 tests/               e2e.py (protocol), dom_test.ts (DOM), ext_test.ts (smoke)
-scripts/             lib.sh (shared helpers) + check-version.sh, sync-version.sh
+scripts/             lib.sh (shared helpers) + check-version.sh, stamp-version.sh
 ```
 
 Shell scripts (`install/install.sh`, `scripts/*.sh`, `tests/run_all.sh`) share
@@ -137,22 +137,35 @@ BB_LOG=error browser-bridge          # quiet
 
 ## Releasing
 
-`Cargo.toml` is the single source of truth for the version.
+**The git tag is the only source of the version.** The repo permanently carries
+the placeholder `0.0.0`, and `release.yml` stamps the real version into the
+tree right before it builds ([ADR-0026](./adr/0026-release-time-version-stamping.md)).
+There is no version to bump.
 
 ```sh
-# 1. bump the version in Cargo.toml
-# 2. propagate it to the extension manifest + package files
-make sync-version        # ./scripts/sync-version.sh
-# 3. update CHANGELOG.md (move [Unreleased] items under the new version)
-# 4. gate on a clean tree
+# 1. update CHANGELOG.md (move [Unreleased] items under the new version heading;
+#    release.yml refuses to build without a "## [X.Y.Z]" section for the tag)
+# 2. gate on a clean tree
 make release             # check-version + full ci
-# 5. tag — pushing a v* tag triggers .github/workflows/release.yml, which
-#    builds macOS Apple Silicon, Linux x64, and Windows x64 archives (binary +
-#    built extension + installer) plus the two extension zips, and publishes
-#    them to GitHub Releases.
+# 3. tag — pushing a v* tag triggers .github/workflows/release.yml, which stamps
+#    the version from the tag, then builds macOS Apple Silicon, Linux x64, and
+#    Windows x64 archives (binary + built extension + installer) plus the two
+#    extension zips, and publishes them to GitHub Releases.
 git tag vX.Y.Z && git push --tags
 ```
 
-CI (`.github/workflows/ci.yml`) enforces version consistency on every push, so
-a forgotten `sync-version` fails the build. The release workflow also refuses to
-run if the tag doesn't match the Cargo version.
+`0.0.0` is what a locally-built binary (`browser-bridge --version`, `doctor`,
+MCP `serverInfo`) and a locally-loaded unpacked extension report — that is the
+point: it is immediately distinguishable from anything the release pipeline
+produced. Chrome's manifest `version` takes only dot-separated integers, so a
+stamped *prerelease* keeps the full string in `Cargo.toml`/`package.json` and its
+numeric core in the manifest (`v0.6.0-rc.1` → manifest `0.6.0`).
+
+CI (`.github/workflows/ci.yml`) runs `./scripts/check-version.sh` on every push
+and fails if the tree has drifted off the placeholder. To stamp by hand — to
+reproduce a release build locally, say:
+
+```sh
+make stamp-version VERSION=0.6.0   # ./scripts/stamp-version.sh 0.6.0
+make stamp-version                 # no VERSION → reset to 0.0.0
+```

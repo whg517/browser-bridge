@@ -8,6 +8,11 @@ import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const contract = JSON.parse(readFileSync(join(root, "contracts/tools.json"), "utf8"));
+// The internal bridge protocol version travels in the extension's announce
+// frame (shared/announce.ts). Generated from its own contract for the same
+// reason the tool catalogue is: the Rust side asserts the same file in
+// `cargo test` (src/peer.rs), so neither side can drift from it silently.
+const protocol = JSON.parse(readFileSync(join(root, "contracts/protocol-version.json"), "utf8"));
 
 const items = contract.tools
   .map((t) => `  { op: ${JSON.stringify(t.name)}, desc: ${JSON.stringify(t.uiLabel)} },`)
@@ -95,13 +100,19 @@ const commandArm = (t) => {
 
 const commands = contract.tools.map(commandArm).join("\n");
 
-const out = `// GENERATED from contracts/tools.json by scripts/gen-ops.mjs — DO NOT EDIT.
+const out = `// GENERATED from contracts/tools.json + contracts/protocol-version.json by
+// scripts/gen-ops.mjs — DO NOT EDIT.
 // Edit the contract, then run \`make gen\` (or \`node scripts/gen-ops.mjs\`).
 //
 // The tool catalogue, JS side: op names + Chinese UI labels for the options
 // page, policy metadata (risk / scope / permission / confirmation), and the
 // per-tool request shapes (BridgeCommand, derived from each inputSchema).
 // tools.rs is verified against the same contract in \`cargo test\`.
+
+// The internal bridge protocol version, advertised in the announce frame
+// (shared/announce.ts). Bumped only when the wire contract changes
+// incompatibly; src/peer.rs asserts the same value against the same contract.
+export const PROTOCOL_VERSION = ${JSON.stringify(protocol.protocolVersion)};
 
 export interface ToolInfo {
   op: string;

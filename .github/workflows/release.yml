@@ -59,15 +59,35 @@ jobs:
         with:
           node-version: 20
 
-      - name: Verify tag matches Cargo version
+      # The git tag is the ONLY source of the release version: the repo itself
+      # stays at the 0.0.0 placeholder so nothing built off main can claim
+      # to be a release (ADR-0026). Stamp Cargo.toml / Cargo.lock /
+      # manifest.json / package.json here, BEFORE either build step reads them,
+      # and on every matrix leg (each leg builds independently from a fresh
+      # checkout). --stamped re-reads all four files and fails if any missed it.
+      - name: Stamp version from tag
         shell: bash
         run: |
           TAG="${{ github.event.inputs.tag || github.ref_name }}"
           VER="${TAG#v}"          # strip leading v
-          CORE="${VER%%-*}"       # strip any -dev/-rc pre-release suffix
-          CARGO_VER="$(grep -m1 '^version' Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')"
-          echo "tag=$TAG core=$CORE cargo=$CARGO_VER"
-          [ "$CORE" = "$CARGO_VER" ] || { echo "tag core $CORE != Cargo version $CARGO_VER"; exit 1; }
+          CORE="${VER%%-*}"       # strip any -rc/-dev pre-release suffix
+          echo "tag=$TAG version=$VER core=$CORE"
+          ./scripts/stamp-version.sh "$VER"
+          ./scripts/check-version.sh --stamped "$VER"
+
+      # The CHANGELOG is the one release artifact that stays hand-written, and
+      # the "bump the version" commit that used to force the author to touch it
+      # is gone. Fail early rather than shipping a release with no notes.
+      - name: Verify CHANGELOG has a section for this version
+        shell: bash
+        run: |
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          VER="${TAG#v}"
+          CORE="${VER%%-*}"
+          grep -qE "^## \[($VER|$CORE)\]" CHANGELOG.md || {
+            echo "CHANGELOG.md has no '## [$CORE]' section — add the release notes before tagging"
+            exit 1
+          }
 
       - name: Build binary
         run: cargo build --release
