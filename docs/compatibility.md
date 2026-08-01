@@ -12,7 +12,7 @@ Before discussing compatibility, first distinguish the three levels (see [archit
 |------|------|------|----------|
 | MCP JSON-RPC version | Date string `2025-06-18` | [ADR-0007](./adr/0007-mcp-protocol-version-2025-06-18.md) | External protocol between MCP client ↔ MCP server; locked, not changed casually |
 | Internal bridge protocol version | Monotonic integer (currently `1`) | [`contracts/protocol-version.json`](../contracts/protocol-version.json) | Wire contract between MCP server ↔ native host ↔ extension |
-| Extension/binary release version | SemVer (e.g. `0.1.0`) | `Cargo.toml` (see [ADR-0013](./adr/0013-ci-and-toolchain.md)) | Release artifact version; for release discipline see [release.md](./release.md) |
+| Extension/binary release version | SemVer (e.g. `0.1.0`) | The git tag (see [ADR-0026](./adr/0026-release-time-version-stamping.md)); the repo itself carries `0.0.0` | Release artifact version; for release discipline see [release.md](./release.md) |
 
 This document focuses on the **internal bridge protocol version**: it is a small integer that is incremented (+1) only when the bridge wire contract
 (the shape of `BridgeReq`/`BridgeResp`, the `hello` handshake, op/capability semantics) undergoes an **incompatible** change.

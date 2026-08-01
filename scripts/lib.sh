@@ -40,7 +40,14 @@ bb_find_cargo() {
   fi
 }
 
-# Echo the crate version from Cargo.toml (the single source of truth).
+# The in-repo placeholder version. `main` and every feature branch always carry
+# it, so no locally-built binary or unpacked extension can claim a release
+# version; the real one is stamped from the git tag at release-build time only
+# (see ADR-0026 and scripts/stamp-version.sh).
+BB_DEV_VERSION="0.0.0"
+export BB_DEV_VERSION
+
+# Echo the crate version from Cargo.toml.
 bb_cargo_version() {
   grep -m1 '^version' "$BB_ROOT/Cargo.toml" | sed -E 's/.*"([^"]+)".*/\1/'
 }
@@ -49,4 +56,11 @@ bb_cargo_version() {
 # key and is not matched.)
 bb_json_version() {
   grep -m1 '"version"' "$1" | sed -E 's/.*"version"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/'
+}
+
+# Echo the numeric core of a SemVer string: 0.6.0-rc.1 -> 0.6.0. Chrome's
+# manifest `version` accepts only dot-separated integers, so a prerelease tag is
+# stamped there as its core.
+bb_version_core() {
+  echo "${1%%-*}"
 }

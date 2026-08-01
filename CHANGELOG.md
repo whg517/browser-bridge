@@ -6,10 +6,26 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-Fixes from a live 16-tool regression sweep against a real Chrome (see the
-[QA runbook's regression log](tests/manual/canvas-embeddings/README.md#regression-log)).
-
 ### Changed
+- **The git tag is now the only source of the release version.** The repository
+  permanently carries the placeholder `0.0.0` in `Cargo.toml`, `Cargo.lock`,
+  `extension/manifest.json` and `extension/package.json`, and the release
+  workflow stamps the real version into all four immediately before it builds —
+  so a binary or unpacked extension built off `main` (or any feature branch) now
+  reports `0.0.0` instead of impersonating the last release
+  ([ADR-0026](docs/adr/0026-release-time-version-stamping.md)). Releasing is now
+  just `git tag vX.Y.Z && git push --tags` — no version-bump commit.
+  - `scripts/sync-version.sh` → **`scripts/stamp-version.sh [X.Y.Z]`** (no
+    argument resets to the placeholder); `make sync-version` → **`make
+    stamp-version VERSION=x.y.z`**.
+  - `scripts/check-version.sh` gains a `--stamped X.Y.Z` mode; its default mode
+    now asserts the tree still holds the placeholder. The `version-consistency`
+    CI job is unchanged in name and invocation.
+  - Chrome's manifest `version` takes only dot-separated integers, so a stamped
+    prerelease keeps the full string in `Cargo.toml`/`package.json` and its
+    numeric core in the manifest (`v0.6.0-rc.1` → manifest `0.6.0`).
+  - The release workflow additionally fails if `CHANGELOG.md` has no
+    `## [X.Y.Z]` section for the tag being released.
 - **`page_eval` now states its prerequisite instead of failing cryptically.**
   MV3 governs the content script's isolated world with the *extension's* CSP,
   which has no `'unsafe-eval'` — so `new Function` is blocked there on **every**
@@ -25,6 +41,10 @@ Fixes from a live 16-tool regression sweep against a real Chrome (see the
   ([ADR-0025](docs/adr/0025-page-eval-requires-cdp-mode.md)).
 
 ### Fixed
+
+From a live 16-tool regression sweep against a real Chrome (see the
+[QA runbook's regression log](tests/manual/canvas-embeddings/README.md#regression-log)).
+
 - **`page_screenshot` no longer breaks on pages with iframes.** Page ops that
   aren't frame-routed now address the top frame explicitly. They were sent
   without a `frameId`, which makes Chrome broadcast to *every* frame and answer
