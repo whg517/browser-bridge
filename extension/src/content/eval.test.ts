@@ -1,41 +1,42 @@
-// A CSP without 'unsafe-eval' forbids `new Function`, so page_eval cannot run
-// through the content script at all on that page. That used to come back as a
-// successful call carrying a soft error object full of CSP text, which reads
-// like a result. It is a failed call with a specific remedy, so classify it.
+// runEval's error policy. Only the isolated-world CSP block is thrown (so the
+// SW can escalate it to the debugger — ADR-0025); a fault in the caller's own
+// code stays a structured result the model can read and react to.
+//
+// Note bun has no CSP, so `new Function` works here — the block itself is
+// classified by shared/csp-eval.ts (unit-tested there) and exercised live.
 
 import { describe, expect, test } from "bun:test";
-import { CSP_EVAL_MESSAGE, isCspEvalBlock } from "./eval";
+import { runEval } from "./eval";
 
-describe("isCspEvalBlock", () => {
-  test("recognises Chrome's EvalError", () => {
-    const e = new Error("Evaluating a string as JavaScript violates …");
-    e.name = "EvalError";
-    expect(isCspEvalBlock(e)).toBe(true);
+describe("runEval", () => {
+  test("rejects a missing or blank `code`", async () => {
+    await expect(runEval({})).rejects.toThrow("non-empty `code`");
+    await expect(runEval({ code: "   " })).rejects.toThrow("non-empty `code`");
   });
 
-  test("recognises the block by message when the name is generic", () => {
+  test("returns the value, masked", async () => {
+    expect(await runEval({ code: "return 6*7" })).toBe(42);
+    expect(await runEval({ code: "return 'hello world'" })).toBe("hello world");
+    // Masking applies to eval results like everywhere else.
     expect(
-      isCspEvalBlock(
-        new Error(
-          "call to Function() blocked by Content Security Policy directive: \"script-src 'self'\""
-        )
-      )
-    ).toBe(true);
+      await runEval({
+        code: "return 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.abcdefghij'",
+      })
+    ).toBe("••••[jwt]");
   });
 
-  test("ordinary JS errors are NOT the CSP block — they stay structured data", () => {
-    expect(isCspEvalBlock(new TypeError("x is not a function"))).toBe(false);
-    expect(isCspEvalBlock(new SyntaxError("Unexpected token"))).toBe(false);
-    expect(isCspEvalBlock(new ReferenceError("foo is not defined"))).toBe(false);
-    expect(isCspEvalBlock(null)).toBe(false);
-    expect(isCspEvalBlock(undefined)).toBe(false);
+  test("awaits an async result", async () => {
+    expect(await runEval({ code: "return await Promise.resolve(7)" })).toBe(7);
   });
-});
 
-describe("CSP_EVAL_MESSAGE", () => {
-  test("names the cause and the way out", () => {
-    expect(CSP_EVAL_MESSAGE).toContain("Content Security Policy");
-    // The remedy is what makes this actionable rather than just a diagnosis.
-    expect(CSP_EVAL_MESSAGE).toContain("CDP mode");
+  test("a fault in the caller's code comes back as data, not a throw", async () => {
+    const out = (await runEval({ code: "return notDefinedAnywhere" })) as {
+      __evalError: boolean;
+      name: string;
+      message: string;
+    };
+    expect(out.__evalError).toBe(true);
+    expect(out.name).toBe("ReferenceError");
+    expect(out.message).toContain("notDefinedAnywhere");
   });
 });

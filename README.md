@@ -170,6 +170,11 @@ visible on my screen and uses my real accounts. Work carefully:
   page_eval (arbitrary JS) only as a last resort. There are no per-action
   confirmation prompts: clicks, page_eval, and tab_close run immediately, so
   nothing but your own judgement stops a mistake — double-check before acting.
+- page_eval needs a setting I have to turn on. Chrome blocks this extension from
+  running code in the page on every site, so page_eval fails until I enable CDP
+  mode in the Browser Bridge Options page. If you hit that error, don't retry
+  and don't work around it — tell me what you were trying to do and that I need
+  to switch CDP mode on, then wait. The other tools are unaffected.
 - Never exfiltrate secrets. Cookie and storage reads come back masked; don't
   try to defeat that or forward credentials off-origin.
 - There's no per-site gate. The extension can act on any tab I have open, with
@@ -227,7 +232,7 @@ Grouped from the single source of truth,
 ### Run code (highest risk)
 | Tool | Does | Risk |
 |------|------|------|
-| `page_eval` | ⚠ Execute arbitrary JS. Runs with no prompt; return value always masked; disable it in the Options page (Tool enablement). Prefer the tools above. | critical |
+| `page_eval` | ⚠ Execute arbitrary JS. **Requires CDP mode** — Chrome forbids the extension from evaluating code in the page on every site, so without it the call fails and tells your agent to ask you to switch it on ([ADR-0025](./docs/adr/0025-page-eval-requires-cdp-mode.md)). Return value always masked; disable it entirely in the Options page. Prefer the tools above. | critical |
 
 ### Read credentials (read-only, always masked)
 | Tool | Does | Risk |

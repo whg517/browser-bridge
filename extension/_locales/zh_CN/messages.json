@@ -15,7 +15,7 @@
     "message": "所有页面操作均通过 CDP(chrome.debugger)执行"
   },
   "opt_cdp_desc": {
-    "message": "启用后,所有页面操作改用 CDP(chrome.debugger),而不是注入内容脚本;这样 page_eval 就能在严格 CSP 的站点(如 Bing)上运行。默认关闭(ADR-0017)。"
+    "message": "启用后,所有页面操作改用 CDP(chrome.debugger)而不是注入内容脚本。page_eval 必须开启本项:Chrome 禁止本扩展在页面中执行代码(所有站点皆然),因此不开启时 page_eval 无法使用。默认关闭(ADR-0017)。"
   },
   "opt_cdp_warn": {
     "message": "⚠ 启用后,Chrome 会在顶部持续显示“正在调试此浏览器”横幅(调试器全程保持连接),访问面也更大。仅在需要绕过 CSP 或想要统一的深度控制时才启用。"
