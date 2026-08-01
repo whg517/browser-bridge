@@ -177,3 +177,42 @@ client, or headless from the repo root:
   - Serve fixtures with a cache-busting query (`?v=…`) after editing them —
     Chrome served a stale `page.html` and made a masking check look like a
     failure.
+
+- **2026-08-01 (full regression, both backends)** — every tool re-run against
+  the DOM fixture, the cookie origin and the six-embedding page, each result
+  asserted rather than eyeballed. **49/49**: 33 on the default
+  (content-script) path with `cdpMode` off, then 16 more with it on. Local
+  gates green on the same tree (cargo 55, extension 95, protocol e2e 49).
+  - **Default path** — tab open/focus/list/close incl. an unknown id;
+    `page_snapshot` (password masked, `checked:false` with no `value`,
+    `display:none` filtered) and `page_snapshot_precise` (password masked too);
+    `page_text` visible-vs-full; `page_links` all four types; `page_fill` /
+    `page_click`; `page_screenshot` decodes as PNG; `page_wait_for`
+    selector/text/settled/minCount/timeout; `page_scroll` position fidelity and
+    unknown-direction rejection; `storage_get` / `cookie_get` masking by
+    pattern **and** by key name with `httpOnly` preserved; `page_eval` failing
+    with the relay message while a malformed call stays `INVALID_ARGUMENT`.
+    Cross-frame: 18 refs, six `CANVAS-BODY` labels, six merged mailto links,
+    `f<N>:` click routing + echo, screenshot on a 7-frame page, and a
+    top-document `scrollY` of 3984 that re-reads identically.
+  - **CDP path** — `page_eval` returns real values, reads page state, awaits
+    async results, masks a token in its return value, and still hands a
+    `ReferenceError` back as `__evalError` data (a branch the default path
+    cannot reach, because `new Function` is blocked before the caller's code
+    ever runs). The CDP copies of `page_scroll` / `page_wait_for` /
+    `page_screenshot` / `storage_get` all behave, and the ops CDP mode
+    delegates back to the content script (`page_snapshot`, `page_fill`,
+    cross-frame reads) are unchanged.
+  - **Test both backends, always.** They are two implementations of the same
+    ops: `content/` and `cdp/page-fns.ts`. Fixing only one leaves the bug live
+    for whoever has the other switched on — which is exactly how the CDP copy
+    of `pageScroll` nearly kept its missing `default` case.
+  - The one red line in this run was a **bad assertion, not a defect**:
+    `page_scroll {pixels:120}` reports `scrollY:0` on `page.html` because that
+    fixture is shorter than the viewport. Re-checked on a 5000 px page: 120 →
+    stable, `bottom` → 3984 → stable, `top` → 0. Assert scrolling on something
+    that scrolls.
+  - `tests/e2e.py` is **not isolated from a live extension**. A Chrome with
+    Browser Bridge connected reconnects to the bridge the test spins up and
+    answers instead of the test's mock — `storage_get` failed once here and
+    passed on re-run. Quit Chrome, or expect the occasional phantom failure.
