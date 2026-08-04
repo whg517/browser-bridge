@@ -34,6 +34,14 @@ and then close your real browser session** (all tabs/windows) on cleanup. So:
 export CHROME_BIN="/Applications/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"
 ```
 
+If you don't have one, fetch a Chrome for Testing build into a cache **outside
+the repo** (`@puppeteer/browsers` defaults to the working directory, which would
+drop ~370 MB into the working tree):
+
+```sh
+npx @puppeteer/browsers install chrome@stable --path "$HOME/.cache/chrome-for-testing"
+```
+
 ## Running
 
 ```sh
@@ -71,9 +79,10 @@ exercises.
 `integration_e2e.ts` closes the one seam the others can't: the **real** MCP
 server ↔ **real** extension round-trip over native messaging. It spawns the
 release binary as the MCP server, launches Chrome (puppeteer) with a unique
-copy of the extension, registers a native-messaging host manifest (backing up
-and restoring any existing one), and drives a `tab_list` call all the way to
-`chrome.tabs.query` and back.
+copy of the extension, registers a native-messaging host manifest, and drives a
+`tab_list` call all the way to `chrome.tabs.query` and back. It also asserts the
+extension's **version announce** ([ADR-0027](../docs/adr/0027-version-announce-and-drift-advisory.md)) —
+the only place that can be verified, since `e2e.py`'s extension is a mock.
 
 ```sh
 BB_REAL_E2E=1 bun integration_e2e.ts     # macOS/Linux shell
@@ -87,6 +96,22 @@ $env:BB_REAL_E2E='1'; node integration_e2e.ts  # Windows PowerShell, Node 22.12+
   real structured `chrome.tabs` data). One **extra** assertion — that the
   reply came from *our* throwaway profile — only holds when the launch is
   isolated. Set `CHROME_BIN` to the Chrome for Testing/Chromium executable.
+- **Where the host manifest goes.** On macOS/Linux Chrome resolves user-level
+  native-messaging manifests **relative to the user-data-dir**, not from a fixed
+  per-brand path. `~/Library/Application Support/Google/Chrome/NativeMessagingHosts`
+  only works for the daily browser because that *is* its default user-data-dir;
+  under `--user-data-dir=<throwaway>` Chrome looks inside the throwaway. The test
+  therefore registers inside its own profile — which also means it touches
+  nothing of yours (only Windows, a global registry key, needs backup/restore).
+  Registering at the conventional path instead is worse than a no-op: the
+  isolated browser reports `Specified native messaging host not found` and never
+  connects, while your **daily** browser does read that path, connects to the
+  test's server, and answers the assertions — a green "real extension connected"
+  produced by the one browser this test exists to avoid. The tell is the
+  fixture-tab hermeticity check failing while everything else passes.
+- On failure (or with `BB_REAL_E2E_DEBUG=1`) it prints the MCP server log and the
+  extension's service-worker console — a refused `connectNative` is invisible
+  server-side, so without the latter such a failure is unactionable.
 
 (Historical note: the smoke test's comment claimed Chrome *forbids*
 `nativeMessaging` under automated launches — that was a misdiagnosis of a

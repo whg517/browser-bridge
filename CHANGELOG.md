@@ -30,6 +30,12 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - `contracts/protocol-version.json` has code consumers on both sides at last:
     asserted in `cargo test` (`src/peer.rs`) and generated into
     `extension/src/shared/ops.ts` by `make gen`.
+  - Verified in a real browser: `tests/integration_e2e.ts` now asserts the actual
+    `background.js` sends the announce over real native messaging, that the
+    version / protocol / browser survive the trip, that no advisory appears when
+    both sides are local `0.0.0` builds, and that the extension **re-announces**
+    on reconnect (MV3 recycles the worker every ~5 min, so a once-per-install
+    announce would leave the server permanently unable to report drift).
 
 ### Changed
 - **The git tag is now the only source of the release version.** The repository
@@ -71,6 +77,22 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   ([ADR-0025](docs/adr/0025-page-eval-requires-cdp-mode.md)).
 
 ### Fixed
+
+- **The real-browser integration test was silently exercising the daily
+  browser.** On macOS/Linux Chrome resolves user-level native-messaging
+  manifests **relative to the user-data-dir**, not from a fixed per-brand path;
+  the conventional `~/Library/Application Support/Google/Chrome/NativeMessagingHosts`
+  works for the daily browser only because that is *its* default user-data-dir.
+  Registering there while launching Chrome for Testing under
+  `--user-data-dir=<throwaway>` meant the isolated browser reported `Specified
+  native messaging host not found` and never connected — while the daily browser,
+  which does read that path, connected to the test's server and answered the
+  assertions. `tests/integration_e2e.ts` now registers inside its own throwaway
+  profile, so the run is genuinely hermetic and, on macOS/Linux, touches nothing
+  of the user's (no backup/restore of a real registration, and nothing left
+  behind if the test is killed). It also dumps the MCP server log and the
+  extension's service-worker console on failure — a refused `connectNative` is
+  invisible server-side, so such a failure was previously unactionable.
 
 From a live 16-tool regression sweep against a real Chrome (see the
 [QA runbook's regression log](tests/manual/canvas-embeddings/README.md#regression-log)).
