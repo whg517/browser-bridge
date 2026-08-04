@@ -51,6 +51,11 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     numeric core in the manifest (`v0.6.0-rc.1` → manifest `0.6.0`).
   - The release workflow additionally fails if `CHANGELOG.md` has no
     `## [X.Y.Z]` section for the tag being released.
+  - CI exercises the stamping on every push across the same
+    macOS/Linux/Windows matrix the release builds on, and asserts the
+    stamp→reset round trip is byte-for-byte lossless — so a portability bug in
+    the script surfaces on a PR rather than mid-release, after the tag is
+    already pushed.
 - **`page_eval` now states its prerequisite instead of failing cryptically.**
   MV3 governs the content script's isolated world with the *extension's* CSP,
   which has no `'unsafe-eval'` — so `new Function` is blocked there on **every**

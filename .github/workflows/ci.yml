@@ -64,6 +64,80 @@ jobs:
       - run: ./scripts/check-version.sh
       - run: node scripts/check-extension-id.mjs
 
+  # Exercise release.yml's version-stamping step on every push, across the SAME
+  # matrix the release builds on.
+  #
+  # Since ADR-0026 the repo carries the 0.0.0 placeholder and the real version is
+  # written by `stamp-version.sh` inside the release run — which means that script
+  # is release-critical but, without this job, would only ever execute while a
+  # release is being cut. A portability bug in it (BSD vs GNU `sed`/`awk`, `mktemp`
+  # or `npm version` under Git Bash on Windows) would surface for the first time
+  # mid-release, after the tag is already pushed.
+  #
+  # The round trip is asserted to be byte-for-byte lossless: stamp a version, prove
+  # all files hold it, reset to the placeholder, and require a clean `git diff`.
+  # That also catches a script that mangles manifest.json's formatting or key order.
+  release-stamping:
+    name: Release version stamping (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-26, windows-2025]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # cargo is needed for the Cargo.lock refresh, node/npm for manifest.json and
+      # package.json — the same tools release.yml has available when it stamps.
+      - uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1
+        with:
+          cache: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 20
+      - name: Stamp, verify, reset
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./scripts/check-version.sh
+
+          # A prerelease, because that is the case with the extra rule: the full
+          # string goes to Cargo/package.json while manifest.json takes only the
+          # numeric core (Chrome rejects a suffix there).
+          ./scripts/stamp-version.sh 9.9.9-ci.1
+          ./scripts/check-version.sh --stamped 9.9.9-ci.1
+          node -e '
+            const m = require("./extension/manifest.json");
+            if (m.version !== "9.9.9") throw new Error("manifest version is " + m.version + ", expected the numeric core 9.9.9");
+          '
+          grep -q '^version = "9.9.9-ci.1"$' Cargo.toml
+          grep -A1 'name = "browser-bridge"' Cargo.lock | grep -q '9.9.9-ci.1'
+
+          ./scripts/stamp-version.sh
+          ./scripts/check-version.sh
+          # Scoped to the files stamping owns: an unrelated dirty file must not be
+          # reported as a stamping defect.
+          git diff --exit-code -- Cargo.toml Cargo.lock \
+            extension/manifest.json extension/package.json extension/package-lock.json || {
+            echo "stamping is not round-trip clean — a version file differs after stamp+reset"
+            exit 1
+          }
+
+      # The release refuses to build a tag with no CHANGELOG section. Prove that
+      # gate's expression matches the heading style the file actually uses, so a
+      # real release cannot fail on a typo'd regex.
+      - name: CHANGELOG gate matches the file's heading style
+        shell: bash
+        run: |
+          set -euo pipefail
+          LATEST="$(grep -m1 -oE '^## \[[0-9]+\.[0-9]+\.[0-9]+\]' CHANGELOG.md | tr -d '#[] ')"
+          echo "latest released section: $LATEST"
+          grep -qE "^## \[($LATEST|${LATEST%%-*})\]" CHANGELOG.md
+          # ...and that a version with no section is correctly rejected.
+          if grep -qE "^## \[(99\.99\.99)\]" CHANGELOG.md; then
+            echo "unexpected: CHANGELOG claims a 99.99.99 release"
+            exit 1
+          fi
+
   scripts:
     name: Shell scripts (shellcheck)
     runs-on: ubuntu-24.04
