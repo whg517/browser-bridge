@@ -12,8 +12,19 @@ use std::time::Duration;
 #[derive(Debug, thiserror::Error)]
 pub enum CallError {
     /// No native host is currently connected (extension not loaded, Chrome not
-    /// running, or the bridge hasn't reconnected yet).
-    #[error("browser extension not connected — is the extension loaded and Chrome running?")]
+    /// running, or — most often — its service worker is asleep).
+    ///
+    /// The old text asked whether the extension was loaded and Chrome running.
+    /// In the common case both are true and the message sends the user looking
+    /// in the wrong place: MV3 recycles an idle service worker after ~30s, and
+    /// only a browser-side event can wake it. Name that first, and name the
+    /// remedies, since an agent relays this text verbatim.
+    #[error(
+        "browser extension not connected. Most likely its service worker is asleep — Chrome \
+         stops it after ~30s idle. Retry this call once (the extension re-checks every 30s); \
+         if it still fails, ask the user to click the Browser Bridge toolbar icon, and to \
+         confirm the extension is loaded and enabled."
+    )]
     NotConnected,
 
     /// Failed to write the request onto the bridge socket.

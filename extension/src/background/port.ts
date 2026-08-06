@@ -7,6 +7,7 @@ import { announceFrame, buildAnnounce } from "../shared/announce";
 import { dispatch } from "./dispatch";
 
 const NATIVE_HOST = "com.browser_bridge.host";
+const WAKE_ALARM = "bb-reconnect";
 
 let port: chrome.runtime.Port | null = null;
 let portOk = false; // did the most recent connect succeed?
@@ -72,6 +73,43 @@ function scheduleReconnect() {
     reconnectTimer = null;
     connectNative();
   }, 2000);
+}
+
+/**
+ * Periodically wake the service worker so it can (re)connect on its own.
+ *
+ * `scheduleReconnect` above only covers a dropped PORT. It cannot cover a
+ * terminated WORKER: its `setTimeout` lives inside the worker and dies with it.
+ * MV3 recycles an idle worker after ~30s, and the only registered wake events
+ * were `onStartup` / `onInstalled` — browser start and install. So after a short
+ * idle the bridge was simply unreachable, and no amount of retrying from the
+ * host could fix it: native messaging is extension-initiated, so a running MCP
+ * server has no channel to signal a dormant worker. Recovery required the user
+ * to click the toolbar icon.
+ *
+ * That window is not exotic — it is the normal flow. The user types a prompt
+ * into their MCP client while the browser sits idle; by the time the agent
+ * issues its first tool call the worker is long gone. The very first call of a
+ * session was the one most likely to fail.
+ *
+ * An alarm is the sanctioned MV3 remedy: firing it wakes the worker, which
+ * re-runs this module's top level and reconnects. Once a port is open it keeps
+ * the worker alive by itself, so the alarm only matters while nothing is
+ * connected — the cost when a server IS running is zero.
+ *
+ * 30s is the floor Chrome enforces (older builds clamp sub-minute periods up to
+ * 1 min; either is far better than never). The host waits up to 12s for a
+ * connection on the first call, so a wake may still land after that window —
+ * one retry then succeeds, versus never succeeding before.
+ */
+export function installKeepalive() {
+  chrome.alarms.create(WAKE_ALARM, { periodInMinutes: 0.5 });
+  chrome.alarms.onAlarm.addListener((a) => {
+    if (a.name !== WAKE_ALARM) return;
+    // Waking is most of the point; only reconnect when we actually need to, so
+    // a live port is never torn down and replaced for no reason.
+    if (!isNativeConnected()) connectNative();
+  });
 }
 
 function onNativeMessage(msg: BridgeReq) {

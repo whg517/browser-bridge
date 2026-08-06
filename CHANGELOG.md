@@ -22,6 +22,24 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     it runs in, and the drawing may live in a frame that was not walked.
   - A size floor (≥ 250k px²) keeps icons, sparklines and chart widgets from
     triggering it; found on a page whose résumé was a single 1460x2112 canvas.
+- **The bridge no longer goes unreachable after a short browser idle.** MV3 stops
+  an idle service worker after ~30s, and nothing could wake it: the reconnect
+  timer in `port.ts` lives inside the worker and dies with it, the only
+  registered wake events were browser start and install, and native messaging is
+  extension-initiated so a running MCP server has no channel to reach in.
+  Recovery required clicking the toolbar icon.
+
+  That window is the normal flow, not an edge case — the user types a prompt
+  while the browser sits idle, so the *first* tool call of a session was the one
+  most likely to fail. A periodic alarm (30s, Chrome's floor) now wakes the
+  worker and reconnects. Once a port is open it keeps the worker alive on its
+  own, so this costs nothing while a server is running.
+  ([#114](https://github.com/whg517/browser-bridge/issues/114))
+  - Adds the **`alarms`** permission to the manifest.
+  - `NOT_CONNECTED` no longer asks whether the extension is loaded and Chrome is
+    running — usually both are true, which sent users looking in the wrong
+    place. It now names the sleeping worker first, tells the agent to retry
+    once, and only then suggests checking the extension.
 
 
 ## [0.6.0] - 2026-08-06
