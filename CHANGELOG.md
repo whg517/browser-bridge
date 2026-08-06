@@ -6,6 +6,13 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-08-06
+
+Version discipline and a live regression sweep. The release version now comes
+from the git tag rather than the source tree, and the bridge finally tells the
+agent when the two halves disagree. No breaking changes; the internal bridge
+protocol stays at `1`.
+
 ### Added
 - **The MCP server now knows which extension it is talking to, and says so when
   they disagree.** On connect the extension announces its version, the bridge
