@@ -231,6 +231,30 @@ jobs:
           # Build the SBOM from the exact released code (same ref as the matrix).
           ref: ${{ github.event.inputs.tag || github.ref_name }}
 
+      # The SBOM is generated from the COMMITTED lockfiles, which since ADR-0026
+      # carry the 0.0.0 placeholder — so without stamping first, the SBOM names a
+      # root component version that does not exist. Caught by the v0.6.0-rc.1
+      # rehearsal, which shipped an SBOM claiming `browser-bridge 0.0.0` next to
+      # binaries correctly reporting 0.6.0-rc.1. An SBOM whose version cannot be
+      # correlated with the artifact it describes is worse than none.
+      #
+      # This job is deliberately separate from the build matrix (it must never
+      # block the binary release), so it has to repeat the stamp on its own
+      # checkout rather than inheriting one.
+      - uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1
+        with:
+          cache: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 20
+      - name: Stamp version from tag
+        shell: bash
+        run: |
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          VER="${TAG#v}"
+          ./scripts/stamp-version.sh "$VER"
+          ./scripts/check-version.sh --stamped "$VER"
+
       - name: Generate CycloneDX SBOM
         uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
         with:

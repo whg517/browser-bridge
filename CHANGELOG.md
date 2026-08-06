@@ -85,6 +85,12 @@ protocol stays at `1`.
 
 ### Fixed
 
+- **The SBOM named a version that never existed.** The `sbom` job is separate
+  from the build matrix (so it can never block the binary release) and therefore
+  gets its own fresh checkout — which carries the `0.0.0` placeholder. Since the
+  SBOM is generated from the lockfiles, it recorded `browser-bridge 0.0.0` beside
+  binaries correctly reporting the tag's version. It now stamps first, like the
+  matrix legs do. Found by the `v0.6.0-rc.1` release rehearsal.
 - **The protocol e2e suite could drive your real browser, and hang.** `e2e.py`
   now runs every binary it spawns on a private `BB_LOCK_DIR` bridge. The lock
   file is otherwise a per-user singleton and `Session` keeps exactly one
