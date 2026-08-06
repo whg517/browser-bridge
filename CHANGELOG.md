@@ -85,6 +85,16 @@ protocol stays at `1`.
 
 ### Fixed
 
+- **A prerelease no longer reports a bogus version mismatch.** Chrome's manifest
+  accepts only dot-separated integers, so `v0.6.0-rc.2` is stamped there as
+  `0.6.0` — meaning a prerelease host and its own extension legitimately report
+  different strings. The drift check treated that as drift and told every
+  prerelease user to "update whichever side is behind" on a perfectly matched
+  pair. An advisory that cries wolf is worse than none: it teaches agents to skip
+  past the one that matters. The extension carrying exactly the host's numeric
+  core is now recognised as the same build; a genuinely different version still
+  reports, in both directions. Found by QA against a real browser running
+  v0.6.0-rc.2.
 - **The SBOM named a version that never existed.** The `sbom` job is separate
   from the build matrix (so it can never block the binary release) and therefore
   gets its own fresh checkout — which carries the `0.0.0` placeholder. Since the
