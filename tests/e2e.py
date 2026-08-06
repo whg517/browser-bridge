@@ -18,36 +18,53 @@ This is an orchestration test (not a Rust #[test]) on purpose: it exercises
 the full process boundary the way an MCP client and Chrome would, which a unit
 test inside the crate cannot.
 """
+import atexit
 import json
 import os
+import shutil
 import socket
 import struct
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BIN = os.path.join(REPO, "target", "release", "browser-bridge" + (".exe" if os.name == "nt" else ""))
-# Mirror the binary's LockFile::path() (src/ipc.rs).
-_XDG = os.environ.get("XDG_RUNTIME_DIR")
-if os.name == "nt":
-    _LOCAL = os.environ.get("LOCALAPPDATA", os.path.expanduser("~/AppData/Local"))
-    LOCK = os.path.join(_LOCAL, "browser-bridge", "run.lock")
-elif sys.platform == "darwin":
-    LOCK = (
-        os.path.join(_XDG, "browser-bridge", "run.lock")
-        if _XDG
-        else os.path.expanduser("~/Library/Application Support/browser-bridge/run.lock")
-    )
-else:
-    _CACHE = os.environ.get("XDG_CACHE_HOME", os.path.expanduser("~/.cache"))
-    LOCK = os.path.join(_XDG, "browser-bridge", "run.lock") if _XDG else os.path.join(
-        _CACHE, "browser-bridge", "run.lock"
-    )
+
+# Run the whole suite on a PRIVATE bridge, via the binary's BB_LOCK_DIR override.
+#
+# The lock file is otherwise a per-user singleton, and Session keeps exactly ONE
+# native-host connection. On a developer machine that means a real, installed
+# extension attaches to whichever server owns the lock — including this suite's —
+# and REPLACES the mock's connection, answering the tool calls itself. That was
+# not theoretical: a run was observed dispatching page_snapshot_precise to the
+# developer's own browser (`outcome=ok` after 20s), attaching chrome.debugger to
+# their real tabs. Whichever side wins is a race, so the corruption was silent
+# and intermittent — the suite failed on a different test each run.
+#
+# Chrome spawns the real host WITHOUT this variable, so it resolves the default
+# path and can never see the servers spawned here. Isolation by construction,
+# rather than asking developers to quit their browser.
+_LOCK_DIR = tempfile.mkdtemp(prefix="bb-e2e-lock-")
+atexit.register(lambda: shutil.rmtree(_LOCK_DIR, ignore_errors=True))
+LOCK = os.path.join(_LOCK_DIR, "browser-bridge", "run.lock")
+
+
+def bb_env(extra=None):
+    """Environment for every browser-bridge process this suite spawns."""
+    env = dict(os.environ, BB_LOCK_DIR=_LOCK_DIR)
+    if extra:
+        env.update(extra)
+    return env
 
 _passed = 0
 _failed = 0
+# The ServerLog of the server the current test is driving. A failing check dumps
+# it: every interesting failure here is a connection/handshake problem, and the
+# server's log is the only place that is visible.
+_current_log = None
 
 
 def check(cond, label):
@@ -58,6 +75,32 @@ def check(cond, label):
     else:
         _failed += 1
         print(f"  FAIL  {label}")
+        if _current_log is not None:
+            text = _current_log.text().strip()
+            print("        --- server log ---")
+            for line in (text or "(empty)").splitlines():
+                print("        " + line)
+            if text.count(AUTHED) > 1:
+                print("        NOTE: more than one native host authenticated. The suite")
+                print("              runs on a private BB_LOCK_DIR bridge precisely so a")
+                print("              real extension cannot attach — if this fires, that")
+                print("              isolation has regressed (see the BB_LOCK_DIR note).")
+
+
+AUTHED = "native host connected and authenticated"
+
+
+def _dump_log_on_crash(exc_type, exc, tb):
+    """An exception escaping a test is almost always a connection problem, and
+    the server's log says why. Print it before the traceback scrolls past."""
+    if _current_log is not None:
+        text = _current_log.text().strip()
+        print("\n--- server log at crash ---")
+        print(text or "(empty)")
+    sys.__excepthook__(exc_type, exc, tb)
+
+
+sys.excepthook = _dump_log_on_crash
 
 
 def ensure_binary():
@@ -70,6 +113,63 @@ def ensure_binary():
     env = dict(os.environ, PATH="/opt/homebrew/bin:" + os.environ.get("PATH", ""))
     subprocess.check_call([cargo, "build", "--release", "--manifest-path",
                            os.path.join(REPO, "Cargo.toml")], env=env)
+
+
+class ServerLog:
+    """Continuously drains a server's stderr so tests can wait on what it logged.
+
+    Two reasons this exists rather than reading stderr on demand:
+
+    1. A pipe read blocks until EOF, and EOF only arrives once EVERY holder of
+       the write end has closed it — one lingering grandchild (a `--native-host`
+       the server spawned) is enough to wedge the read forever. A daemon thread
+       draining continuously can be abandoned at any time.
+    2. It turns the server's own log into a synchronisation point. The bridge
+       handshake has no ack the test can see: `mock_extension` fires its hello
+       and, if the server rejects it, learns nothing — the socket just sits there
+       until a later assertion fails with a confusing "BridgeReq never arrived".
+       Waiting for "native host connected and authenticated" makes attachment an
+       observed fact instead of a `sleep()` guess.
+    """
+
+    def __init__(self, proc):
+        self.proc = proc
+        self._buf = ""
+        self._lock = threading.Lock()
+        t = threading.Thread(target=self._drain, daemon=True)
+        t.start()
+
+    def _drain(self):
+        try:
+            for line in iter(self.proc.stderr.readline, ""):
+                with self._lock:
+                    self._buf += line
+        except Exception:
+            pass
+
+    def text(self):
+        with self._lock:
+            return self._buf
+
+    def wait_for(self, needle, timeout=10):
+        """True once `needle` appears in the log; False on timeout."""
+        t0 = time.time()
+        while time.time() - t0 < timeout:
+            if needle in self.text():
+                return True
+            time.sleep(0.02)
+        return False
+
+
+def start_server(env=None):
+    """Spawn an MCP server with its stderr drained. Returns (proc, ServerLog)."""
+    global _current_log
+    proc = subprocess.Popen([BIN], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE, text=True, encoding="utf-8",
+                            env=bb_env(env))
+    log = ServerLog(proc)
+    _current_log = log
+    return proc, log
 
 
 def wait_lock(proc=None, timeout=8):
@@ -96,12 +196,41 @@ def nm_write(p, obj):
     p.stdin.flush()
 
 
-def nm_read(p):
-    hdr = p.stdout.read(4)
-    if len(hdr) < 4:
-        return None
-    (n,) = struct.unpack("<I", hdr)
-    return json.loads(p.stdout.read(n))
+def _read_with_timeout(fn, timeout, what):
+    """Run a blocking read on a daemon thread and give up after `timeout`.
+
+    Every read in this file talks to a subprocess pipe, which has no timeout of
+    its own: if the far end never writes, the read blocks forever and the suite
+    hangs instead of failing (observed: a run wedged for 4h13m, holding two
+    orphan processes). Raising keeps a stuck read to one clearly-labelled
+    failure."""
+    box = {}
+
+    def run():
+        try:
+            box["v"] = fn()
+        except Exception as e:  # noqa: BLE001 - surfaced via the timeout message
+            box["e"] = e
+
+    t = threading.Thread(target=run, daemon=True)
+    t.start()
+    t.join(timeout)
+    if "e" in box:
+        raise box["e"]
+    if "v" not in box:
+        raise TimeoutError(f"timed out after {timeout}s waiting for {what}")
+    return box["v"]
+
+
+def nm_read(p, timeout=15):
+    def read():
+        hdr = p.stdout.read(4)
+        if len(hdr) < 4:
+            return None
+        (n,) = struct.unpack("<I", hdr)
+        return json.loads(p.stdout.read(n))
+
+    return _read_with_timeout(read, timeout, "a native-messaging frame from the host")
 
 
 class McpClient:
@@ -114,8 +243,14 @@ class McpClient:
         self.proc.stdin.write(json.dumps(obj) + "\n")
         self.proc.stdin.flush()
 
-    def recv(self):
-        return json.loads(self.proc.stdout.readline())
+    def recv(self, timeout=30):
+        # Generous, because a tool call legitimately waits on the extension —
+        # but bounded, because a server that never answers must fail the test
+        # rather than hang the suite.
+        line = _read_with_timeout(self.proc.stdout.readline, timeout, "an MCP response")
+        if not line:
+            raise AssertionError("MCP server closed stdout without responding")
+        return json.loads(line)
 
     def initialize(self):
         self.send({"jsonrpc": "2.0", "id": 1, "method": "initialize",
@@ -141,34 +276,27 @@ class McpClient:
         return self.recv()
 
 
-def read_stderr(proc, timeout=5):
-    """Drain a finished process's stderr without ever blocking indefinitely.
-
-    A plain `proc.stderr.read()` blocks until EOF, and EOF only arrives once
-    EVERY holder of the pipe's write end has closed it — including any child
-    that inherited the fd, such as a `--native-host` the server spawned or an
-    orphan left by an earlier test. One lingering grandchild is therefore enough
-    to hang the whole suite forever (observed: a run wedged for 4h), which in CI
-    means burning the job's entire timeout instead of failing.
-
-    So: read on a daemon thread and abandon it on timeout. Losing the log text
-    costs one assertion; hanging costs the run."""
-    out = []
-    t = threading.Thread(target=lambda: out.append(proc.stderr.read()), daemon=True)
-    t.start()
-    t.join(timeout)
-    return (out[0] if out else "") or ""
-
-
-def mock_extension(lf, responder, announce=None):
+def mock_extension(lf, responder, announce=None, log=None):
     """Connect to the bridge socket as the extension would, answer requests
     using `responder(req) -> dict`.
 
     `announce` (optional) is the payload the real extension posts right after
     connecting (shared/announce.ts). It rides the BridgeResp envelope on the
-    reserved id 0; see src/peer.rs for why."""
+    reserved id 0; see src/peer.rs for why.
+
+    `log` (a ServerLog) makes attachment an observed fact: the server validates
+    the hello against the lock file it re-reads FROM DISK, so a lock that has
+    been removed or replaced in the meantime silently refuses this connection.
+    Without waiting on the log the test would sail on and fail much later with a
+    misleading "BridgeReq never reached the extension"."""
     s = socket.create_connection(("127.0.0.1", lf["port"]), timeout=5)
     s.sendall((json.dumps({"hello": lf["secret"]}) + "\n").encode())
+    if log is not None and not log.wait_for(AUTHED):
+        raise AssertionError(
+            "the mock extension's hello was never accepted — the server never "
+            "logged an authenticated connection.\n"
+            "--- server log ---\n" + (log.text() or "(empty)")
+        )
     if announce is not None:
         frame = {"id": 0, "ok": True, "data": {"announce": announce}}
         s.sendall((json.dumps(frame) + "\n").encode())
@@ -202,8 +330,7 @@ def test_mcp_handshake_and_tools():
         os.remove(LOCK)
     except FileNotFoundError:
         pass
-    mcp = subprocess.Popen([BIN], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                           stderr=subprocess.PIPE, text=True, encoding="utf-8")
+    mcp, log = start_server()
     try:
         lf = wait_lock(mcp)
         check(lf is not None, "lock file written on startup")
@@ -248,8 +375,7 @@ def test_stale_lock_is_replaced():
     os.makedirs(os.path.dirname(LOCK), exist_ok=True)
     with open(LOCK, "w", encoding="utf-8") as f:
         json.dump({"port": 9, "secret": "0" * 32, "pid": 4294967295}, f)
-    mcp = subprocess.Popen([BIN], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                           stderr=subprocess.PIPE, text=True, encoding="utf-8")
+    mcp, log = start_server()
     try:
         lock = wait_lock(mcp)
         check(lock is not None and lock.get("pid") == mcp.pid,
@@ -268,8 +394,7 @@ def test_tab_list_round_trip():
         os.remove(LOCK)
     except FileNotFoundError:
         pass
-    mcp = subprocess.Popen([BIN], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                           stderr=subprocess.PIPE, text=True, encoding="utf-8")
+    mcp, log = start_server()
     try:
         lf = wait_lock(mcp)
         check(lf is not None, "lock file written")
@@ -279,7 +404,7 @@ def test_tab_list_round_trip():
             return {"id": req["id"], "ok": True,
                     "data": [{"id": 7, "title": "E2E Tab", "url": "https://x", "active": True}]}
 
-        s, serve = mock_extension(lf, responder)
+        s, serve = mock_extension(lf, responder, log=log)
         c = McpClient(mcp)
         c.initialize()
         c.initialized()
@@ -311,8 +436,7 @@ def test_page_eval_round_trip():
         os.remove(LOCK)
     except FileNotFoundError:
         pass
-    mcp = subprocess.Popen([BIN], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                           stderr=subprocess.PIPE, text=True, encoding="utf-8")
+    mcp, log = start_server()
     try:
         lf = wait_lock(mcp)
         check(lf is not None, "lock file written")
@@ -327,7 +451,7 @@ def test_page_eval_round_trip():
             return {"id": req["id"], "ok": True,
                     "data": {"result": 42, "masked": "••••[jwt]"}}
 
-        s, serve = mock_extension(lf, responder)
+        s, serve = mock_extension(lf, responder, log=log)
         c = McpClient(mcp)
         c.initialize()
         c.initialized()
@@ -360,8 +484,7 @@ def test_page_snapshot_precise_round_trip():
         os.remove(LOCK)
     except FileNotFoundError:
         pass
-    mcp = subprocess.Popen([BIN], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                           stderr=subprocess.PIPE, text=True, encoding="utf-8")
+    mcp, log = start_server()
     try:
         lf = wait_lock(mcp)
         check(lf is not None, "lock file written")
@@ -384,7 +507,7 @@ def test_page_snapshot_precise_round_trip():
                 "precise": True,
             }}
 
-        s, serve = mock_extension(lf, responder)
+        s, serve = mock_extension(lf, responder, log=log)
         c = McpClient(mcp)
         c.initialize()
         c.initialized()
@@ -417,8 +540,7 @@ def test_cookie_get_round_trip():
         os.remove(LOCK)
     except FileNotFoundError:
         pass
-    mcp = subprocess.Popen([BIN], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                           stderr=subprocess.PIPE, text=True, encoding="utf-8")
+    mcp, log = start_server()
     try:
         lf = wait_lock(mcp)
         check(lf is not None, "lock file written")
@@ -437,7 +559,7 @@ def test_cookie_get_round_trip():
                 "count": 1,
             }}
 
-        s, serve = mock_extension(lf, responder)
+        s, serve = mock_extension(lf, responder, log=log)
         c = McpClient(mcp)
         c.initialize()
         c.initialized()
@@ -473,8 +595,7 @@ def test_storage_get_round_trip():
         os.remove(LOCK)
     except FileNotFoundError:
         pass
-    mcp = subprocess.Popen([BIN], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                           stderr=subprocess.PIPE, text=True, encoding="utf-8")
+    mcp, log = start_server()
     try:
         lf = wait_lock(mcp)
         check(lf is not None, "lock file written")
@@ -488,7 +609,7 @@ def test_storage_get_round_trip():
                 "value": "••••[jwt]",
             }}
 
-        s, serve = mock_extension(lf, responder)
+        s, serve = mock_extension(lf, responder, log=log)
         c = McpClient(mcp)
         c.initialize()
         c.initialized()
@@ -522,16 +643,23 @@ def test_native_host_mode():
         os.remove(LOCK)
     except FileNotFoundError:
         pass
-    mcp = subprocess.Popen([BIN], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                           stderr=subprocess.PIPE, text=True, encoding="utf-8")
+    mcp, log = start_server()
+    nh = None
     try:
         lf = wait_lock(mcp)
         check(lf is not None, "lock file written")
         # Launch --native-host the way Chrome would. Pass a fake origin as argv[1].
         # Binary mode (no text=True) since NM framing is raw bytes.
         nh = subprocess.Popen([BIN, "--native-host"], stdin=subprocess.PIPE,
-                              stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        time.sleep(0.3)  # let it connect + send hello
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                              env=bb_env())
+        # The real host connects over TCP and sends the hello; wait for the
+        # server to say so rather than sleeping and hoping.
+        if not log.wait_for(AUTHED):
+            raise AssertionError(
+                "the --native-host process never authenticated.\n"
+                "--- server log ---\n" + (log.text() or "(empty)")
+            )
 
         c = McpClient(mcp)
         c.initialize()
@@ -555,14 +683,24 @@ def test_native_host_mode():
         content = json.loads(r["result"]["content"][0]["text"])
         check(content[0]["title"] == "NM Round Trip",
               "extension reply traveled host -> MCP -> client")
-        nh.kill()
-        nh.wait(timeout=3)
     finally:
+        # Unconditional: `nh` used to be killed on the happy path only, after the
+        # last check, so any earlier failure leaked a live native host — which
+        # then held the server's stderr pipe open and could wedge a later read.
+        if nh is not None:
+            nh.kill()
+            try:
+                nh.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                pass
         try:
             mcp.stdin.close()
         except Exception:
             pass
-        mcp.wait(timeout=5)
+        try:
+            mcp.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            mcp.kill()
 
 
 def test_server_takeover():
@@ -571,14 +709,12 @@ def test_server_takeover():
         os.remove(LOCK)
     except FileNotFoundError:
         pass
-    first = subprocess.Popen([BIN], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                             stderr=subprocess.PIPE, text=True, encoding="utf-8")
+    first, _ = start_server()
     second = None
     try:
         first_lock = wait_lock(first)
         check(first_lock is not None, "first server wrote its lock file")
-        second = subprocess.Popen([BIN], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                  stderr=subprocess.PIPE, text=True, encoding="utf-8")
+        second, _ = start_server()
         second_lock = wait_lock(second)
         check(second_lock is not None, "second server replaced the lock file")
         first.wait(timeout=8)
@@ -600,8 +736,7 @@ def test_unknown_method_returns_32601():
         os.remove(LOCK)
     except FileNotFoundError:
         pass
-    mcp = subprocess.Popen([BIN], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                           stderr=subprocess.PIPE, text=True, encoding="utf-8")
+    mcp, log = start_server()
     try:
         c = McpClient(mcp)
         c.initialize()
@@ -640,8 +775,7 @@ def test_announce_is_absorbed_not_routed():
     except FileNotFoundError:
         pass
     env = dict(os.environ, BB_LOG="info")
-    mcp = subprocess.Popen([BIN], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                           stderr=subprocess.PIPE, text=True, encoding="utf-8", env=env)
+    mcp, log = start_server(env)
     try:
         lf = wait_lock(mcp)
         check(lf is not None, "lock file written")
@@ -652,7 +786,7 @@ def test_announce_is_absorbed_not_routed():
 
         # A version that differs from any release, announced the way the real
         # extension does on connect.
-        s, serve = mock_extension(lf, responder, announce={
+        s, serve = mock_extension(lf, responder, log=log, announce={
             "protocolVersion": 1,
             "version": "9.9.9",
             "browser": {"name": "Chrome", "version": "141.0.7390.55"},
@@ -683,7 +817,7 @@ def test_announce_is_absorbed_not_routed():
         except Exception:
             pass
         mcp.wait(timeout=3)
-        err = read_stderr(mcp)
+        err = log.text()
         # Proves the frame was parsed and recorded, not silently dropped.
         check("extension v9.9.9" in err,
               "server logged the announced extension version")
@@ -703,8 +837,7 @@ def test_unknown_id_zero_frame_does_not_break_the_loop():
     except FileNotFoundError:
         pass
     env = dict(os.environ, BB_LOG="info")
-    mcp = subprocess.Popen([BIN], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                           stderr=subprocess.PIPE, text=True, encoding="utf-8", env=env)
+    mcp, log = start_server(env)
     try:
         lf = wait_lock(mcp)
         check(lf is not None, "lock file written")
@@ -715,7 +848,7 @@ def test_unknown_id_zero_frame_does_not_break_the_loop():
                               "active": True}]}
 
         # data present, but no `announce` key -> not an announce.
-        s, serve = mock_extension(lf, responder, announce=None)
+        s, serve = mock_extension(lf, responder, log=log, announce=None)
         s.sendall((json.dumps({"id": 0, "ok": True, "data": {"junk": 1}}) + "\n").encode())
 
         c = McpClient(mcp)
@@ -740,7 +873,7 @@ def test_unknown_id_zero_frame_does_not_break_the_loop():
         except Exception:
             pass
         mcp.wait(timeout=3)
-        err = read_stderr(mcp)
+        err = log.text()
         # A frame that isn't an announce must fall through to ordinary routing
         # (and be reported as unroutable) rather than being silently swallowed.
         check("no pending caller for id 0" in err,

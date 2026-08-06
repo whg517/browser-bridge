@@ -42,3 +42,7 @@ tests/node_modules/
 
 # Extension signing keys — never commit
 *.pem
+
+# Python bytecode (e.g. from `python3 -m py_compile tests/e2e.py`)
+__pycache__/
+*.pyc
