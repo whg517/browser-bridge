@@ -2,7 +2,7 @@
 // tagged with a stable ref. A content-script approximation of a real a11y tree
 // (see README for why we avoid chrome.debugger's infobar by default).
 
-import { truncate } from "./util";
+import { canvasContentNote, truncate } from "./util";
 import { resetRefs, assignRef } from "./refs";
 
 export async function snapshot() {
@@ -16,9 +16,14 @@ export async function snapshot() {
   }
   if (result.refCount === 0) {
     // Distinguish "nothing actionable / not ready" from a healthy empty result.
+    // A detected canvas is decisive, so lead with it; otherwise list the usual
+    // causes but still name canvas, since the check only sees THIS document and
+    // the content may be drawn in a frame we did not walk.
     return {
       ...result,
-      note: "No interactive elements found — the page may still be loading, or its content lives in an iframe / shadow DOM. Try page_wait_for {settled:true} (or {selector}) then snapshot again, or page_snapshot_precise for shadow-DOM / complex ARIA.",
+      note:
+        canvasContentNote() ||
+        "No interactive elements found — the page may still be loading, or its content lives in an iframe / shadow DOM. Try page_wait_for {settled:true} (or {selector}) then snapshot again, or page_snapshot_precise for shadow-DOM / complex ARIA. If the page visibly HAS content, it may be drawn into a canvas, which no text-based tool can read — use page_screenshot and read the image.",
     };
   }
   return result;

@@ -6,6 +6,24 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- **Reads no longer stay silent about canvas-rendered content.** Some sites draw
+  text into a `<canvas>` precisely so it cannot be scraped, and every text-based
+  tool then returns nothing for that region — correctly, since there are no text
+  nodes. But the empty-snapshot advice pointed only at `page_wait_for` and
+  `page_snapshot_precise`, neither of which can help here, and never mentioned
+  `page_screenshot`, which does. An agent burned two more calls and concluded the
+  page was empty. ([#115](https://github.com/whg517/browser-bridge/issues/115))
+  - `page_text` now carries a `note` when the document contains a canvas big
+    enough to be the content, so a short result is explained rather than assumed
+    to mean a thin page.
+  - The empty-snapshot note leads with the canvas when one is detected, and
+    otherwise still names it as a possibility — the check only sees the document
+    it runs in, and the drawing may live in a frame that was not walked.
+  - A size floor (≥ 250k px²) keeps icons, sparklines and chart widgets from
+    triggering it; found on a page whose résumé was a single 1460x2112 canvas.
+
+
 ## [0.6.0] - 2026-08-06
 
 Version discipline and a live regression sweep. The release version now comes
