@@ -123,13 +123,23 @@ now separates what landed (`announce`) from what is still intended
   process with no `Session`, so it only knows its own. Surfacing the peer there
   would mean writing peer state into the lock file, which is security-sensitive
   (it holds the port and the bridge secret) and out of proportion to the benefit.
-- **The advisory path is not covered end-to-end by `tests/e2e.py`.** That suite
-  drives a binary built from the repo, which always reports `0.0.0`, and the
-  policy is deliberately silent for local builds — so no announce can arm an
-  advisory there. e2e proves the frame is absorbed, recorded (asserted via the
-  server's log line) and never breaks the bridge; the advisory itself is covered
-  by unit tests in `src/peer.rs`, `src/session.rs` and `src/mcp_server.rs`, with
-  the host version injected.
+- **The advisory path is not covered end-to-end.** Both `tests/e2e.py` and
+  `tests/integration_e2e.ts` drive a binary built from the repo, which always
+  reports `0.0.0`, and the policy is deliberately silent for local builds — so no
+  announce can arm an advisory in either. They prove the frame is sent, absorbed
+  and recorded, and that it never breaks the bridge; the advisory *text* is
+  covered by unit tests in `src/peer.rs`, `src/session.rs` and `src/mcp_server.rs`,
+  with the host version injected. Observing a real advisory would need two builds
+  stamped to different versions.
+
+  > **Update (2026-08-04):** the real-browser half of this, originally left open,
+  > is now verified. `tests/integration_e2e.ts` asserts that the actual
+  > `background.js` sends the announce over real native messaging, that its
+  > version / protocol / browser survive the trip, that no advisory appears when
+  > both sides are `0.0.0`, and that the extension **re-announces** when it
+  > reconnects to a freshly started server — the property that matters, since MV3
+  > recycles the worker every ~5 minutes and a once-per-install announce would
+  > leave the server permanently unable to report drift.
 - **Announce delivery is best-effort.** A `postMessage` that throws is logged and
   swallowed: this is diagnostic context and must never keep the bridge from
   carrying real tool calls. The cost is that a failed announce looks exactly like
