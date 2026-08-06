@@ -59,6 +59,30 @@ npm run test:smoke             # smoke   — bun + Chrome (BB_EXT_DIR overrides 
 The browser suites read the **built** bundle, so build the extension first
 (`npm --prefix ../extension run build`); `run_all.sh` and `make` do this for you.
 
+### `e2e.py` runs on a private bridge
+
+The bridge lock file is normally a **per-user singleton**, and `Session` keeps
+exactly **one** native-host connection. On a machine with the extension actually
+installed, that means a live extension attaches to whichever server owns the
+lock — including this suite's — and *replaces* the mock extension's connection,
+answering the tool calls itself.
+
+That was not theoretical. A run was observed dispatching `page_snapshot_precise`
+to the developer's real browser (`outcome=ok` after 20 s), attaching
+`chrome.debugger` to their actual tabs. Because whichever side wins the
+connection is a race, the damage was silent and intermittent: the suite failed on
+a different test each run, roughly half the time.
+
+So `e2e.py` gives every binary it spawns its own `BB_LOCK_DIR` (a temp dir
+removed at exit). Chrome spawns the real host **without** that variable, so it
+resolves the default path and can never see these servers. Isolation by
+construction — you do not need to quit your browser. If a failing check ever
+reports *more than one* authenticated native host, that isolation has regressed.
+
+Every read in `e2e.py` is also bounded: subprocess pipes have no timeout of their
+own, and one run once wedged for 4 h 13 m holding two orphan processes. A stuck
+read is now one labelled failure, and a failing check prints the server's log.
+
 ## Types
 
 The `.ts` suites are type-checked (`bun`, `chrome`, and DOM types):

@@ -78,6 +78,27 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **The protocol e2e suite could drive your real browser, and hang.** `e2e.py`
+  now runs every binary it spawns on a private `BB_LOCK_DIR` bridge. The lock
+  file is otherwise a per-user singleton and `Session` keeps exactly one
+  native-host connection, so on a machine with the extension installed a live
+  extension attached to the suite's own server, replaced the mock's connection,
+  and answered the tool calls itself — a run was observed dispatching
+  `page_snapshot_precise` to the developer's real browser (`outcome=ok` after
+  20 s), attaching `chrome.debugger` to their actual tabs. Whichever side won
+  was a race, so it surfaced only as ~50% flakiness on a different test each
+  run. Chrome spawns the real host without that variable, so it can no longer
+  see these servers.
+  - Every pipe read is now bounded. Subprocess pipes have no timeout of their
+    own; one run wedged for 4 h 13 m holding two orphan processes. A stuck read
+    is now a single labelled failure.
+  - The mock extension waits for the server to log an authenticated connection
+    instead of `sleep(0.1)`. The server validates the hello against the lock file
+    it re-reads from disk, so a rejected connection used to be invisible until a
+    later assertion failed with a misleading "BridgeReq never arrived".
+  - A failing check (or a crash) now prints the server's log, and
+    `test_native_host_mode` kills its host process unconditionally rather than
+    only on the happy path.
 - **The real-browser integration test was silently exercising the daily
   browser.** On macOS/Linux Chrome resolves user-level native-messaging
   manifests **relative to the user-data-dir**, not from a fixed per-brand path;
