@@ -113,6 +113,18 @@ pub fn drift_advisory(host: &str, peer: &PeerInfo) -> Option<String> {
     if ext == host || ext == PLACEHOLDER || host == PLACEHOLDER {
         return None;
     }
+    // A prerelease host legitimately pairs with an extension reporting only the
+    // numeric core: Chrome's manifest accepts nothing but dot-separated
+    // integers, so `v0.6.0-rc.2` is stamped there as `0.6.0` (ADR-0026). Host
+    // 0.6.0-rc.2 + extension 0.6.0 is therefore the SAME build, not drift.
+    //
+    // Without this, every prerelease user was told to "update whichever side is
+    // behind" on a matched pair — an advisory that cries wolf teaches agents to
+    // skip past the one that matters. Found by QA against a real browser running
+    // the v0.6.0-rc.2 release.
+    if ext == version_core(host) {
+        return None;
+    }
 
     let direction = match (parse_semver(host), parse_semver(ext)) {
         (Some(h), Some(e)) if e < h => {
@@ -141,8 +153,14 @@ pub fn drift_advisory(host: &str, peer: &PeerInfo) -> Option<String> {
 /// claim a direction. Sufficient for ordering *our own* release versions; this
 /// is not a general SemVer implementation (pre-release precedence is not
 /// modelled — see the `_` arm in [`drift_advisory`]).
+/// The numeric part of a version: `0.6.0-rc.2` -> `0.6.0`. This is exactly what
+/// the extension manifest is stamped with (ADR-0026).
+fn version_core(v: &str) -> &str {
+    v.split(['-', '+']).next().unwrap_or(v)
+}
+
 fn parse_semver(v: &str) -> Option<(u64, u64, u64)> {
-    let core = v.split(['-', '+']).next()?;
+    let core = version_core(v);
     let mut parts = core.split('.');
     let major = parts.next()?.parse().ok()?;
     let minor = parts.next()?.parse().ok()?;
@@ -240,6 +258,38 @@ mod tests {
     #[test]
     fn silent_when_versions_agree() {
         assert!(drift_advisory("0.6.0", &peer_at("0.6.0")).is_none());
+    }
+
+    // A prerelease host and an extension carrying only the numeric core are the
+    // SAME build: Chrome's manifest cannot hold the suffix, so ADR-0026 stamps
+    // the core there. Shipped as a false positive in v0.6.0-rc.2 and caught by
+    // QA against a real browser — every prerelease user saw a bogus "update
+    // whichever side is behind" on a perfectly matched pair.
+    #[test]
+    fn silent_when_the_extension_carries_only_the_hosts_core() {
+        for host in ["0.6.0-rc.2", "0.6.0-rc.1", "1.2.3-alpha.1", "1.2.3+build.5"] {
+            let core = host.split(['-', '+']).next().unwrap();
+            assert!(
+                drift_advisory(host, &peer_at(core)).is_none(),
+                "{host} vs {core} is one build, not drift"
+            );
+        }
+    }
+
+    // ...but a prerelease of a DIFFERENT version is still real drift.
+    #[test]
+    fn prerelease_does_not_mask_a_genuine_mismatch() {
+        let behind = drift_advisory("0.7.0-rc.1", &peer_at("0.6.0")).expect("advisory");
+        assert!(behind.contains("extension is older"), "{behind}");
+        let ahead = drift_advisory("0.6.0-rc.1", &peer_at("0.7.0")).expect("advisory");
+        assert!(ahead.contains("host binary is older"), "{ahead}");
+    }
+
+    #[test]
+    fn version_core_strips_prerelease_and_build_metadata() {
+        assert_eq!(version_core("0.6.0-rc.2"), "0.6.0");
+        assert_eq!(version_core("1.2.3+build.5"), "1.2.3");
+        assert_eq!(version_core("1.2.3"), "1.2.3");
     }
 
     // A locally-built side is the developer's own doing; see drift_advisory.
