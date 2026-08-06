@@ -58,6 +58,11 @@ than an installed tree (a fresh checkout has no `node_modules/target`). This is 
 - It `needs` the build matrix, so it starts **only after** the binaries have already been published — the binary release
   never waits on SBOM tooling.
 - It is marked `continue-on-error`, so an `anchore/sbom-action` failure **never fails the release run**.
+- It **stamps the version from the tag first**, exactly as the build matrix does. Being a separate job it gets its own
+  fresh checkout, which carries the `0.0.0` placeholder ([ADR-0026](./adr/0026-release-time-version-stamping.md)) — and
+  since the SBOM is generated *from the lockfiles*, skipping this makes it name a root component version that does not
+  exist. The `v0.6.0-rc.1` rehearsal shipped exactly that: an SBOM claiming `browser-bridge 0.0.0` alongside binaries
+  correctly reporting `0.6.0-rc.1`.
 - `softprops/action-gh-release` attaches the JSON to the Release for the tag.
 
 **Why in-pipeline, not a separate `release: published` workflow**: GitHub suppresses the `release: published` event for
