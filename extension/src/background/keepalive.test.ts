@@ -9,7 +9,10 @@ import { beforeEach, describe, expect, test } from "bun:test";
 type AlarmInfo = { name: string };
 type AlarmListener = (a: AlarmInfo) => void;
 
-const created: Array<{ name: string; opts: { periodInMinutes?: number } }> = [];
+const created: Array<{
+  name: string;
+  opts: { periodInMinutes?: number; delayInMinutes?: number };
+}> = [];
 let listeners: AlarmListener[] = [];
 let connectNativeCalls = 0;
 let connected = false;
@@ -23,7 +26,8 @@ function installChromeStub() {
   connected = false;
   (globalThis as Record<string, unknown>).chrome = {
     alarms: {
-      create: (name: string, opts: { periodInMinutes?: number }) => created.push({ name, opts }),
+      create: (name: string, opts: { periodInMinutes?: number; delayInMinutes?: number }) =>
+        created.push({ name, opts }),
       onAlarm: { addListener: (fn: AlarmListener) => listeners.push(fn) },
     },
     runtime: {
@@ -49,14 +53,17 @@ const fire = (name: string) => listeners.forEach((fn) => fn({ name }));
 describe("service-worker wake alarm", () => {
   beforeEach(() => installChromeStub());
 
-  test("registers a periodic alarm at Chrome's 30s floor", async () => {
+  test("registers two alarms half a cycle apart", async () => {
     const { installKeepalive } = await import("./port");
     installKeepalive();
-    expect(created).toHaveLength(1);
-    // Sub-minute is what makes a wake land inside the host's 12s first-call
-    // wait often enough to matter; anything longer and the first call of a
-    // session reliably fails.
-    expect(created[0].opts.periodInMinutes).toBe(0.5);
+    // Chrome clamps periodInMinutes to a minute in practice (measured on Chrome
+    // 150: a lone 0.5 alarm woke the worker every ~60s). Two alarms on a 1-min
+    // period, offset by half of it, restore a ~30s effective cadence — which is
+    // what keeps a wake close enough to the host's 12s first-call wait.
+    expect(created).toHaveLength(2);
+    expect(created.map((c) => c.opts.periodInMinutes)).toEqual([1, 1]);
+    expect(created[1].opts.delayInMinutes).toBe(0.5);
+    expect(new Set(created.map((c) => c.name)).size).toBe(2);
   });
 
   test("an unrelated alarm is ignored", async () => {
