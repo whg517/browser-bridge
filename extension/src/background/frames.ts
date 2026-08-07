@@ -34,6 +34,15 @@ export function parseFrameRef(
   return m ? { frameId: Number(m[1]), bareRef: m[2] } : null;
 }
 
+// A precise ref (`p7`) minted by page_snapshot_precise. Unlike content-script
+// refs these are NOT frame-qualified — CDP frame ids are opaque strings from a
+// different id space than chrome.tabs.sendMessage's numeric ones — but the
+// precise counter is global across frames, so the ref is unique tab-wide and a
+// caller can search frames for it. See ContentScriptBackend.runPreciseRef.
+export function isPreciseRef(ref: string | undefined): boolean {
+  return !!ref && /^p\d+$/.test(ref);
+}
+
 // Restore the frame prefix on a sub-frame click/fill echo. The content script
 // is frame-agnostic and reports the bare ref it was given, so `{clicked:"e2"}`
 // coming out of frame 7 would otherwise name the *top* frame's e2.
@@ -80,4 +89,30 @@ export function mergeLinks(top: SnapshotLike, subs: FrameResult[]): SnapshotLike
   }
   const capped = links.slice(0, 500);
   return { links: capped, count: capped.length, url: top.url } as SnapshotLike & { count: number };
+}
+
+// Page.getFrameTree — only the fields we walk.
+export interface CdpFrame {
+  id: string;
+  url?: string;
+}
+export interface CdpFrameTree {
+  frame: CdpFrame;
+  childFrames?: CdpFrameTree[];
+}
+/**
+ * Depth-first flatten of a CDP frame tree, top frame first.
+ *
+ * `Accessibility.getFullAXTree` is per-frame: called without a `frameId` it
+ * returns the top document only. That is why this backend used to be *less*
+ * complete than the content-script snapshot on any page whose real content
+ * lives in an iframe — the inverse of what its docs promise (#113).
+ *
+ * Pure, so the walk is unit-testable without a debugger session.
+ */
+export function flattenFrameTree(tree: CdpFrameTree | undefined): CdpFrame[] {
+  if (!tree?.frame) return [];
+  const out: CdpFrame[] = [tree.frame];
+  for (const child of tree.childFrames ?? []) out.push(...flattenFrameTree(child));
+  return out;
 }

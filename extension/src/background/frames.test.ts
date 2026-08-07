@@ -7,6 +7,7 @@ import {
   mergeText,
   mergeLinks,
   type FrameResult,
+  isPreciseRef,
 } from "./frames";
 
 describe("TOP_FRAME", () => {
@@ -92,5 +93,19 @@ describe("mergeLinks", () => {
     expect(m.links.length).toBe(500);
     expect(m.links[0].href).toBe("https://a.com/x"); // top first
     expect(m.links[1].frame).toBe("https://a.com/c"); // sub tagged
+  });
+});
+
+describe("isPreciseRef", () => {
+  it("matches precise refs only", () => {
+    expect(isPreciseRef("p1")).toBe(true);
+    expect(isPreciseRef("p42")).toBe(true);
+    // content-script refs, frame-qualified refs and junk must NOT be treated as
+    // precise — they have their own routing.
+    expect(isPreciseRef("e1")).toBe(false);
+    expect(isPreciseRef("f7:p1")).toBe(false);
+    expect(isPreciseRef("p")).toBe(false);
+    expect(isPreciseRef("pa1")).toBe(false);
+    expect(isPreciseRef(undefined)).toBe(false);
   });
 });

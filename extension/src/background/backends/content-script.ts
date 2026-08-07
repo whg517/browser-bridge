@@ -12,6 +12,7 @@ import { injectIfNeeded, injectAllFrames, enumerateFrames } from "../tabs";
 import {
   TOP_FRAME,
   parseFrameRef,
+  isPreciseRef,
   qualifyRefEcho,
   mergeSnapshot,
   mergeText,
@@ -31,6 +32,7 @@ export class ContentScriptBackend implements PageBackend {
     if (REF_OPS.has(op)) {
       const parsed = parseFrameRef(args.ref);
       if (parsed) return await this.runInFrame(tabId, op, args, parsed);
+      if (isPreciseRef(args.ref)) return await this.runPreciseRef(tabId, op, args);
       return await this.send(tabId, TOP_FRAME, op, args);
     }
 
@@ -65,6 +67,42 @@ export class ContentScriptBackend implements PageBackend {
     )) as PageResponse;
     if (resp && resp.__error) throw new Error(resp.__error);
     return resp;
+  }
+
+  /**
+   * Route a click/fill carrying a PRECISE ref (`p7`) to whichever frame holds it.
+   *
+   * `page_snapshot_precise` tags elements through CDP, whose frame ids are
+   * opaque strings from a different id space than the numeric ids
+   * `chrome.tabs.sendMessage` wants — so a precise ref cannot be pre-qualified
+   * with `f<N>:` the way content-script refs are. What it *can* rely on is that
+   * the precise counter is global across frames, so `p7` names exactly one
+   * element in the tab.
+   *
+   * So: try the top frame, then each sub-frame, and take the one that finds it.
+   * Uniqueness makes that unambiguous. Before this, a precise ref was always
+   * sent to the top frame, so anything the snapshot found inside an iframe was
+   * listed but not actionable (#113).
+   */
+  private async runPreciseRef(tabId: number, op: string, args: OpArgs): Promise<unknown> {
+    try {
+      return await this.send(tabId, TOP_FRAME, op, args);
+    } catch (topErr) {
+      const frames = await enumerateFrames(tabId);
+      const subs = frames.filter((f) => f.frameId !== TOP_FRAME);
+      if (subs.length === 0) throw topErr;
+      await injectAllFrames(tabId);
+      for (const f of subs) {
+        try {
+          return await this.send(tabId, f.frameId, op, args);
+        } catch {
+          // Not in this frame either — keep looking.
+        }
+      }
+      // Report the TOP frame's error: it is the one describing the ref itself
+      // ("unknown ref"), rather than an incidental failure from the last frame.
+      throw topErr;
+    }
   }
 
   // Route a click/fill to the sub-frame named by an f<N>: ref.
