@@ -8,6 +8,7 @@ import {
   mergeLinks,
   type FrameResult,
   isPreciseRef,
+  mergeNotes,
 } from "./frames";
 
 describe("TOP_FRAME", () => {
@@ -107,5 +108,54 @@ describe("isPreciseRef", () => {
     expect(isPreciseRef("p")).toBe(false);
     expect(isPreciseRef("pa1")).toBe(false);
     expect(isPreciseRef(undefined)).toBe(false);
+  });
+});
+
+describe("note propagation across frames", () => {
+  const sub = (frameId, data) => ({ frameId, url: `https://a.com/f${frameId}`, data });
+
+  // The regression this exists for: a canvas-rendered résumé lived in an iframe,
+  // so the frame contributed NO text and was dropped from the merge entirely,
+  // taking its note with it. Same canvas at top level produced the note fine.
+  it("keeps a sub-frame's note even when that frame has no text", () => {
+    const m = mergeText({ text: "top" }, [sub(7, { text: "", note: "drawn into a <canvas>" })]);
+    expect(m.text).toBe("top"); // empty frame still contributes no text
+    expect(m.note).toContain("drawn into a <canvas>");
+    expect(m.note).toContain("f7"); // and says which frame it came from
+  });
+
+  it("keeps the top frame's note once any sub-frame exists", () => {
+    // Before, ANY sub-frame meant the merged result was rebuilt without `note`,
+    // so even a top-frame canvas advisory was lost.
+    const m = mergeText({ text: "top", note: "top note" }, [sub(2, { text: "sub" })]);
+    expect(m.note).toBe("top note");
+  });
+
+  it("emits an identical note once, and distinct ones separately", () => {
+    const m = mergeText({ text: "" }, [
+      sub(1, { text: "", note: "same" }),
+      sub(2, { text: "", note: "same" }),
+      sub(3, { text: "", note: "different" }),
+    ]);
+    expect(m.note.match(/same/g).length).toBe(1);
+    expect(m.note).toContain("different");
+  });
+
+  it("omits the field entirely when nothing had a note", () => {
+    expect(mergeText({ text: "top" }, [sub(1, { text: "sub" })]).note).toBeUndefined();
+    expect(mergeSnapshot({ nodes: [] }, [sub(1, { nodes: [] })]).note).toBeUndefined();
+    expect(mergeLinks({ links: [] }, [sub(1, { links: [] })]).note).toBeUndefined();
+  });
+
+  // page_snapshot and page_links rebuild their result the same way, so they had
+  // the same hole.
+  it("propagates through mergeSnapshot and mergeLinks too", () => {
+    expect(mergeSnapshot({ nodes: [], note: "n" }, [sub(1, { nodes: [] })]).note).toBe("n");
+    expect(mergeLinks({ links: [], note: "n" }, [sub(1, { links: [] })]).note).toBe("n");
+  });
+
+  it("mergeNotes returns undefined when there is nothing to say", () => {
+    expect(mergeNotes({}, [])).toBeUndefined();
+    expect(mergeNotes({ note: "   " }, [])).toBeUndefined();
   });
 });

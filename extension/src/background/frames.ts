@@ -18,6 +18,9 @@ interface SnapshotLike {
   links?: Array<Record<string, unknown>>;
   url?: string;
   title?: string;
+  // Advisory attached by a read op — e.g. "this page draws into a <canvas>".
+  // Produced PER DOCUMENT by the content script, so a merge must gather them.
+  note?: string;
 }
 
 // The tab's top document. Every page op must name a frame explicitly —
@@ -58,6 +61,34 @@ export function qualifyRefEcho(resp: unknown, frameId: number, bareRef: string):
 // Merge a page_snapshot across frames: keep the top frame's refs bare (back-
 // compat) and prefix each sub-frame node's ref with `f<frameId>:`, tagging it
 // with the source frame url.
+/**
+ * Gather the notes from the top frame and every sub-frame into one line.
+ *
+ * A note is produced per document, so before this every merge silently dropped
+ * them: `mergeText`/`mergeSnapshot`/`mergeLinks` each rebuilt their result from
+ * scratch and never copied `note` across. The canvas advisory therefore worked
+ * on a single-frame page and vanished on a framed one — exactly the pages where
+ * content hides, and the case that motivated it (a résumé drawn into a canvas
+ * inside an iframe) produced no note at all.
+ *
+ * Sub-frame notes are labelled with their frame, since "part of this page is a
+ * canvas" is far more actionable when you know which part. Identical notes are
+ * emitted once: several frames rendering the same-sized canvas is one fact.
+ */
+export function mergeNotes(top: SnapshotLike, subs: FrameResult[]): string | undefined {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  const add = (note: string | undefined, label?: string) => {
+    const n = (note || "").trim();
+    if (!n || seen.has(n)) return;
+    seen.add(n);
+    out.push(label ? `${label} ${n}` : n);
+  };
+  add(top.note);
+  for (const s of subs) add(s.data.note, `(frame f${s.frameId})`);
+  return out.length ? out.join(" ") : undefined;
+}
+
 export function mergeSnapshot(top: SnapshotLike, subs: FrameResult[]): SnapshotLike {
   const nodes = [...(top.nodes || [])];
   for (const s of subs) {
@@ -65,9 +96,14 @@ export function mergeSnapshot(top: SnapshotLike, subs: FrameResult[]): SnapshotL
       nodes.push({ ...n, ref: `f${s.frameId}:${n.ref}`, frame: s.url });
     }
   }
-  return { refCount: nodes.length, nodes, url: top.url, title: top.title } as SnapshotLike & {
-    refCount: number;
-  };
+  const note = mergeNotes(top, subs);
+  return {
+    refCount: nodes.length,
+    nodes,
+    url: top.url,
+    title: top.title,
+    ...(note ? { note } : {}),
+  } as SnapshotLike & { refCount: number };
 }
 
 // Merge page_text: top frame first, each sub-frame appended under a marker.
@@ -77,7 +113,8 @@ export function mergeText(top: SnapshotLike, subs: FrameResult[]): SnapshotLike 
     const t = (s.data.text || "").trim();
     if (t) text += `\n\n--- frame f${s.frameId} (${s.url}) ---\n${t}`;
   }
-  return { text, url: top.url, mode: top.mode };
+  const note = mergeNotes(top, subs);
+  return { text, url: top.url, mode: top.mode, ...(note ? { note } : {}) };
 }
 
 // Merge page_links: concatenate, tag sub-frame links with their frame url, cap
@@ -88,7 +125,13 @@ export function mergeLinks(top: SnapshotLike, subs: FrameResult[]): SnapshotLike
     for (const l of s.data.links || []) links.push({ ...l, frame: s.url });
   }
   const capped = links.slice(0, 500);
-  return { links: capped, count: capped.length, url: top.url } as SnapshotLike & { count: number };
+  const note = mergeNotes(top, subs);
+  return {
+    links: capped,
+    count: capped.length,
+    url: top.url,
+    ...(note ? { note } : {}),
+  } as SnapshotLike & { count: number };
 }
 
 // Page.getFrameTree — only the fields we walk.
