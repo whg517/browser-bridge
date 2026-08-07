@@ -7,7 +7,10 @@ visible on my screen and uses my real accounts. Work carefully:
   `page_click` / `page_fill`; don't guess selectors. Re-snapshot after
   navigation. Read with `page_text` / `page_screenshot`, and pull links/emails
   with `page_links`; list tabs with `tab_list`. If `page_snapshot` comes back
-  empty, wait for the page (`page_wait_for {settled:true}`) and try again.
+  empty, wait for the page (`page_wait_for {settled:true}`) and try again. If a
+  read returns nothing while the page clearly shows content, take a
+  `page_screenshot` and read the image — some sites draw text into a canvas
+  specifically so it cannot be scraped, and no text-based tool can reach it.
 - **Don't do irreversible things** — submitting forms, closing tabs, sending
   messages, purchases — unless I ask. Prefer the least-powerful tool; use
   `page_eval` (arbitrary JS) only as a last resort. There are **no per-action

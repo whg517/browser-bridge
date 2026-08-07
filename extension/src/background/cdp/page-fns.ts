@@ -245,7 +245,19 @@ export async function pageSnapshot(refAttr: string): Promise<{
   if (result.refCount === 0) {
     return {
       ...result,
-      note: "No interactive elements found — the page may still be loading, or its content lives in an iframe / shadow DOM. Try page_wait_for {settled:true} (or {selector}) then snapshot again, or page_snapshot_precise for shadow-DOM / complex ARIA.",
+      // Kept in sync with content/snapshot.ts. This file is serialized into the
+      // page, so it cannot import the shared helper — the canvas check is
+      // inlined instead.
+      note:
+        (() => {
+          const big = Array.from(document.querySelectorAll("canvas")).find(
+            (c) => c.width * c.height >= 250_000
+          );
+          return big
+            ? `Part of this page is drawn into a <canvas> (${big.width}x${big.height}px) — some sites render text that way to prevent scraping, and no text-based tool can read it. If the content you expected is missing, use page_screenshot and read the image.`
+            : null;
+        })() ||
+        "No interactive elements found — the page may still be loading, or its content lives in an iframe / shadow DOM. Try page_wait_for {settled:true} (or {selector}) then snapshot again, or page_snapshot_precise for shadow-DOM / complex ARIA. If the page visibly HAS content, it may be drawn into a canvas, which no text-based tool can read — use page_screenshot and read the image.",
     };
   }
   return result;
