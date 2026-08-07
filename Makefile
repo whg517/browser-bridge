@@ -10,7 +10,7 @@ EXT_NM := extension/node_modules
 .PHONY: help build fmt fmt-check lint lint-scripts audit gen gen-check \
 	test-rust test-e2e ext-deps ext-build ext-typecheck ext-lint \
 	ext-format-check ext-test ext-package test-browser test-integration test ci \
-	install stamp-version check-extension-id check-version release
+	install stamp-version check-extension-id check-version release changelog test-scripts
 
 help: ## List available targets
 	@grep -hE '^[a-zA-Z0-9_-]+:.*## ' $(MAKEFILE_LIST) \
@@ -103,7 +103,7 @@ test-integration: build ext-build ## Real E2E integration (opt-in; real binary +
 
 test: test-rust ext-test test-e2e ## All tests that run without a browser
 
-ci: fmt-check lint lint-scripts test-rust gen-check ext-typecheck ext-lint ext-format-check ext-test ext-build check-version check-extension-id test-e2e ## Local CI gates (all jobs except the browser + installer-smoke ones)
+ci: fmt-check lint lint-scripts test-scripts test-rust gen-check ext-typecheck ext-lint ext-format-check ext-test ext-build check-version check-extension-id test-e2e ## Local CI gates (all jobs except the browser + installer-smoke ones)
 
 install: ## Install locally (build + copy binary + host manifest)
 	./install/install.sh
@@ -113,6 +113,14 @@ stamp-version: ## Stamp VERSION=x.y.z across crate+extension (no VERSION resets 
 
 check-version: ## Verify the tree holds the 0.0.0 placeholder consistently
 	./scripts/check-version.sh
+
+changelog: ## Generate the CHANGELOG section for VERSION from commits since the last tag
+	@test -n "$(VERSION)" || { echo "usage: make changelog VERSION=x.y.z"; exit 2; }
+	node scripts/changelog-gen.mjs $(VERSION) --write
+	@echo "Review and edit CHANGELOG.md, then commit it before tagging."
+
+test-scripts: ## Unit-test the scripts/ helpers (node's built-in runner)
+	node --test "scripts/*.test.mjs"
 
 check-extension-id: ## Verify the manifest key and installer extension IDs agree
 	node scripts/check-extension-id.mjs

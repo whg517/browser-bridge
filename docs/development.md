@@ -143,8 +143,9 @@ tree right before it builds ([ADR-0026](./adr/0026-release-time-version-stamping
 There is no version to bump.
 
 ```sh
-# 1. update CHANGELOG.md (move [Unreleased] items under the new version heading;
-#    release.yml refuses to build without a "## [X.Y.Z]" section for the tag)
+# 1. generate the release notes from the commit log, then read and edit them
+make changelog VERSION=X.Y.Z   # node scripts/changelog-gen.mjs X.Y.Z --write
+#    (release.yml refuses to build without a "## [X.Y.Z]" section for the tag)
 # 2. gate on a clean tree
 make release             # check-version + full ci
 # 3. tag — pushing a v* tag triggers .github/workflows/release.yml, which stamps
