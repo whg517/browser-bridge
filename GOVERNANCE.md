@@ -38,7 +38,8 @@ A change is done when:
 - the permission/confirmation path is clear;
 - there are **positive and negative** tests (negative especially for security);
 - errors have stable codes; logs contain no sensitive data;
-- docs / generated files / CHANGELOG are updated;
+- docs and generated files are updated (the CHANGELOG is not — it is generated
+  from commit subjects at release time, so the *subject* is what needs care);
 - CI is green;
 - no unexplained `any`, `unwrap()`/`expect()` on a production path, or new
   permission slipped in.

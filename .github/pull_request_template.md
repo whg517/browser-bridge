@@ -34,6 +34,7 @@ masking, bridge auth, or `page_eval` (see [SECURITY.md](../SECURITY.md)):
 
 ## Housekeeping
 
-- [ ] CHANGELOG updated
+- [ ] Commit subject reads well as a release-notes line (the CHANGELOG is
+      generated from it; see CONTRIBUTING.md)
 - [ ] ADR added / not needed
 - [ ] No unexplained `any` / `unwrap()` / new permission

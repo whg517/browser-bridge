@@ -106,14 +106,25 @@ A new tool touches both sides (see architecture.md §10):
 4. Give it a risk row in the [tool risk matrix](docs/security/tool-risk-matrix.md).
 5. Extend `tests/e2e.py` (and `dom_test.ts` for DOM ops).
 
-## Versioning
+## Versioning and the CHANGELOG
 
-**Don't bump a version in a PR.** The repo permanently carries the placeholder
-`0.0.0`; the release version is stamped from the git tag by the release
-workflow ([ADR-0026](./docs/adr/0026-release-time-version-stamping.md)), and CI
-fails if the tree has drifted off the placeholder. Land your change with a
-`CHANGELOG.md` entry under `[Unreleased]` — that is the only version-adjacent
-file a contributor touches.
+**A PR touches neither.**
+
+The repo permanently carries the placeholder `0.0.0`; the release version is
+stamped from the git tag by the release workflow
+([ADR-0026](./docs/adr/0026-release-time-version-stamping.md)), and CI fails if
+the tree has drifted off the placeholder.
+
+`CHANGELOG.md` is **generated at release time** from the commit log
+(`make changelog VERSION=x.y.z`). Every PR used to append to the same
+`[Unreleased]` block, so any two open PRs conflicted there and merging one forced
+a rebase of every other. Since `main` is squash-merged and subjects are enforced
+Conventional Commits, one PR is exactly one commit and its subject *is* the
+changelog line — so writing it twice bought nothing but conflicts.
+
+**What this asks of you: put the care into the commit subject.** It is published
+verbatim. The body is where the "why" goes; it stays in `git log` rather than the
+release notes, so write it for the next person reading `git blame`.
 
 ## License
 
