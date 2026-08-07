@@ -6,6 +6,11 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-08-07
+
+### Changed
+- generate the CHANGELOG from commits instead of editing it in every PR (#119)
+
 ### Fixed
 - **Reads no longer stay silent about canvas-rendered content.** Some sites draw
   text into a `<canvas>` precisely so it cannot be scraped, and every text-based
@@ -74,6 +79,13 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   unique tab-wide, and a click that misses in the top frame searches the
   sub-frames for it.
 
+- **Read-op notes survive on framed pages.** Notes are produced per document, but
+  all three merges rebuilt their result from scratch and never copied `note`
+  across, so any sub-frame at all discarded the top frame's note. Worse,
+  `mergeText` appends a sub-frame only when it has text — and a canvas frame has
+  none, the canvas *being* the content. The canvas advisory above could therefore
+  only ever be lost in precisely the case it was written for, which is how it
+  reached a release looking correct. ([#120](https://github.com/whg517/browser-bridge/pull/120))
 
 ## [0.6.0] - 2026-08-06
 
