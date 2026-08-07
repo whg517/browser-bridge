@@ -290,7 +290,7 @@
       "scope": "page",
       "permission": "debugger",
       "confirmation": "warn",
-      "description": "Like page_snapshot, but uses Chrome's debugger (CDP Accessibility.getFullAXTree) to capture the AUTHORITATIVE accessibility tree — accurate for shadow DOM and complex ARIA where the content-script approximation misses. The user is warned first (a brief on-page notice); Chrome then shows a 'Started debugging this browser' banner on all tabs for ~1 second while the snapshot is taken, then it disappears. Cannot run on chrome:// / web store pages, or tabs with DevTools open. Refs use a 'p' prefix (p1, p2...) and work with page_click / page_fill unchanged. Use this when page_snapshot misses elements or roles look wrong.",
+      "description": "Like page_snapshot, but uses Chrome's debugger (CDP Accessibility.getFullAXTree) to capture the AUTHORITATIVE accessibility tree — accurate for shadow DOM and complex ARIA where the content-script approximation misses. The user is warned first (a brief on-page notice); Chrome then shows a 'Started debugging this browser' banner on all tabs for ~1 second while the snapshot is taken, then it disappears. Cannot run on chrome:// / web store pages, or tabs with DevTools open. Reads EVERY same-process frame, so iframe content is included; a cross-origin (out-of-process) frame cannot be read from a tab-level attach and is reported in a `note` instead of being silently dropped. Refs use a 'p' prefix (p1, p2...), are unique across frames, and work with page_click / page_fill unchanged wherever the element lives. Use this when page_snapshot misses elements or roles look wrong.",
       "inputSchema": {
         "properties": {
           "frameId": {

@@ -54,6 +54,25 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     running — usually both are true, which sent users looking in the wrong
     place. It now names the sleeping worker first, tells the agent to retry
     once, and only then suggests checking the extension.
+- **`page_snapshot_precise` now reads iframes.** It called
+  `Accessibility.getFullAXTree` without a `frameId`, which returns the top
+  document only — so on any page whose real content lives in an iframe it was
+  *less* complete than the ordinary `page_snapshot`, the inverse of what its own
+  description promised. Measured on a real site: 11 nodes (top-frame nav only)
+  versus 27 from `page_snapshot`, which had been reading sub-frames since
+  ADR-0022. It now walks `Page.getFrameTree` and merges every same-process
+  frame, tagging sub-frame nodes with the `frame` URL exactly as the
+  content-script backend does. A cross-origin (out-of-process) frame still
+  cannot be read from a tab-level attach, but is now named in a `note` rather
+  than silently dropped ([#113](https://github.com/whg517/browser-bridge/issues/113)).
+- **A precise ref inside an iframe is now clickable.** Precise refs (`p7`) could
+  only ever be routed to the top frame, so anything the snapshot found in a
+  sub-frame was listed but not actionable. CDP frame ids are opaque strings from
+  a different id space than `chrome.tabs.sendMessage`'s numeric ones, so these
+  refs cannot be pre-qualified with `f<N>:` the way content-script refs are —
+  instead the precise counter is now global across frames, making each ref
+  unique tab-wide, and a click that misses in the top frame searches the
+  sub-frames for it.
 
 
 ## [0.6.0] - 2026-08-06

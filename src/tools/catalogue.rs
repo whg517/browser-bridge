@@ -178,8 +178,12 @@ pub fn all() -> Vec<Tool> {
                  first (a brief on-page notice); Chrome then shows a 'Started debugging this \
                  browser' banner on all tabs for ~1 second while the snapshot is taken, then it \
                  disappears. Cannot run on chrome:// / web store pages, or tabs with DevTools \
-                 open. Refs use a 'p' prefix (p1, p2...) and work with page_click / page_fill \
-                 unchanged. Use this when page_snapshot misses elements or roles look wrong.",
+                 open. Reads EVERY same-process frame, so iframe content is included; a \
+                 cross-origin (out-of-process) frame cannot be read from a tab-level attach and \
+                 is reported in a `note` instead of being silently dropped. Refs use a 'p' \
+                 prefix (p1, p2...), are unique across frames, and work with page_click / \
+                 page_fill unchanged wherever the element lives. Use this when page_snapshot \
+                 misses elements or roles look wrong.",
             input_schema: schema(
                 &[],
                 &[(
