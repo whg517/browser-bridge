@@ -12,7 +12,7 @@
       "code": "NOT_CONNECTED",
       "category": "connection",
       "retryable": true,
-      "message": "The browser extension is not connected (is it loaded and Chrome running?).",
+      "message": "The browser extension is not connected. Most often its MV3 service worker is asleep (Chrome stops it after ~30s idle) — the extension re-checks every 30s, so a retry usually succeeds; otherwise the user clicks the toolbar icon.",
       "rust": ["NotConnected"]
     },
     {

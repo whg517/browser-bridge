@@ -10,6 +10,7 @@
     "tabGroups",
     "scripting",
     "storage",
+    "alarms",
     "nativeMessaging",
     "debugger",
     "cookies"

@@ -22,6 +22,38 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     it runs in, and the drawing may live in a frame that was not walked.
   - A size floor (≥ 250k px²) keeps icons, sparklines and chart widgets from
     triggering it; found on a page whose résumé was a single 1460x2112 canvas.
+- **The bridge no longer goes unreachable after a short browser idle.** MV3 stops
+  an idle service worker after ~30s, and nothing could wake it: the reconnect
+  timer in `port.ts` lives inside the worker and dies with it, the only
+  registered wake events were browser start and install, and native messaging is
+  extension-initiated so a running MCP server has no channel to reach in.
+  Recovery required clicking the toolbar icon.
+
+  That window is the normal flow, not an edge case — the user types a prompt
+  while the browser sits idle, so the *first* tool call of a session was the one
+  most likely to fail. A periodic alarm (30s, Chrome's floor) now wakes the
+  worker and reconnects. Once a port is open it keeps the worker alive on its
+  own, so this costs nothing while a server is running.
+  ([#114](https://github.com/whg517/browser-bridge/issues/114))
+
+  Measured against a real browser (Chrome 150), starting a server with **no
+  browser interaction at all**: before, the extension never connected; with one
+  alarm it took 50.6s and 63.0s; with the pair, six runs landed between 1.4s and
+  21.5s. Two alarms rather than one because Chrome clamps `periodInMinutes: 0.5`
+  to a minute in practice — offsetting the second by half a cycle restores the
+  intended cadence.
+- **The first tool call of a session waits longer for the extension.** 12s left
+  roughly a third of cold starts failing against the wake times above, so the
+  first call now waits up to 30s; later calls keep the short window, since by
+  then either a connection has been seen or the environment is genuinely broken
+  and blocking every call for 30s would only make one clear failure slow. End to
+  end, three cold first calls after a 75s idle now succeed in 1.7-2.8s, where
+  before they failed outright.
+  - Adds the **`alarms`** permission to the manifest.
+  - `NOT_CONNECTED` no longer asks whether the extension is loaded and Chrome is
+    running — usually both are true, which sent users looking in the wrong
+    place. It now names the sleeping worker first, tells the agent to retry
+    once, and only then suggests checking the extension.
 
 
 ## [0.6.0] - 2026-08-06

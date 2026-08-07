@@ -140,7 +140,7 @@ The extension source is written in **TypeScript** (strict) under `extension/src/
 
 | Source file (`src/`) | Artifact (`dist/`) | Responsibilities |
 |------|------|------|
-| `manifest.json` (static, copied into dist) | `manifest.json` | MV3; permissions=[tabs,scripting,storage,nativeMessaging]; **`host_permissions: ["<all_urls>"]`** — broad host access granted at install, no runtime permission request (see [ADR-0024](./adr/0024-remove-allowlist.md)) |
+| `manifest.json` (static, copied into dist) | `manifest.json` | MV3; permissions=[tabs,tabGroups,scripting,storage,alarms,nativeMessaging,debugger,cookies] (`alarms` wakes the service worker so the bridge survives an idle browser — see port.ts `installKeepalive`); **`host_permissions: ["<all_urls>"]`** — broad host access granted at install, no runtime permission request (see [ADR-0024](./adr/0024-remove-allowlist.md)) |
 | `background.ts` | `background.js` | SW **entry point** (about 20 lines): registers the onMessage router + calls connectNative on startup. The real logic is in `src/background/*` (see below) |
 | `content.ts` | `content.js` | content script **entry point** (about 30 lines): re-injection guard + onMessage listener → `handle`. The real logic is in `src/content/*` (see below) |
 | `options.ts` + `options.html` | `options.js` + `options.html` | Standalone Options configuration page (see [ADR-0011](./adr/0011-options-page-for-settings.md) for details) |

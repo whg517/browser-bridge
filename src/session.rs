@@ -36,7 +36,7 @@
 use std::collections::HashMap;
 use std::io::{self, BufReader, BufWriter};
 use std::net::TcpStream;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 use std::time::Duration;
@@ -108,6 +108,9 @@ pub struct Session {
     /// Monotonic per-connection generation counter. Starts at 1 so that
     /// generation 0 is reserved as the [`UNSENT_GENERATION`] sentinel.
     next_gen: Arc<AtomicU64>,
+    /// Set once the first tool call has been made. Only that call waits the long
+    /// window for a sleeping service worker to wake — see [`Session::call`].
+    warmed: Arc<AtomicBool>,
     /// What the currently-connected extension announced about itself, paired
     /// with the generation that announced it. Cleared when that generation's
     /// reader ends, so a stale peer version can never outlive its connection.
@@ -130,6 +133,7 @@ impl Session {
             pending: Arc::new(Mutex::new(HashMap::new())),
             next_id: Arc::new(AtomicU64::new(1)),
             next_gen: Arc::new(AtomicU64::new(1)),
+            warmed: Arc::new(AtomicBool::new(false)),
             peer: Arc::new(Mutex::new(None)),
             advisory: Arc::new(Mutex::new(None)),
         }
@@ -333,13 +337,28 @@ impl Session {
             .unwrap()
             .insert(id, (UNSENT_GENERATION, tx));
 
-        // If the native host hasn't connected yet, wait briefly for it. The
-        // extension's service worker reconnects on a ~2s timer; right after
-        // the MCP client spawns a fresh MCP server, the first tool call can arrive
-        // before the host has re-established its bridge connection. Waiting
-        // here (rather than failing instantly) makes startup robust.
+        // If the native host hasn't connected yet, wait for it rather than failing
+        // instantly. Right after the MCP client spawns a fresh server, the first
+        // tool call routinely arrives before the extension has re-established the
+        // bridge.
+        //
+        // The FIRST call of a server's life gets a longer window than the rest.
+        // At that point the extension's service worker is usually asleep — MV3
+        // stops it after ~30s idle, and the user was typing their prompt, not
+        // browsing — so it has to be woken by its own alarm before it can
+        // connect. Measured against Chrome 150 with no browser interaction, that
+        // wake took 1.4s to 21.5s across six runs, so 12s left roughly a third of
+        // first calls failing. 30s covers the observed spread with margin.
+        //
+        // Later calls keep the short window on purpose: by then a connection has
+        // either been seen (so the extension is healthy and a drop is transient)
+        // or the environment is genuinely broken — Chrome closed, extension
+        // removed — and blocking every subsequent call for 30s would turn one
+        // clear failure into a very slow one.
+        let first_call = !self.warmed.swap(true, Ordering::SeqCst);
         if self.conn.lock().unwrap().is_none() {
-            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(12);
+            let wait = if first_call { 30 } else { 12 };
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(wait);
             while std::time::Instant::now() < deadline {
                 if self.conn.lock().unwrap().is_some() {
                     break;
@@ -401,6 +420,25 @@ impl Session {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Only the first call gets the long wait. Later calls must not, or a broken
+    // environment (Chrome closed, extension removed) would block every single
+    // call for 30s instead of failing once, clearly.
+    #[test]
+    fn only_the_first_call_takes_the_long_wait() {
+        let session = Session::new();
+        assert!(
+            !session.warmed.swap(true, Ordering::SeqCst),
+            "first call is the long one"
+        );
+        assert!(
+            session.warmed.swap(true, Ordering::SeqCst),
+            "every later call is short"
+        );
+        assert!(session.warmed.load(Ordering::SeqCst));
+        // A fresh session starts over — each server process gets one long wait.
+        assert!(!Session::new().warmed.load(Ordering::SeqCst));
+    }
 
     #[test]
     fn fresh_session_reports_no_generation() {
