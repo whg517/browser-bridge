@@ -1,5 +1,11 @@
-// Native-messaging port lifecycle. MV3 service workers are killed ~every 5 min
-// and Chrome kills the host process whenever the port closes, so we reconnect
+// Native-messaging port lifecycle. An MV3 service worker is terminated after
+// ~30s of INACTIVITY — not on a fixed 5-minute schedule, as this comment used to
+// say; the 5-minute figure in Chrome's docs is the cap on how long one event or
+// API call may take, which is a different rule. Receiving an event or calling an
+// extension API resets the idle timer, and an open native-messaging port counts,
+// so a connected worker stays alive on its own.
+//
+// Chrome kills the host process whenever the port closes, so we reconnect
 // automatically on startup and after any disconnect.
 
 import type { BridgeReq } from "../shared/types";
@@ -32,7 +38,8 @@ export function connectNative() {
     port.onDisconnect.addListener(onNativeDisconnect);
     // Tell the server which extension it just got, before any request arrives.
     // Every reconnect re-announces — that is a new connection generation on the
-    // server, and the SW is recycled every ~5 min, so it must not be one-shot.
+    // server, and the worker is recycled after ~30s idle, so it must not be
+    // one-shot.
     announce();
   } catch (e) {
     portOk = false;
@@ -98,18 +105,34 @@ function scheduleReconnect() {
  * the worker alive by itself, so the alarm only matters while nothing is
  * connected — the cost when a server IS running is zero.
  *
- * Why TWO alarms rather than one: `periodInMinutes: 0.5` is documented as
- * allowed, but Chrome clamps it to a minute in practice — measured against
- * Chrome 150, a single 0.5 alarm produced first-connect times of 50.6s and 63.0s,
- * i.e. a ~60s cycle. The host only waits 12s for a connection, so with a 60s
- * cycle the first call of a session would still usually fail, which is the very
- * thing this is meant to fix. Two alarms on the same period, offset by half of
- * it, restore an effective ~30s cadence within the clamp.
+ * Why TWO alarms rather than one — and what is NOT the reason.
  *
- * Even so, a wake can land outside the host's 12s window, so the first call
- * after a long idle may still need one retry — NOT_CONNECTED now says so. The
- * guarantee this buys is that a retry works, where before nothing did short of
- * the user clicking the toolbar icon.
+ * An earlier version of this comment claimed Chrome clamps `periodInMinutes:
+ * 0.5` up to a minute. That is wrong on two counts. Since Chrome 120 the
+ * documented floor IS 30s (0.5 is honoured; only values BELOW 0.5 are raised to
+ * 30s), and an unpacked extension — which is what the measurement below ran on —
+ * has no frequency limit at all. There is no clamp here to work around.
+ *
+ * What the docs do say is the actual constraint: Chrome fires alarms "at most
+ * once every 30 seconds but may delay them arbitrarily more". The delay has no
+ * upper bound, so no alarm configuration can promise a reconnect deadline.
+ *
+ * Two alarms are therefore a HEDGE, not a clamp workaround: two independent
+ * delay draws, and the worker wakes on whichever lands first. The evidence is
+ * narrow but one-directional — against Chrome 150, one 0.5 alarm gave
+ * first-connect times of 50.6s and 63.0s, two offset alarms gave 1.3s, 1.9s,
+ * 2.2s, 4.1s and 7.4s. Two samples versus five, and the mechanism behind the
+ * difference is not established; if a future measurement shows a single alarm
+ * doing as well, prefer the simpler one.
+ *
+ * Because the tail is unbounded, a wake can still land outside the window the
+ * host waits, so a first call after a long idle may need one retry —
+ * NOT_CONNECTED says so. The guarantee this buys is that a retry works, where
+ * before nothing did short of the user clicking the toolbar icon.
+ *
+ * Alarms can be dropped, and the docs recommend re-asserting them on every worker
+ * start. `create()` with an existing name replaces it, so calling it here — on
+ * every worker start — is that check, expressed as an unconditional write.
  */
 export function installKeepalive() {
   chrome.alarms.create(WAKE_ALARM, { periodInMinutes: 1 });
