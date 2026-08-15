@@ -20,12 +20,21 @@ export function showInfoToast(opts: { message: string; cancel?: string }) {
     host.appendChild(card);
 
     let done = false;
+    // Resolve only AFTER the card leaves the DOM. Resolving first let the caller
+    // resume during the 150ms exit animation, while this toast was still a real
+    // element in the page — and page_snapshot_precise, which awaits this very
+    // promise before reading the accessibility tree, captured its own Cancel
+    // button as a page control on every call (#132). The exit animation is a
+    // presentation detail; no caller should be able to observe the extension's
+    // own UI as page content.
     const finish = (proceed: boolean) => {
       if (done) return;
       done = true;
       card.classList.add("zcb-toast-out");
-      setTimeout(() => card.remove(), 150);
-      resolve(proceed);
+      setTimeout(() => {
+        card.remove();
+        resolve(proceed);
+      }, 150);
     };
     card.querySelector<HTMLElement>(".zcb-info-cancel")!.onclick = () => finish(false);
     // Auto-proceed after 8s (informational, not a confirmation gate).
