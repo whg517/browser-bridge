@@ -205,6 +205,31 @@ export class CdpSession {
     return res.result?.value as T;
   }
 
+  /**
+   * Does `expression` parse? Compiles it WITHOUT running it.
+   *
+   * page_eval has to choose between an expression body and a statement body,
+   * and the choice must not be made by running the code and retrying on
+   * failure: a runtime SyntaxError (`JSON.parse("{")`) is indistinguishable
+   * from a parse failure once execution has started, and retrying would run the
+   * caller's side effects twice. Compiling answers the question with nothing
+   * executed at all.
+   */
+  async compiles(expression: string): Promise<boolean> {
+    try {
+      const res = await this.send<{ exceptionDetails?: unknown }>("Runtime.compileScript", {
+        expression,
+        sourceURL: "",
+        persistScript: false,
+      });
+      return !res.exceptionDetails;
+    } catch {
+      // An unavailable or failing compileScript falls back to the statement
+      // body, which is the long-standing behaviour.
+      return false;
+    }
+  }
+
   // Runtime.evaluate that returns the raw response (result + exceptionDetails)
   // so callers can map a page exception to structured data (page_eval).
   rawEvaluate(

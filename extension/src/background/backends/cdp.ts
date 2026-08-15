@@ -13,6 +13,7 @@
 import type { OpArgs } from "../../shared/types";
 import type { PageBackend } from "../page-backend";
 import { maskSensitive, maskNamedValue } from "../../shared/masking";
+import { SERIALIZE_FN_SOURCE } from "../../shared/serialize";
 import { truncate } from "../../content/util";
 import { assertDrivable, type CdpSession, type EvaluateResponse } from "../cdp/session";
 import { cdpRegistry } from "../cdp/registry";
@@ -127,7 +128,27 @@ export class CdpBackend implements PageBackend {
     // Run the code as an async IIFE in the MAIN world. Unlike the content path
     // this does NOT use `new Function` (blocked by strict CSP) — CDP evaluates
     // it directly, which is the whole point of CDP mode.
-    const expression = `(async () => {\n${code}\n})()`;
+    //
+    // Prefer an expression BODY: a block body discards an expression
+    // statement's value, so `page_eval "document.title"` came back as null
+    // while the code had plainly run. Every other JS eval surface a model has
+    // seen — the DevTools console, Runtime.evaluate itself, page.evaluate in
+    // Puppeteer and Playwright — answers with the value. The statement body
+    // stays as the fallback so an explicit `return` keeps working.
+    //
+    // Which one is decided by COMPILING, never by running and retrying: see
+    // CdpSession.compiles.
+    const asExpression = `(async () => (\n${code}\n))()`;
+    const inner = (await session.compiles(asExpression))
+      ? asExpression
+      : `(async () => {\n${code}\n})()`;
+
+    // Serialize inside the page. Doing it after returnByValue would be too
+    // late — that projection has already flattened Date/Map/Set/RegExp/Error/
+    // DOM nodes to `{}`, dropped undefined, and refused symbols and cycles.
+    const expression =
+      `(async () => { const __bbValue = await ${inner};` +
+      ` return (${SERIALIZE_FN_SOURCE})(__bbValue); })()`;
     const res: EvaluateResponse = await session.rawEvaluate(expression, { awaitPromise: true });
     if (res.exceptionDetails) {
       const ex = res.exceptionDetails.exception;
