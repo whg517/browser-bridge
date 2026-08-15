@@ -19,6 +19,63 @@ pub fn is_native_host_mode(args: &[String]) -> bool {
             .is_some_and(|arg| arg.starts_with("chrome-extension://"))
 }
 
+/// Every argv[1] this binary accepts — flags and subcommands alike.
+///
+/// `--native-host` is listed because Chrome's Unix launch really does pass it:
+/// the host manifest points at a wrapper that execs `<binary> --native-host`
+/// without forwarding its own arguments. Chrome's WINDOWS launch is the one
+/// that arrives as an origin instead of a flag, and it is recognized earlier by
+/// `is_native_host_mode`, so it never reaches this list.
+const KNOWN_ARGS: &[&str] = &[
+    "-h",
+    "--help",
+    "-V",
+    "--version",
+    "--native-host",
+    "doctor",
+    "status",
+    "tools",
+    "call",
+];
+
+/// An unrecognized argv[1], if there is one.
+///
+/// Without this the mode dispatch has no unknown-argument branch: anything
+/// unmatched falls through to the default, which starts an MCP server — and
+/// starting one deliberately terminates whichever server holds the lock. So
+/// `browser-bridge --version` did not print an error, it silently killed a
+/// running agent session, and `browser-bridge doctro` did the same.
+///
+/// Matching against the full accepted set rather than only `-`-prefixed input
+/// is deliberate: a mistyped subcommand is exactly as destructive as a mistyped
+/// flag, and there is no open-ended subcommand space this would wrongly claim —
+/// the list above IS the surface. Bare invocation stays untouched, since that is
+/// how every MCP client launches the server.
+pub fn unrecognized_arg(args: &[String]) -> Option<&str> {
+    // Defer to the native-host check rather than relying on the caller running
+    // it first. The dispatch does run it first, but a guard that can reject a
+    // legitimate Chrome launch if someone reorders the branches is a trap worth
+    // not leaving lying around.
+    if is_native_host_mode(args) {
+        return None;
+    }
+    let first = args.get(1)?.as_str();
+    if KNOWN_ARGS.contains(&first) {
+        return None;
+    }
+    Some(first)
+}
+
+/// Print the version to stdout and nothing else.
+///
+/// stdout is the protocol stream in both binary modes, but this path runs
+/// instead of either of them, never alongside — same as the `tools` subcommand.
+/// Version output goes to stdout so it stays pipeable; `print_help` writes to
+/// stderr because it accompanies errors.
+pub fn print_version() {
+    println!("browser-bridge {}", env!("CARGO_PKG_VERSION"));
+}
+
 pub fn print_help() {
     eprintln!(
         "browser-bridge {version}\n\
@@ -28,6 +85,7 @@ pub fn print_help() {
          browser-bridge tools [--json]      List the available tools + arguments\n    \
          browser-bridge call <tool> [json]  Run one tool and print its result (no MCP)\n    \
          browser-bridge doctor       Print a read-only health report (alias: status)\n    \
+         browser-bridge --version    Print the version (alias: -V)\n    \
          browser-bridge --native-host  Run as the Chrome native messaging host\n\n\
          Configure your MCP client (Claude Code, Codex, …) to launch this \
          binary with no arguments as an MCP server; Chrome launches it with \
@@ -116,7 +174,78 @@ pub fn print_tools(as_json: bool) {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_native_host_mode, tools_catalogue_json};
+    use super::{is_native_host_mode, tools_catalogue_json, unrecognized_arg};
+
+    fn argv(rest: &[&str]) -> Vec<String> {
+        std::iter::once("browser-bridge")
+            .chain(rest.iter().copied())
+            .map(String::from)
+            .collect()
+    }
+
+    // The bug this guards: an unmatched argv[1] fell through to the default
+    // branch, which starts an MCP server — and that terminates whichever server
+    // holds the lock. So a typo ended somebody's session instead of erroring.
+    #[test]
+    fn unrecognized_args_are_rejected_not_run_as_a_server() {
+        // Mistyped flags...
+        for bad in ["--hepl", "--foo", "-x", "--verison"] {
+            assert_eq!(
+                unrecognized_arg(&argv(&[bad])),
+                Some(bad),
+                "{bad} must not reach the server branch"
+            );
+        }
+        // ...and mistyped subcommands, which are exactly as destructive.
+        for bad in ["doctro", "statuss", "tool", "cal", "serve"] {
+            assert_eq!(
+                unrecognized_arg(&argv(&[bad])),
+                Some(bad),
+                "{bad} must not reach the server branch"
+            );
+        }
+    }
+
+    #[test]
+    fn known_flags_and_subcommands_pass_through() {
+        // Handled by their own branches before the guard runs. --version is the
+        // flag that motivated all this: it used to be unrecognized and is now a
+        // mode of its own, so the guard must let it through, not reject it.
+        for ok in ["-h", "--help", "-V", "--version", "--native-host"] {
+            assert_eq!(unrecognized_arg(&argv(&[ok])), None);
+        }
+        // Every real subcommand, each dispatched by its own branch below.
+        for ok in ["doctor", "status", "tools", "call"] {
+            assert_eq!(unrecognized_arg(&argv(&[ok])), None);
+        }
+    }
+
+    #[test]
+    fn no_args_still_selects_the_server() {
+        // How every MCP client launches it — must never be treated as a typo.
+        assert_eq!(unrecognized_arg(&argv(&[])), None);
+    }
+
+    // The Unix native-host launch, which is what the wrapper script produces:
+    // `exec <binary> --native-host`, with Chrome's own arguments not forwarded.
+    #[test]
+    fn unix_native_host_launch_is_not_a_typo() {
+        assert_eq!(unrecognized_arg(&argv(&["--native-host"])), None);
+    }
+
+    // The Windows launch arrives as an origin instead of a flag, so the guard
+    // has to defer to is_native_host_mode rather than pattern-match argv[1].
+    // Gated on the platform because that check is `cfg!(windows)`; on Unix the
+    // wrapper above means Chrome never hands the binary an origin.
+    #[cfg(windows)]
+    #[test]
+    fn windows_native_host_launch_is_not_a_typo() {
+        let chrome = argv(&[
+            "chrome-extension://mkjjlmjbcljpcfkfadfmhblmmddkdihf/",
+            "--parent-window=0",
+        ]);
+        assert_eq!(unrecognized_arg(&chrome), None);
+    }
 
     #[test]
     fn explicit_native_host_flag_is_recognized() {
