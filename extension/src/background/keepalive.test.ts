@@ -53,17 +53,14 @@ const fire = (name: string) => listeners.forEach((fn) => fn({ name }));
 describe("service-worker wake alarm", () => {
   beforeEach(() => installChromeStub());
 
-  test("registers two alarms half a cycle apart", async () => {
+  test("registers one alarm at the documented 30s floor", async () => {
     const { installKeepalive } = await import("./port");
     installKeepalive();
-    // Chrome clamps periodInMinutes to a minute in practice (measured on Chrome
-    // 150: a lone 0.5 alarm woke the worker every ~60s). Two alarms on a 1-min
-    // period, offset by half of it, restore a ~30s effective cadence — which is
-    // what keeps a wake close enough to the host's 12s first-call wait.
-    expect(created).toHaveLength(2);
-    expect(created.map((c) => c.opts.periodInMinutes)).toEqual([1, 1]);
-    expect(created[1].opts.delayInMinutes).toBe(0.5);
-    expect(new Set(created.map((c) => c.name)).size).toBe(2);
+    // 0.5 is the floor Chrome honours (since Chrome 120); anything smaller is
+    // silently raised to it. One alarm, not two — see port.ts for why the
+    // earlier two-alarm workaround was removed.
+    expect(created).toHaveLength(1);
+    expect(created[0].opts.periodInMinutes).toBe(0.5);
   });
 
   test("an unrelated alarm is ignored", async () => {

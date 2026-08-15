@@ -11,22 +11,89 @@
 
 use std::io::{self, BufRead, BufReader, BufWriter};
 use std::thread;
+use std::time::Duration;
 
 use crate::ipc;
 use crate::protocol::{bridge_write, nm_read_frame, nm_write_frame};
 use serde_json::Value;
 
-pub fn run() -> i32 {
-    // Connect to the MCP server's localhost TCP socket (reads the lock file).
-    let stream = match ipc::connect() {
-        Ok(s) => s,
-        Err(e) => {
-            log_error!("native-host", "cannot connect to MCP server: {e}");
-            // No way to talk to Chrome usefully without the server; exit so
-            // the extension sees onDisconnect and can surface the error.
-            return 1;
+/// Poll for the MCP server until it appears. Returns only on success; the stdin
+/// reader thread owns every exit path, so a host whose port Chrome has closed
+/// dies there rather than looping forever.
+///
+/// The interval is a compromise: short enough that starting an MCP client feels
+/// instant, long enough that an idle browser session costs nothing measurable.
+/// `ipc::connect` clears a stale lock file itself, so a crashed server is
+/// recovered from on the next tick.
+fn connect_waiting() -> std::net::TcpStream {
+    const RETRY: Duration = Duration::from_millis(500);
+    let mut logged = false;
+    loop {
+        match ipc::connect() {
+            Ok(s) => return s,
+            Err(e) => {
+                if !logged {
+                    // Log once, not every tick: this is the normal state while
+                    // the user has not started their MCP client yet.
+                    log_info!("native-host", "waiting for MCP server ({e})");
+                    logged = true;
+                }
+                thread::sleep(RETRY);
+            }
         }
-    };
+    }
+}
+
+pub fn run() -> i32 {
+    // Read stdin from the very start, BEFORE the bridge is up, buffering frames
+    // until it is. Two reasons, both learned the hard way:
+    //
+    // 1. Chrome closes our stdin when the extension drops the port. If we only
+    //    started reading after connecting, a host waiting for a server that
+    //    never arrives would never notice and would linger as a zombie.
+    // 2. The extension posts its announce frame immediately on connect
+    //    (shared/announce.ts). Waiting to read would drop it, and the server
+    //    would treat a known extension as an unknown legacy one.
+    let (tx, rx) = std::sync::mpsc::channel::<Value>();
+    thread::spawn(move || {
+        let mut stdin = io::stdin();
+        loop {
+            match nm_read_frame(&mut stdin) {
+                Ok(Some(v)) => {
+                    if tx.send(v).is_err() {
+                        break; // bridge side gone; that thread owns the exit
+                    }
+                }
+                Ok(None) => {
+                    log_info!("native-host", "stdin EOF, shutting down");
+                    std::process::exit(0);
+                }
+                Err(e) => {
+                    log_warn!("native-host", "stdin read error: {e}");
+                    std::process::exit(0);
+                }
+            }
+        }
+    });
+
+    // Wait for the MCP server rather than exiting when it is not up yet.
+    //
+    // Exiting immediately (the old behaviour) closed the port, and closing the
+    // port is what let Chrome recycle the extension's service worker — which is
+    // the whole reason a wake alarm was needed at all. `connectNative()` keeps a
+    // service worker alive for as long as the port is open, so a host that WAITS
+    // keeps the extension resident and reconnects the instant a server appears,
+    // instead of the extension polling every 30s and spawning a host each time
+    // only for it to fail and exit.
+    //
+    // The alarm stays as a backstop for what this cannot cover: the host
+    // crashing, Chrome tearing it down, or the extension being reloaded.
+    //
+    // Cost: one idle process per browser session, sleeping between cheap lock
+    // file checks. That is strictly less than a service-worker wake plus a
+    // process spawn every 30 seconds. Chrome bounds its lifetime for us — when
+    // the browser closes or the extension unloads, stdin hits EOF above.
+    let stream = connect_waiting();
     log_info!("native-host", "connected to MCP server bridge socket");
 
     let stream_clone = match stream.try_clone() {
@@ -57,34 +124,24 @@ pub fn run() -> i32 {
     // frame, so no buffered data is lost on the normal close paths.
     let tcp_out = stream;
 
-    // Thread A: stdin -> TCP
+    // Thread A: buffered stdin frames -> TCP.
+    //
+    // Reads from the channel the stdin thread fills, not from stdin directly:
+    // by the time we get here that thread has been running since before the
+    // bridge came up, so anything Chrome sent while we were waiting (notably the
+    // extension's announce) is already queued and gets flushed in order.
     thread::spawn(move || {
-        let mut stdin = io::stdin();
         let mut tcp = BufWriter::new(tcp_out);
-        loop {
-            let frame: Option<Value> = match nm_read_frame(&mut stdin) {
-                Ok(v) => v,
-                Err(e) => {
-                    log_warn!("native-host", "stdin read error: {e}");
-                    break;
-                }
-            };
-            let frame = match frame {
-                Some(v) => v,
-                None => {
-                    // EOF on stdin: Chrome disconnected. Canonical shutdown.
-                    log_info!("native-host", "stdin EOF, shutting down");
-                    break;
-                }
-            };
+        for frame in rx {
             if let Err(e) = bridge_write(&mut tcp, &frame) {
                 log_warn!("native-host", "tcp write error: {e}");
                 break;
             }
         }
-        // Either side breaking means this process is done. Exit immediately so
-        // Chrome tears down the port and the extension reconnects.
-        log_debug!("native-host", "stdin->TCP thread ending; exiting process");
+        // The channel closing means the stdin thread is gone, which only happens
+        // on a path that already exits. A write error means the bridge is dead
+        // and this process has nothing left to do either.
+        log_debug!("native-host", "frame->TCP thread ending; exiting process");
         std::process::exit(0);
     });
 

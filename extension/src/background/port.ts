@@ -1,5 +1,11 @@
-// Native-messaging port lifecycle. MV3 service workers are killed ~every 5 min
-// and Chrome kills the host process whenever the port closes, so we reconnect
+// Native-messaging port lifecycle. An MV3 service worker is terminated after
+// ~30s of INACTIVITY — not on a fixed 5-minute schedule, as this comment used to
+// say; the 5-minute figure in Chrome's docs is the cap on how long one event or
+// API call may take, which is a different rule. Receiving an event or calling an
+// extension API resets the idle timer, and an open native-messaging port counts,
+// so a connected worker stays alive on its own.
+//
+// Chrome kills the host process whenever the port closes, so we reconnect
 // automatically on startup and after any disconnect.
 
 import type { BridgeReq } from "../shared/types";
@@ -8,7 +14,6 @@ import { dispatch } from "./dispatch";
 
 const NATIVE_HOST = "com.browser_bridge.host";
 const WAKE_ALARM = "bb-reconnect";
-const WAKE_ALARM_B = "bb-reconnect-b";
 
 let port: chrome.runtime.Port | null = null;
 let portOk = false; // did the most recent connect succeed?
@@ -24,6 +29,21 @@ export function connectNative() {
     clearTimeout(reconnectTimer);
     reconnectTimer = null;
   }
+  // Disconnect before replacing. `background.ts` calls this from BOTH the
+  // onInstalled listener and module top level, so a reload opens two ports and
+  // Chrome spawns a host for each. That used to be self-healing — the surplus
+  // host could not reach a server and exited on its own — but now that the host
+  // waits instead of exiting, an abandoned port leaves a process waiting
+  // forever. Observed as two resident hosts under one Chrome after a reload.
+  if (port) {
+    try {
+      port.disconnect();
+    } catch {
+      // Already gone; nothing to release.
+    }
+    port = null;
+    portOk = false;
+  }
   try {
     port = chrome.runtime.connectNative(NATIVE_HOST);
     portOk = true;
@@ -32,7 +52,8 @@ export function connectNative() {
     port.onDisconnect.addListener(onNativeDisconnect);
     // Tell the server which extension it just got, before any request arrives.
     // Every reconnect re-announces — that is a new connection generation on the
-    // server, and the SW is recycled every ~5 min, so it must not be one-shot.
+    // server, and the worker is recycled after ~30s idle, so it must not be
+    // one-shot.
     announce();
   } catch (e) {
     portOk = false;
@@ -98,25 +119,30 @@ function scheduleReconnect() {
  * the worker alive by itself, so the alarm only matters while nothing is
  * connected — the cost when a server IS running is zero.
  *
- * Why TWO alarms rather than one: `periodInMinutes: 0.5` is documented as
- * allowed, but Chrome clamps it to a minute in practice — measured against
- * Chrome 150, a single 0.5 alarm produced first-connect times of 50.6s and 63.0s,
- * i.e. a ~60s cycle. The host only waits 12s for a connection, so with a 60s
- * cycle the first call of a session would still usually fail, which is the very
- * thing this is meant to fix. Two alarms on the same period, offset by half of
- * it, restore an effective ~30s cadence within the clamp.
+ * Cadence: one alarm at `periodInMinutes: 0.5` — the documented floor since
+ * Chrome 120, and honoured (only values BELOW it are raised to 30s).
  *
- * Even so, a wake can land outside the host's 12s window, so the first call
- * after a long idle may still need one retry — NOT_CONNECTED now says so. The
- * guarantee this buys is that a retry works, where before nothing did short of
- * the user clicking the toolbar icon.
+ * v0.7.0 shipped TWO alarms on a 1-minute period offset by half of it, to work
+ * around a clamp of 0.5 to a minute. That clamp does not exist. The belief came
+ * from two samples showing first-connect times of ~50-60s, which cannot be a
+ * clamp for two reasons: 0.5 is honoured on a packed extension, and the samples
+ * were taken on an UNPACKED one, where the frequency limit does not apply at all.
+ *
+ * The real constraint is that Chrome fires alarms "at most once every 30 seconds
+ * but may delay them arbitrarily more" — an unbounded tail that no alarm
+ * configuration can close. Doubling the alarms cannot close it either, since the
+ * delay comes from system-level throttling that would postpone both together.
+ * What actually absorbs the tail is the host waiting a full cycle on the first
+ * call of a session (see Session::call).
+ *
+ * Alarms can be dropped, and the docs recommend re-asserting them on every worker
+ * start. `create()` with an existing name replaces it, so calling it here — on
+ * every worker start — is that check, expressed as an unconditional write.
  */
 export function installKeepalive() {
-  chrome.alarms.create(WAKE_ALARM, { periodInMinutes: 1 });
-  // delayInMinutes staggers the second one half a cycle behind the first.
-  chrome.alarms.create(WAKE_ALARM_B, { delayInMinutes: 0.5, periodInMinutes: 1 });
+  chrome.alarms.create(WAKE_ALARM, { periodInMinutes: 0.5 });
   chrome.alarms.onAlarm.addListener((a) => {
-    if (a.name !== WAKE_ALARM && a.name !== WAKE_ALARM_B) return;
+    if (a.name !== WAKE_ALARM) return;
     // Waking is most of the point; only reconnect when we actually need to, so
     // a live port is never torn down and replaced for no reason.
     if (!isNativeConnected()) connectNative();
