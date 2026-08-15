@@ -123,12 +123,40 @@ if ($Uninstall) {
         (Join-Path $InstallDir $BinaryName),
         (Join-Path $InstallDir 'run.lock')
     )
+    # A running browser-bridge holds its own image, so removing the binary can
+    # fail with access-denied. With $ErrorActionPreference = 'Stop' that aborted
+    # the whole uninstall - after the registry key and manifest were already
+    # gone, leaving a half-removed install that Chrome can no longer launch and
+    # a re-run cannot tidy. Report each target and keep going instead.
+    $stuck = @()
     foreach ($target in $targets) {
-        if (Test-Path -LiteralPath $target) {
-            Remove-Item -LiteralPath $target -Force
-            Write-Host "[uninstall] removed: $target"
-        } else {
+        if (-not (Test-Path -LiteralPath $target)) {
             Write-Host "[uninstall] not present: $target"
+            continue
+        }
+        Remove-Item -LiteralPath $target -Force -ErrorAction SilentlyContinue
+        if (Test-Path -LiteralPath $target) {
+            $stuck += $target
+            Write-Host "[uninstall] still in use, left in place: $target"
+        } else {
+            Write-Host "[uninstall] removed: $target"
+        }
+    }
+
+    # Binaries retired by an upgrade (see the retirement dance in the install
+    # path). Same suffix filter as the install-time sweep, still scoped to this
+    # directory - without this an uninstall could leave a stray .old behind and
+    # then decline to remove the now "non-empty" directory below.
+    foreach ($stale in @(Get-ChildItem -LiteralPath $InstallDir -File -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -like "$BinaryName.old.*" -or $_.Name -like "$BinaryName.tmp.*" })) {
+        Remove-Item -LiteralPath $stale.FullName -Force -ErrorAction SilentlyContinue
+        # Report what actually happened. A retired binary stays locked while a
+        # process started from it is alive, and claiming to have removed it
+        # would leave the user puzzling over why the directory survives below.
+        if (Test-Path -LiteralPath $stale.FullName) {
+            Write-Host "[uninstall] still in use, left in place: $($stale.FullName)"
+        } else {
+            Write-Host "[uninstall] removed: $($stale.FullName)"
         }
     }
 
@@ -137,6 +165,15 @@ if ($Uninstall) {
         -not (Get-ChildItem -LiteralPath $InstallDir -Force)) {
         Remove-Item -LiteralPath $InstallDir -Force
         Write-Host "[uninstall] removed empty dir: $InstallDir"
+    }
+
+    if ($stuck.Count -gt 0) {
+        Write-Host ''
+        Write-Host '[uninstall] Some files were still in use and remain on disk:'
+        foreach ($t in $stuck) { Write-Host "    $t" }
+        Write-Host '    Quit your MCP client and close Chrome, then re-run this script to'
+        Write-Host '    finish. The registration is already removed, so Chrome will not'
+        Write-Host '    start browser-bridge again in the meantime.'
     }
 
     Write-Host '[uninstall] done. Host artifacts removed. Two things this script does NOT touch:'
@@ -188,8 +225,68 @@ if (Test-Path -LiteralPath (Join-Path $Root 'Cargo.toml')) {
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
 $installedBinary = Join-Path $InstallDir $BinaryName
 $temporaryBinary = "$installedBinary.tmp.$PID"
-Copy-Item -LiteralPath $binarySource -Destination $temporaryBinary -Force
-Move-Item -LiteralPath $temporaryBinary -Destination $installedBinary -Force
+
+# Sweep leftovers from earlier runs (see the retirement dance below) before we
+# add our own. Scoped to this directory and to the two suffixes this installer
+# creates - never a wildcard delete of the install dir.
+foreach ($stale in @(Get-ChildItem -LiteralPath $InstallDir -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -like "$BinaryName.old.*" -or $_.Name -like "$BinaryName.tmp.*" })) {
+    Remove-Item -LiteralPath $stale.FullName -Force -ErrorAction SilentlyContinue
+}
+
+try {
+    Copy-Item -LiteralPath $binarySource -Destination $temporaryBinary -Force
+
+    try {
+        # Fast path, and the only path on a fresh install or when the user has
+        # closed everything: drop the new image straight onto the old one.
+        Move-Item -LiteralPath $temporaryBinary -Destination $installedBinary -Force
+    } catch {
+        # Upgrading is the normal case, and on an upgrade the old binary is
+        # usually RUNNING: the MCP client holds one (the server) and an open
+        # Chrome holds another (the native host, spawned via the manifest).
+        # Windows refuses to overwrite a running image, so the move above fails
+        # with ERROR_ALREADY_EXISTS and every upgrade used to abort here (#133).
+        #
+        # Windows does allow RENAMING a running image, though - the lock is on
+        # the path, not the bytes. So retire the old file out of the way and
+        # move the new one into the path it just vacated. The live processes
+        # keep running from the renamed file and exit on their own.
+        $retired = "$installedBinary.old.$PID"
+        try {
+            Move-Item -LiteralPath $installedBinary -Destination $retired -Force
+        } catch {
+            throw @"
+Cannot replace $installedBinary - it is in use and could not be moved aside.
+Close the programs still holding it, then run this installer again:
+  1. Quit your MCP client (Claude Code, Codex, Claude Desktop, ...), which runs
+     browser-bridge as its MCP server.
+  2. Close Google Chrome, which spawns browser-bridge as its native messaging host.
+Underlying error: $($_.Exception.Message)
+"@
+        }
+        try {
+            Move-Item -LiteralPath $temporaryBinary -Destination $installedBinary -Force
+        } catch {
+            # The old image is out of the way and the new one did not land, so
+            # the host manifest now points at a path with no file - a worse state
+            # than the failure this whole branch exists to avoid. Put it back.
+            Move-Item -LiteralPath $retired -Destination $installedBinary -Force -ErrorAction SilentlyContinue
+            throw
+        }
+        # Best effort, and it usually fails: the extension holds its native-host
+        # port open for as long as Chrome runs (the wake-alarm backstop), so a
+        # process started from the retired image is still alive and Windows keeps
+        # that file locked. Harmless - the sweep at the top of a later run, once
+        # Chrome has been closed, collects it.
+        Remove-Item -LiteralPath $retired -Force -ErrorAction SilentlyContinue
+    }
+} finally {
+    # Never leave a half-installed .tmp behind, on any exit path.
+    if (Test-Path -LiteralPath $temporaryBinary) {
+        Remove-Item -LiteralPath $temporaryBinary -Force -ErrorAction SilentlyContinue
+    }
+}
 Write-Host "[install] binary installed at $installedBinary"
 
 # Chrome appends the calling extension origin on Windows. The executable uses
