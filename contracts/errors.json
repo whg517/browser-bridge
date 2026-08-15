@@ -1,100 +1,101 @@
 {
-  "$comment": "SINGLE SOURCE OF TRUTH for cross-process error codes. Rust maps CallError -> code (verified by cargo test against this file); the extension maps its failures to the same codes. `code` is for programmatic handling; the model/user sees `message`.",
+  "$comment": "SINGLE SOURCE OF TRUTH for cross-process error codes. Every code names WHO produces it via `producer`: `rust` codes are assigned by the MCP server (src/error.rs, verified by the codes_match_contract test), `extension` codes travel on BridgeResp.code (extension/src/shared/bridge-error.ts, allowlisted in src/error.rs EXTENSION_CODES), and `reserved` codes are deliberately unimplemented with the reason stated. A code with no producer is a lie the clients act on -- `retryable` is per-code metadata, so an unproducible retryable code means transient failures get reported as permanent. The every_code_has_a_producer test fails if one appears.",
   "errors": [
     {
       "code": "INVALID_ARGUMENT",
       "category": "protocol",
       "retryable": false,
       "message": "The tool arguments were missing or invalid.",
-      "rust": ["UnknownTool", "InvalidArgument"]
+      "rust": [
+        "UnknownTool",
+        "InvalidArgument"
+      ],
+      "producer": "rust"
     },
     {
       "code": "NOT_CONNECTED",
       "category": "connection",
       "retryable": true,
       "message": "The browser extension is not connected. Most often its MV3 service worker is asleep (Chrome stops it after ~30s idle) — the extension re-checks every 30s, so a retry usually succeeds; otherwise the user clicks the toolbar icon.",
-      "rust": ["NotConnected"]
+      "rust": [
+        "NotConnected"
+      ],
+      "producer": "rust"
     },
     {
       "code": "PROTOCOL_MISMATCH",
       "category": "protocol",
       "retryable": false,
-      "message": "The extension and server protocol versions are incompatible; reload or upgrade the extension."
+      "message": "The extension and server protocol versions are incompatible; reload or upgrade the extension.",
+      "producer": "reserved",
+      "reserved": "The capability/version handshake that would emit this is deferred until there is a real protocol v2 to reject -- see contracts/capabilities.json handshake.onMismatch."
     },
     {
       "code": "EXTENSION_NOT_READY",
       "category": "connection",
       "retryable": true,
-      "message": "The extension service worker is not ready yet; retry shortly."
-    },
-    {
-      "code": "HOST_PERMISSION_MISSING",
-      "category": "permission",
-      "retryable": false,
-      "message": "The extension lacks host permission for the target origin."
+      "message": "The extension cannot act on the tab yet -- most often it was just opened and has not navigated, so it has no URL. Retry shortly.",
+      "producer": "extension"
     },
     {
       "code": "TOOL_DISABLED",
       "category": "permission",
       "retryable": false,
-      "message": "This tool is disabled in the extension settings."
-    },
-    {
-      "code": "USER_DENIED",
-      "category": "user",
-      "retryable": false,
-      "message": "The user rejected the action."
-    },
-    {
-      "code": "CONFIRMATION_TIMEOUT",
-      "category": "user",
-      "retryable": true,
-      "message": "The confirmation prompt timed out without a decision."
+      "message": "This tool is disabled in the extension settings.",
+      "producer": "extension"
     },
     {
       "code": "TAB_NOT_FOUND",
       "category": "execution",
       "retryable": false,
-      "message": "The target tab could not be found."
+      "message": "The target tab could not be found; it was closed or the id is stale. Call tab_list again.",
+      "producer": "extension"
     },
     {
       "code": "UNSUPPORTED_PAGE",
       "category": "execution",
       "retryable": false,
-      "message": "The tool cannot run on this page (e.g. chrome://, the Web Store, or a DevTools-attached tab)."
+      "message": "The tool cannot run on this page (e.g. chrome://, the Web Store, or a DevTools-attached tab).",
+      "producer": "extension"
     },
     {
       "code": "EXECUTION_FAILED",
       "category": "execution",
       "retryable": false,
       "message": "The extension executed the operation but it failed.",
-      "rust": ["Extension"]
+      "rust": [
+        "Extension"
+      ],
+      "producer": "rust"
     },
     {
       "code": "PAYLOAD_TOO_LARGE",
       "category": "protocol",
       "retryable": false,
-      "message": "The message exceeded the native-messaging size limit."
+      "message": "The message exceeded the native-messaging size limit.",
+      "producer": "reserved",
+      "reserved": "Nothing measures outbound frames against the 1MB native-messaging limit yet; exceeding it makes Chrome close the port instead. Kept because a guard is wanted (page_screenshot can plausibly exceed it), not because it is produced."
     },
     {
       "code": "RESPONSE_TIMEOUT",
       "category": "connection",
       "retryable": true,
       "message": "The extension did not respond in time.",
-      "rust": ["Timeout"]
+      "rust": [
+        "Timeout"
+      ],
+      "producer": "rust"
     },
     {
       "code": "CONNECTION_LOST",
       "category": "connection",
       "retryable": true,
       "message": "The bridge connection was lost while awaiting a response.",
-      "rust": ["Disconnected", "Write"]
-    },
-    {
-      "code": "INTERNAL_ERROR",
-      "category": "internal",
-      "retryable": false,
-      "message": "An unexpected internal error occurred."
+      "rust": [
+        "Disconnected",
+        "Write"
+      ],
+      "producer": "rust"
     }
   ]
 }

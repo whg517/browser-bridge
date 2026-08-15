@@ -31,6 +31,10 @@ export interface BridgeResp {
   ok: boolean;
   data?: unknown;
   error?: string;
+  /** Stable taxonomy code from contracts/errors.json, when the failure is one
+   *  the extension can name. Absent means "unclassified" and the Rust side
+   *  reports EXECUTION_FAILED. */
+  code?: string;
 }
 
 // The loose args bag carried across the service-worker → content-script

@@ -1,14 +1,24 @@
 // Tab resolution, content-script injection, and the tab-level tools
 // (tab_list / tab_focus / tab_open / tab_close).
 
+import { BridgeError } from "../shared/bridge-error";
 import { TOP_FRAME } from "./frames";
 
 export async function resolveTargetTab(maybeTabId: number | undefined): Promise<chrome.tabs.Tab> {
   if (maybeTabId) {
-    return await chrome.tabs.get(maybeTabId);
+    try {
+      return await chrome.tabs.get(maybeTabId);
+    } catch (e) {
+      // chrome.tabs.get rejects with "No tab with id: N" for a closed or made-up
+      // id. That is the caller naming a tab that is not there, not the page
+      // failing, so it gets its own code rather than the generic one.
+      throw new BridgeError("TAB_NOT_FOUND", `tab ${maybeTabId} not found — call tab_list again`, {
+        cause: e,
+      });
+    }
   }
   const [active] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (!active) throw new Error("no active tab");
+  if (!active) throw new BridgeError("TAB_NOT_FOUND", "no active tab in the current window");
   return active;
 }
 
@@ -91,7 +101,7 @@ export async function tabList() {
 export async function tabFocus(tabId: number) {
   // @types/chrome >=0.1 types tabs.update as `Tab | undefined` (no tab for the id).
   const t = await chrome.tabs.update(tabId, { active: true });
-  if (!t) throw new Error(`tab ${tabId} not found`);
+  if (!t) throw new BridgeError("TAB_NOT_FOUND", `tab ${tabId} not found — call tab_list again`);
   await chrome.windows.update(t.windowId, { focused: true });
   return { focused: tabId };
 }

@@ -14,7 +14,7 @@ import type { OpArgs } from "../../shared/types";
 import type { PageBackend } from "../page-backend";
 import { maskSensitive, maskNamedValue } from "../../shared/masking";
 import { truncate } from "../../content/util";
-import { isDebuggable, type CdpSession, type EvaluateResponse } from "../cdp/session";
+import { assertDrivable, type CdpSession, type EvaluateResponse } from "../cdp/session";
 import { cdpRegistry } from "../cdp/registry";
 import { pageScroll, pageWaitFor, readStorage } from "../cdp/page-fns";
 import { ContentScriptBackend } from "./content-script";
@@ -39,11 +39,7 @@ export class CdpBackend implements PageBackend {
       return await contentScriptReads.run(op, args, tab);
     }
 
-    if (!isDebuggable(tab.url)) {
-      throw new Error(
-        `CDP mode cannot control this page (URL scheme not allowed): ${(tab.url || "").slice(0, 80)}`
-      );
-    }
+    assertDrivable(tab.url, "CDP mode cannot control this page");
     const session = await cdpRegistry.get(tab.id!);
 
     switch (op) {

@@ -2,6 +2,7 @@
 // run here in the SW; page-level ops are forwarded to the target tab's content
 // script (injecting it first).
 
+import { BridgeError } from "../shared/bridge-error";
 import type { BridgeReq } from "../shared/types";
 import { getSetting } from "../shared/settings";
 import { TOOL_META } from "../shared/ops";
@@ -26,7 +27,7 @@ export function assertNotDisabled(op: string | undefined, disabledTools: string[
   if (!op || !(op in TOOL_META)) return;
   const decision = decide(op, { disabledTools });
   if (!decision.allowed && decision.reason === "tool disabled in settings") {
-    throw new Error(`${decision.reason}: ${op}`);
+    throw new BridgeError("TOOL_DISABLED", `${decision.reason}: ${op}`);
   }
 }
 

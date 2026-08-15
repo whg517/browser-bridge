@@ -6,6 +6,8 @@
 // implementation (see ADR-0017). `evaluate` runs code in the page's MAIN world
 // via Runtime.evaluate — this is what lets CDP mode bypass page CSP.
 
+import { BridgeError } from "../../shared/bridge-error";
+
 // The subset of the CDP payloads we read (not the full protocol).
 interface RemoteObject {
   type?: string;
@@ -38,6 +40,32 @@ export const NON_DEBUGGABLE = [
 export function isDebuggable(url: string | undefined): boolean {
   if (!url) return false;
   return !NON_DEBUGGABLE.some((re) => re.test(url));
+}
+
+/**
+ * Throw if `url` cannot be driven through the debugger, naming WHICH of the two
+ * reasons applies.
+ *
+ * `isDebuggable` answers false for both "no URL yet" and "scheme not allowed",
+ * and callers used to report the merged answer as a scheme rejection — printing
+ * "...not allowed:" with nothing after it for a tab that had simply not
+ * navigated yet, under a non-retryable code (#136). They are different states:
+ * one resolves on its own in a moment, the other never will.
+ */
+export function assertDrivable(url: string | undefined, what: string): void {
+  if (!url) {
+    throw new BridgeError(
+      "EXTENSION_NOT_READY",
+      `${what}: the tab has not navigated yet, so it has no URL. It was most ` +
+        `likely just opened — retry in a moment.`
+    );
+  }
+  if (!isDebuggable(url)) {
+    throw new BridgeError(
+      "UNSUPPORTED_PAGE",
+      `${what}: this page's URL scheme cannot be driven by the debugger (${url.slice(0, 80)})`
+    );
+  }
 }
 
 // Promisified chrome.debugger primitives. Exported so precise.ts reuses them.
