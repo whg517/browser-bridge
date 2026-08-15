@@ -49,6 +49,20 @@ pub enum CallError {
     #[error("{0}")]
     InvalidArgument(String),
 
+    /// The request would not fit in one native-messaging message.
+    ///
+    /// Chrome closes the port outright if a message to it exceeds 1 MB, so the
+    /// framing layer refuses to write one — but that refusal reaches the native
+    /// host as an ordinary write error, which it treats as fatal and tears the
+    /// connection down for. Catching the size here instead fails the one call
+    /// that is too big, with a code that says so, and never touches the bridge.
+    #[error(
+        "request is {bytes} bytes, over the 1 MB limit for a single message to Chrome. \
+         Send less data: fill a long value in pieces, or have page_eval read what it needs \
+         from the page instead of receiving it as an argument."
+    )]
+    PayloadTooLarge { bytes: usize },
+
     /// The extension executed the op and reported a failure of its own.
     ///
     /// `code` is the extension's own classification when it had one. Before it
@@ -91,6 +105,7 @@ impl CallError {
             CallError::Disconnected => "CONNECTION_LOST",
             CallError::UnknownTool(_) => "INVALID_ARGUMENT",
             CallError::InvalidArgument(_) => "INVALID_ARGUMENT",
+            CallError::PayloadTooLarge { .. } => "PAYLOAD_TOO_LARGE",
             CallError::Extension { code, .. } => code
                 .as_deref()
                 .and_then(|c| EXTENSION_CODES.iter().copied().find(|known| *known == c))
@@ -222,6 +237,10 @@ mod tests {
             (
                 "InvalidArgument",
                 CallError::InvalidArgument("bad args".into()),
+            ),
+            (
+                "PayloadTooLarge",
+                CallError::PayloadTooLarge { bytes: 2_000_000 },
             ),
             (
                 "Extension",

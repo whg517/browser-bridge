@@ -72,9 +72,11 @@
       "code": "PAYLOAD_TOO_LARGE",
       "category": "protocol",
       "retryable": false,
-      "message": "The message exceeded the native-messaging size limit.",
-      "producer": "reserved",
-      "reserved": "Nothing measures outbound frames against the 1MB native-messaging limit yet; exceeding it makes Chrome close the port instead. Kept because a guard is wanted (page_screenshot can plausibly exceed it), not because it is produced."
+      "message": "The request is larger than the 1 MB limit for a single native-messaging message to Chrome. Send less data rather than retrying.",
+      "producer": "rust",
+      "rust": [
+        "PayloadTooLarge"
+      ]
     },
     {
       "code": "RESPONSE_TIMEOUT",

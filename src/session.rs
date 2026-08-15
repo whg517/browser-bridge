@@ -331,6 +331,28 @@ impl Session {
         // with the UNSENT sentinel; it is rewritten to the real generation under
         // the conn lock just before the write. A reader draining a real
         // generation (>= 1) will never touch this sentinel entry.
+        // Refuse an oversized request here, before it is registered or sent.
+        // The host would otherwise reject it at the framing layer and treat that
+        // as a fatal write error, dropping the whole connection — the client got
+        // CONNECTION_LOST (retryable) for one malformed call and would sensibly
+        // retry it into the same failure. Measured: a 0.9 MB page_fill goes
+        // through, 1.2 MB took the bridge down.
+        //
+        // The length measured here is the length the host will frame: it
+        // forwards the parsed value verbatim, and serde_json emits the same
+        // bytes for the same keys and values.
+        match serde_json::to_vec(&req) {
+            Ok(encoded) if encoded.len() > crate::protocol::NM_MAX_OUTGOING => {
+                return Err(CallError::PayloadTooLarge {
+                    bytes: encoded.len(),
+                });
+            }
+            Ok(_) => {}
+            // Unserializable args are not a size problem; let the normal path
+            // surface whatever it surfaces rather than guessing here.
+            Err(_) => {}
+        }
+
         let (tx, rx) = mpsc::channel::<BridgeResp>();
         self.pending
             .lock()
