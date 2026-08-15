@@ -29,6 +29,21 @@ export function connectNative() {
     clearTimeout(reconnectTimer);
     reconnectTimer = null;
   }
+  // Disconnect before replacing. `background.ts` calls this from BOTH the
+  // onInstalled listener and module top level, so a reload opens two ports and
+  // Chrome spawns a host for each. That used to be self-healing — the surplus
+  // host could not reach a server and exited on its own — but now that the host
+  // waits instead of exiting, an abandoned port leaves a process waiting
+  // forever. Observed as two resident hosts under one Chrome after a reload.
+  if (port) {
+    try {
+      port.disconnect();
+    } catch {
+      // Already gone; nothing to release.
+    }
+    port = null;
+    portOk = false;
+  }
   try {
     port = chrome.runtime.connectNative(NATIVE_HOST);
     portOk = true;
