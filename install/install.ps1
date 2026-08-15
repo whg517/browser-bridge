@@ -238,7 +238,15 @@ Close the programs still holding it, then run this installer again:
 Underlying error: $($_.Exception.Message)
 "@
         }
-        Move-Item -LiteralPath $temporaryBinary -Destination $installedBinary -Force
+        try {
+            Move-Item -LiteralPath $temporaryBinary -Destination $installedBinary -Force
+        } catch {
+            # The old image is out of the way and the new one did not land, so
+            # the host manifest now points at a path with no file - a worse state
+            # than the failure this whole branch exists to avoid. Put it back.
+            Move-Item -LiteralPath $retired -Destination $installedBinary -Force -ErrorAction SilentlyContinue
+            throw
+        }
         # Best effort, and it usually fails: the extension holds its native-host
         # port open for as long as Chrome runs (the wake-alarm backstop), so a
         # process started from the retired image is still alive and Windows keeps
