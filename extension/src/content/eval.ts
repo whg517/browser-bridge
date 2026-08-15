@@ -1,10 +1,17 @@
 // page_eval (high-risk) — execute arbitrary JS in the page's global scope.
 // Result is safely serialized and always masked before returning. Gated by the
 // per-tool enable/disable (Tool enablement).
+//
+// This backend only runs with CDP mode OFF (the default), where the extension's
+// own CSP forbids `new Function` on every site — so in practice its whole job is
+// to classify that block and say so. The evaluation path below is kept correct
+// and in step with the CDP backend anyway: "always blocked" is an observation
+// about current Chrome, not a guarantee across versions, policies and forks.
 
 import type { OpArgs } from "../shared/types";
 import { maskSensitive } from "../shared/masking";
 import { CSP_EVAL_MESSAGE, isCspEvalBlock } from "../shared/csp-eval";
+import { serializeForBridge } from "../shared/serialize";
 import { truncate } from "./util";
 
 export async function runEval(args: OpArgs) {
@@ -15,10 +22,9 @@ export async function runEval(args: OpArgs) {
   // Execute. Wrap as an async IIFE in the global scope so the code can use
   // await/return and see page globals. `new Function` (not eval) gives us
   // global scope regardless of the strict-mode closure this file runs in.
-  let result: any;
+  let result: unknown;
   try {
-    const fn = new Function('"use strict";\n' + "return (async () => {\n" + code + "\n})();");
-    result = await fn();
+    result = await buildEval(code)();
   } catch (e: any) {
     // The isolated-world CSP block is not a fault in the caller's code and the
     // model cannot work around it, so it must not come back as an __evalError
@@ -42,73 +48,28 @@ export async function runEval(args: OpArgs) {
     };
   }
   // Always mask token-like values before returning (the mask toggle was removed).
-  return maskSensitive(serializeResult(result));
+  return maskSensitive(serializeForBridge(result));
 }
 
-// Safe serialization: handles cycles, DOM nodes, errors, exotic types, and
-// truncates very large payloads. Returns JSON-serializable data.
-function serializeResult(value: any, seen = new WeakSet(), depth = 0): any {
-  if (depth > 50) return "[depth limit]";
-  if (value === null || value === undefined) return value;
-  const t = typeof value;
-  if (t === "string") return truncate(value, 10000);
-  if (t === "number" || t === "boolean") return value;
-  if (t === "bigint") return `[BigInt:${value.toString()}]`;
-  if (t === "symbol") return `[Symbol:${value.toString()}]`;
-  if (t === "function") return `[function:${value.name || "anonymous"}]`;
-  if (t === "object") {
-    // Error → structured
-    if (value instanceof Error) {
-      return { __error: true, name: value.name, message: value.message };
-    }
-    // DOM node → short tag descriptor
-    if (value instanceof Element) {
-      const id = value.id ? `#${value.id}` : "";
-      return `<${value.tagName.toLowerCase()}${id}>`;
-    }
-    if (value instanceof Node) {
-      return `<${value.nodeName}>`;
-    }
-    // Cycle guard
-    if (seen.has(value)) return "[Circular]";
-    seen.add(value);
-    try {
-      if (Array.isArray(value)) {
-        if (value.length > 1000) return `[Array length=${value.length}, truncated]`;
-        return value.slice(0, 1000).map((v) => serializeResult(v, seen, depth + 1));
-      }
-      // Plain object: enumerate own keys. Map/Set/Date get special tags.
-      if (value instanceof Map) {
-        const obj: any = {};
-        let i = 0;
-        for (const [k, v] of value) {
-          obj[String(k)] = serializeResult(v, seen, depth + 1);
-          if (++i > 1000) break;
-        }
-        return { __Map: obj };
-      }
-      if (value instanceof Set) {
-        return {
-          __Set: Array.from(value)
-            .slice(0, 1000)
-            .map((v) => serializeResult(v, seen, depth + 1)),
-        };
-      }
-      if (value instanceof Date) return { __Date: value.toISOString() };
-      if (value instanceof RegExp) return { __RegExp: value.toString() };
-      const out: any = {};
-      let count = 0;
-      for (const key of Object.keys(value)) {
-        if (count++ > 1000) {
-          out.__truncated = true;
-          break;
-        }
-        out[key] = serializeResult(value[key], seen, depth + 1);
-      }
-      return out;
-    } finally {
-      seen.delete(value);
-    }
+/**
+ * Compile the caller's code, preferring an expression BODY.
+ *
+ * A block body discards an expression statement's value, so `1+1` evaluated to
+ * nothing while plainly having run. `new Function` throws at CONSTRUCTION for a
+ * parse failure — before any of the caller's code executes — which is what makes
+ * falling back to the statement body free of double side effects. Retrying after
+ * a *runtime* SyntaxError would not be: `JSON.parse("{")` throws one too, after
+ * whatever ran before it.
+ */
+function buildEval(code: string): () => Promise<unknown> {
+  const asExpression = '"use strict";\nreturn (async () => (\n' + code + "\n))();";
+  const asStatements = '"use strict";\nreturn (async () => {\n' + code + "\n})();";
+  try {
+    return new Function(asExpression) as () => Promise<unknown>;
+  } catch (e) {
+    // A CSP block is not about the shape of the code; re-throw so runEval
+    // classifies it. Anything else means "not a single expression".
+    if (isCspEvalBlock(e)) throw e;
+    return new Function(asStatements) as () => Promise<unknown>;
   }
-  return String(value);
 }
