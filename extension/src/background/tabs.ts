@@ -4,18 +4,33 @@
 import { BridgeError } from "../shared/bridge-error";
 import { TOP_FRAME } from "./frames";
 
+/**
+ * Run a chrome.tabs call, classifying "that tab is gone" as TAB_NOT_FOUND.
+ *
+ * chrome.tabs.get/update/remove REJECT with "No tab with id: N" for a closed or
+ * made-up id — they do not resolve with undefined, which is what a `if (!t)`
+ * guard would catch. Tagging only that guard left tab_focus and tab_close
+ * reporting a stale id as EXECUTION_FAILED, the generic "the op ran and failed"
+ * code, which is the case #134 used as its own example.
+ *
+ * Only that rejection is reclassified. Anything else — a windows.update
+ * failure, a permission problem — keeps its own identity rather than being
+ * relabelled as a missing tab.
+ */
+async function asTabLookup<T>(tabId: number, work: () => Promise<T>): Promise<T> {
+  try {
+    return await work();
+  } catch (e) {
+    if (!/no tab with id/i.test(String((e as Error)?.message || e))) throw e;
+    throw new BridgeError("TAB_NOT_FOUND", `tab ${tabId} not found — call tab_list again`, {
+      cause: e,
+    });
+  }
+}
+
 export async function resolveTargetTab(maybeTabId: number | undefined): Promise<chrome.tabs.Tab> {
   if (maybeTabId) {
-    try {
-      return await chrome.tabs.get(maybeTabId);
-    } catch (e) {
-      // chrome.tabs.get rejects with "No tab with id: N" for a closed or made-up
-      // id. That is the caller naming a tab that is not there, not the page
-      // failing, so it gets its own code rather than the generic one.
-      throw new BridgeError("TAB_NOT_FOUND", `tab ${maybeTabId} not found — call tab_list again`, {
-        cause: e,
-      });
-    }
+    return await asTabLookup(maybeTabId, () => chrome.tabs.get(maybeTabId));
   }
   const [active] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!active) throw new BridgeError("TAB_NOT_FOUND", "no active tab in the current window");
@@ -99,8 +114,11 @@ export async function tabList() {
 }
 
 export async function tabFocus(tabId: number) {
-  // @types/chrome >=0.1 types tabs.update as `Tab | undefined` (no tab for the id).
-  const t = await chrome.tabs.update(tabId, { active: true });
+  // @types/chrome >=0.1 types tabs.update as `Tab | undefined` (no tab for the id),
+  // but in practice a bad id REJECTS rather than resolving undefined — so the
+  // rejection is where the classification has to happen. The guard stays for the
+  // shape the types describe.
+  const t = await asTabLookup(tabId, () => chrome.tabs.update(tabId, { active: true }));
   if (!t) throw new BridgeError("TAB_NOT_FOUND", `tab ${tabId} not found — call tab_list again`);
   await chrome.windows.update(t.windowId, { focused: true });
   return { focused: tabId };
@@ -147,9 +165,10 @@ async function addToWorkspaceGroup(
 }
 
 export async function tabClose(tabId: number) {
-  // Closes the tab directly. `get` first so a bad id fails with Chrome's clear
-  // "No tab with id" error rather than a bare remove rejection.
-  await chrome.tabs.get(tabId);
-  await chrome.tabs.remove(tabId);
+  // Closes the tab directly. `get` first so a bad id fails before anything is
+  // removed, and so the failure is classified rather than surfacing as a bare
+  // remove rejection.
+  await asTabLookup(tabId, () => chrome.tabs.get(tabId));
+  await asTabLookup(tabId, () => chrome.tabs.remove(tabId));
   return { closed: tabId };
 }
