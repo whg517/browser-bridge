@@ -571,6 +571,52 @@ def test_extension_error_code_reaches_the_client():
         mcp.wait(timeout=3)
 
 
+def test_oversized_request_fails_the_call_not_the_bridge():
+    print("\n[test] an oversized request fails that call and leaves the bridge up")
+    try:
+        os.remove(LOCK)
+    except FileNotFoundError:
+        pass
+    mcp, log = start_server()
+    try:
+        lf = wait_lock(mcp)
+        check(lf is not None, "lock file written")
+
+        def responder(req):
+            return {"id": req["id"], "ok": True, "data": {"filled": req["args"].get("ref")}}
+
+        s, serve = mock_extension(lf, responder, log=log)
+        c = McpClient(mcp)
+        c.initialize()
+        c.initialized()
+        time.sleep(0.1)
+
+        # Over the 1MB cap the native host may write toward Chrome. Rejected on
+        # the server, so nothing is registered and nothing reaches the wire.
+        r = c.call("page_fill", {"ref": "e1", "value": "x" * 1_200_000}, _id=5)
+        text = r["result"]["content"][0]["text"]
+        check(r["result"].get("isError") is True, "the oversized call is an error")
+        check("PAYLOAD_TOO_LARGE" in text, f"and carries PAYLOAD_TOO_LARGE ({text[:70]})")
+        check("1 MB" in text, "the message says what the limit is")
+
+        # The point of the fix: the connection is untouched. Prove it by using
+        # it — if the bridge had been torn down this would be CONNECTION_LOST.
+        served = []
+        t = threading.Thread(target=lambda: served.append(serve()), daemon=True)
+        t.start()
+        r = c.call("page_fill", {"ref": "e1", "value": "small"}, _id=6)
+        t.join(timeout=5)
+        check(r["result"].get("isError") is False, "the next call still works")
+        check(bool(served) and served[0]["op"] == "page_fill", "and reached the extension")
+        s.close()
+    finally:
+        try:
+            mcp.stdin.close()
+        except Exception:
+            pass
+        mcp.wait(timeout=3)
+
+
 def test_page_eval_round_trip():
     print("\n[test] page_eval round-trip (op reaches extension)")
     try:
@@ -1048,6 +1094,7 @@ def main():
     test_tab_list_round_trip()
     test_relative_tab_open_never_reaches_the_extension()
     test_extension_error_code_reaches_the_client()
+    test_oversized_request_fails_the_call_not_the_bridge()
     test_page_eval_round_trip()
     test_page_snapshot_precise_round_trip()
     test_cookie_get_round_trip()
