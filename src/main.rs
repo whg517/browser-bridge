@@ -6,7 +6,9 @@
 //! - --native-host: Chrome-spawned bridge subprocess. Chrome launches this
 //!   via the native messaging host manifest; it should never be invoked by hand.
 
-use browser_bridge::cli::{is_native_host_mode, print_help, print_tools};
+use browser_bridge::cli::{
+    is_native_host_mode, print_help, print_tools, print_version, unknown_flag,
+};
 use browser_bridge::{doctor, mcp_server, native_host};
 
 fn main() {
@@ -15,6 +17,9 @@ fn main() {
         native_host::run()
     } else if args.len() > 1 && (args[1] == "-h" || args[1] == "--help") {
         print_help();
+        0
+    } else if args.len() > 1 && (args[1] == "-V" || args[1] == "--version") {
+        print_version();
         0
     } else if args.len() > 1 && (args[1] == "doctor" || args[1] == "status") {
         doctor::run()
@@ -32,6 +37,13 @@ fn main() {
                 2
             }
         }
+    } else if let Some(flag) = unknown_flag(&args) {
+        // Reject rather than fall through: the default branch starts an MCP
+        // server, and starting one terminates the server currently holding the
+        // lock. A mistyped flag must not end somebody's session.
+        eprintln!("browser-bridge: unrecognized option `{flag}`\n");
+        print_help();
+        2
     } else {
         mcp_server::run()
     };
