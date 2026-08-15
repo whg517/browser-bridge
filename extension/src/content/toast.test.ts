@@ -23,6 +23,7 @@ class FakeElement {
   children: FakeElement[] = [];
   parent: FakeElement | null = null;
   onclick: (() => void) | null = null;
+  onAppend: ((child: FakeElement) => void) | null = null;
   private stubs = new Map<string, FakeElement>();
 
   classList = {
@@ -34,6 +35,7 @@ class FakeElement {
   appendChild(child: FakeElement) {
     child.parent = this;
     this.children.push(child);
+    this.onAppend?.(child);
   }
 
   // innerHTML is assigned as a template, then queried by class. Hand back a
@@ -57,19 +59,16 @@ class FakeElement {
 function installFakeDom() {
   const body = new FakeElement();
   const byId = new Map<string, FakeElement>();
+  body.onAppend = (el) => {
+    // ensureToastHost sets .id before appending, so registering here is enough
+    // for a second call to find the existing host instead of duplicating it.
+    if (el.id) byId.set(el.id, el);
+  };
   (globalThis as Record<string, unknown>).document = {
     body,
     documentElement: body,
     getElementById: (id: string) => byId.get(id) ?? null,
-    createElement: () => {
-      const el = new FakeElement();
-      // ensureToastHost sets .id then appends; register it so the second call
-      // reuses the same host rather than creating a duplicate.
-      queueMicrotask(() => {
-        if (el.id) byId.set(el.id, el);
-      });
-      return el;
-    },
+    createElement: () => new FakeElement(),
   };
   return { body };
 }
