@@ -442,9 +442,9 @@ def test_relative_tab_open_never_reaches_the_extension():
         check(lf is not None, "lock file written")
 
         def responder(req):
-            # Reached only if the guard let the call through. chrome.tabs.create
-            # would resolve "notaurl" against the extension's own origin.
-            return {"id": req["id"], "ok": True, "data": {"opened": 7}}
+            # tab_open here would mean the guard let it through; chrome.tabs.create
+            # would then resolve "notaurl" against the extension's own origin.
+            return {"id": req["id"], "ok": True, "data": []}
 
         s, serve = mock_extension(lf, responder, log=log)
         c = McpClient(mcp)
@@ -458,19 +458,38 @@ def test_relative_tab_open_never_reaches_the_extension():
             try:
                 served.append(serve())
             except Exception:
-                pass  # the socket read times out, which is the expected outcome
+                pass
 
         t = threading.Thread(target=try_serve, daemon=True)
         t.start()
 
         r = c.call("tab_open", {"url": "notaurl"}, _id=5)
-        t.join(timeout=1.5)
-
         check(r["result"].get("isError") is True, "relative url is rejected")
         text = r["result"]["content"][0]["text"]
         check("INVALID_ARGUMENT" in text, "rejection carries the argument code")
         check("absolute" in text, "rejection says the url must be absolute")
-        check(not served, "the extension never received the call")
+
+        # Prove the rejected call never reached the wire WITHOUT racing a timeout:
+        # make a legitimate call and require it to be the FIRST thing the mock
+        # sees. Waiting a fixed interval and asserting "nothing arrived" would
+        # pass spuriously whenever the request merely arrived late.
+        c.call("tab_list", {}, _id=6)
+        t.join(timeout=5)
+        check(bool(served), "the mock served a request")
+        check(
+            served[0] is not None and served[0]["op"] == "tab_list",
+            f"first op on the wire is tab_list, not the rejected tab_open "
+            f"(got {served[0] and served[0].get('op')})",
+        )
+
+        # Same argument for the wrong-typed form, which the schema type check now
+        # rejects before the coercion in build_tab_open could blank it out.
+        r = c.call("tab_open", {"url": 123}, _id=7)
+        check(r["result"].get("isError") is True, "a non-string url is rejected")
+        check(
+            "INVALID_ARGUMENT" in r["result"]["content"][0]["text"],
+            "the type rejection carries the argument code",
+        )
         s.close()
     finally:
         try:

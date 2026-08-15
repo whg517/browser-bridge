@@ -140,6 +140,74 @@ fn check_required(name: &str, args: &Value) -> Result<(), CallError> {
     Ok(())
 }
 
+/// Reject arguments whose JSON type contradicts the tool's published schema.
+///
+/// The `build_*` helpers read through `as_str` / `as_i64` and fall back to
+/// `""` / `0`, so a wrong-typed argument was not rejected — it was silently
+/// replaced. `tab_open {"url": 123}` reached the extension as an empty url, and
+/// `tab_focus {"tabId": "123"}` as tab 0. Both look like the tool misbehaving
+/// rather than the call being malformed.
+///
+/// Only types the schema actually declares are enforced, and only for arguments
+/// that are present; absence is `check_required`'s job.
+fn check_arg_types(name: &str, args: &Value) -> Result<(), CallError> {
+    let Some(tool) = all().into_iter().find(|t| t.name == name) else {
+        return Ok(());
+    };
+    let Some(props) = tool
+        .input_schema
+        .get("properties")
+        .and_then(Value::as_object)
+    else {
+        return Ok(());
+    };
+    let Some(given) = args.as_object() else {
+        return Ok(());
+    };
+    for (key, value) in given {
+        let Some(expected) = props
+            .get(key)
+            .and_then(|s| s.get("type"))
+            .and_then(Value::as_str)
+        else {
+            continue; // not in the schema, or untyped — nothing to check against
+        };
+        // Null reads as "not supplied"; check_required decides whether that is
+        // allowed, so it must not be rejected here as a type error too.
+        if value.is_null() {
+            continue;
+        }
+        let ok = match expected {
+            "string" => value.is_string(),
+            "integer" => value.is_i64() || value.is_u64(),
+            "number" => value.is_number(),
+            "boolean" => value.is_boolean(),
+            "object" => value.is_object(),
+            "array" => value.is_array(),
+            _ => true,
+        };
+        if !ok {
+            return Err(CallError::InvalidArgument(format!(
+                "{name}: `{key}` must be {expected}, got {}",
+                json_type_name(value)
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn json_type_name(v: &Value) -> &'static str {
+    match v {
+        Value::Null => "null",
+        Value::Bool(_) => "boolean",
+        Value::Number(n) if n.is_f64() => "number",
+        Value::Number(_) => "integer",
+        Value::String(_) => "string",
+        Value::Array(_) => "array",
+        Value::Object(_) => "object",
+    }
+}
+
 /// Does `s` carry a URI scheme — `scheme:` before any `/`, `?` or `#`?
 ///
 /// RFC 3986's definition, hand-rolled: the dependency set is deliberately tiny
@@ -205,6 +273,7 @@ pub struct Outcome {
 pub fn dispatch(session: &Session, name: &str, args: &Value) -> Outcome {
     let result = match HANDLERS.iter().find(|h| h.name == name) {
         Some(h) => check_required(name, args)
+            .and_then(|()| check_arg_types(name, args))
             .and_then(|()| check_absolute_url(name, args))
             .and_then(|()| call(session, name, None, (h.build_payload)(args))),
         None => Err(CallError::UnknownTool(name.to_string())),
@@ -344,6 +413,45 @@ mod tests {
                 "{ok} is absolute"
             );
         }
+    }
+
+    // The build_* helpers coerce through as_str/as_i64 with ""/0 fallbacks, so a
+    // wrong-typed argument used to be silently replaced rather than rejected —
+    // and the resulting empty url or tab 0 looked like the tool misbehaving.
+    #[test]
+    fn wrong_typed_args_are_invalid_arguments() {
+        let cases = [
+            ("tab_open", json!({ "url": 123 }), "url"),
+            ("tab_focus", json!({ "tabId": "123" }), "tabId"),
+            ("tab_close", json!({ "tabId": 1.5 }), "tabId"),
+            ("page_eval", json!({ "code": ["1+1"] }), "code"),
+            ("page_fill", json!({ "value": true }), "value"),
+            ("page_wait_for", json!({ "settled": "yes" }), "settled"),
+            ("page_scroll", json!({ "pixels": "500" }), "pixels"),
+        ];
+        for (tool, args, field) in cases {
+            let err = check_arg_types(tool, &args)
+                .expect_err(&format!("{tool}.{field} should be rejected"));
+            assert_eq!(err.code(), "INVALID_ARGUMENT", "{tool}.{field}");
+            assert!(
+                err.to_string().contains(field),
+                "the message names the field: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn correctly_typed_args_pass_the_type_check() {
+        assert!(check_arg_types("tab_open", &json!({ "url": "https://x.test" })).is_ok());
+        assert!(check_arg_types("tab_focus", &json!({ "tabId": 42 })).is_ok());
+        assert!(check_arg_types("page_wait_for", &json!({ "settled": true })).is_ok());
+        assert!(check_arg_types("page_scroll", &json!({ "pixels": -200 })).is_ok());
+        // Null is "not supplied" — check_required owns that decision, so the
+        // type check must not also reject it.
+        assert!(check_arg_types("tab_open", &json!({ "url": null })).is_ok());
+        // Unknown keys are not the type check's business.
+        assert!(check_arg_types("page_snapshot", &json!({ "junk": 1 })).is_ok());
+        assert!(check_arg_types("does_not_exist", &json!({ "x": 1 })).is_ok());
     }
 
     #[test]
