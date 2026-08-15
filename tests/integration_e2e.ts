@@ -18,8 +18,9 @@
  * nothing of yours; only Windows, whose registration is a global registry key,
  * needs a backup/restore.
  *
- * OPT-IN, macOS/Windows + Chrome for Testing (or Chromium). Pops a non-headless
- * window. Not part of the default suite or CI.
+ * OPT-IN, macOS/Windows/Linux + Chrome for Testing (or Chromium). Pops a
+ * non-headless window, so Linux needs a display (WSLg counts). Not part of the
+ * default suite or CI.
  *
  * Run:  BB_REAL_E2E=1 node tests/integration_e2e.ts
  */
@@ -44,9 +45,30 @@ const CHROME =
     : "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome");
 const HOST_NAME = "com.browser_bridge.host";
 const REG_KEY = `HKCU\\Software\\Google\\Chrome\\NativeMessagingHosts\\${HOST_NAME}`;
-const LOCK = IS_WINDOWS
-  ? path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData/Local"), "browser-bridge/run.lock")
-  : path.join(os.homedir(), "Library/Application Support/browser-bridge/run.lock");
+const LOCK = lockPath();
+
+/** Where the server writes run.lock, mirroring `LockFile::path()` in src/ipc.rs.
+ *
+ *  Linux follows XDG (ADR-0016) rather than the macOS location, and the fallback
+ *  order matters: a WSL or container session often has no XDG_RUNTIME_DIR, and
+ *  guessing the wrong directory here makes the test report "the MCP server never
+ *  wrote a lock file" for a server that started perfectly well. */
+function lockPath(): string {
+  if (IS_WINDOWS) {
+    return path.join(
+      process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData/Local"),
+      "browser-bridge/run.lock"
+    );
+  }
+  if (process.platform === "darwin") {
+    return path.join(os.homedir(), "Library/Application Support/browser-bridge/run.lock");
+  }
+  const dir =
+    (process.env.XDG_RUNTIME_DIR && path.join(process.env.XDG_RUNTIME_DIR, "browser-bridge")) ||
+    (process.env.XDG_CACHE_HOME && path.join(process.env.XDG_CACHE_HOME, "browser-bridge")) ||
+    path.join(os.homedir(), ".cache/browser-bridge");
+  return path.join(dir, "run.lock");
+}
 const FIXTURE = pathToFileURL(path.join(REPO, "tests", "fixtures", "page.html")).href;
 
 // ── preflight (opt-in) ─────────────────────────────────────────────────────
@@ -54,8 +76,8 @@ if (process.env.BB_REAL_E2E !== "1") {
   console.log("SKIP: set BB_REAL_E2E=1 to run the real Chrome integration test.");
   process.exit(0);
 }
-if (process.platform !== "darwin" && !IS_WINDOWS) {
-  console.log("SKIP: real integration test supports macOS and Windows only.");
+if (process.platform !== "darwin" && !IS_WINDOWS && process.platform !== "linux") {
+  console.log(`SKIP: real integration test does not support ${process.platform}.`);
   process.exit(0);
 }
 // SAFETY (do not remove): this launches a NON-HEADLESS Chrome with

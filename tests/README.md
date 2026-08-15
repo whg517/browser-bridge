@@ -113,9 +113,16 @@ BB_REAL_E2E=1 bun integration_e2e.ts     # macOS/Linux shell
 $env:BB_REAL_E2E='1'; node integration_e2e.ts  # Windows PowerShell, Node 22.12+
 ```
 
-- **Opt-in** (skips unless `BB_REAL_E2E=1`), macOS/Windows, and pops a
-  non-headless window. Not in the default suite or CI. Use Chrome for Testing
-  or Chromium: official Google Chrome 137+ ignores `--load-extension`.
+On Linux the lock file follows XDG ([ADR-0016](../docs/adr/0016-linux-wsl-support.md))
+rather than the macOS location, and the fallback order is load-bearing: a WSL or
+container session frequently has no `XDG_RUNTIME_DIR`, and looking in the wrong
+directory reports "the MCP server never wrote a lock file" for a server that
+started perfectly well. The test mirrors `LockFile::path()` in `src/ipc.rs`.
+
+- **Opt-in** (skips unless `BB_REAL_E2E=1`), macOS/Windows/Linux, and pops a
+  non-headless window — so Linux needs a display, which WSLg provides. Not in
+  the default suite or CI. Use Chrome for Testing or Chromium: official Google
+  Chrome 137+ ignores `--load-extension`.
 - It always proves the round-trip (native host connects, `tab_list` returns
   real structured `chrome.tabs` data). One **extra** assertion — that the
   reply came from *our* throwaway profile — only holds when the launch is
