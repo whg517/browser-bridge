@@ -120,6 +120,7 @@ export function evalExceptionMessage(details: ExceptionDetails): string {
 export class CdpSession {
   readonly tabId: number;
   private attached = false;
+  private runtimeEnabled = false;
   private attaching: Promise<void> | null = null;
 
   constructor(tabId: number) {
@@ -217,6 +218,16 @@ export class CdpSession {
    */
   async compiles(expression: string): Promise<boolean> {
     try {
+      // Runtime.compileScript needs the domain enabled; Runtime.evaluate does
+      // not, which is why attaching never bothered. Without this the call fails,
+      // the catch below reports "does not compile", and EVERY eval quietly took
+      // the statement body — the exact bug this method exists to avoid. Enable
+      // once per session, on first use, so pages that never call page_eval pay
+      // nothing for it.
+      if (!this.runtimeEnabled) {
+        await this.send("Runtime.enable");
+        this.runtimeEnabled = true;
+      }
       const res = await this.send<{ exceptionDetails?: unknown }>("Runtime.compileScript", {
         expression,
         sourceURL: "",
@@ -224,8 +235,8 @@ export class CdpSession {
       });
       return !res.exceptionDetails;
     } catch {
-      // An unavailable or failing compileScript falls back to the statement
-      // body, which is the long-standing behaviour.
+      // Still unavailable for some reason: fall back to the statement body,
+      // which is the long-standing behaviour.
       return false;
     }
   }
