@@ -6,6 +6,25 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-08-15
+
+### Changed
+- **actions**: bump Swatinem/rust-cache (#122)
+- **actions**: bump actions/attest-build-provenance from 4.1.1 to 4.2.2 (#128)
+
+### Fixed
+- keep the bridge port open so the wake alarm becomes a backstop (#130)
+  - Starting an MCP client is now noticed in **0.1–0.3s** instead of 1.3–7.4s.
+    `connectNative()` keeps the service worker alive while a port is open, but
+    the native host closed that port itself: it tried once, found no server and
+    exited. It now waits for one, so the worker stays resident and the wake alarm
+    from 0.7.0 becomes a backstop rather than the primary mechanism.
+  - An idle browser session costs one sleeping process instead of a worker wake
+    plus a host spawn every 30 seconds.
+  - The 0.7.0 alarm pair is back to one: the clamp it worked around
+    (`periodInMinutes: 0.5` being raised to a minute) does not exist — 0.5 has
+    been the honoured floor since Chrome 120.
+
 ## [0.7.0] - 2026-08-07
 
 ### Changed
