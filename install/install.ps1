@@ -123,12 +123,23 @@ if ($Uninstall) {
         (Join-Path $InstallDir $BinaryName),
         (Join-Path $InstallDir 'run.lock')
     )
+    # A running browser-bridge holds its own image, so removing the binary can
+    # fail with access-denied. With $ErrorActionPreference = 'Stop' that aborted
+    # the whole uninstall - after the registry key and manifest were already
+    # gone, leaving a half-removed install that Chrome can no longer launch and
+    # a re-run cannot tidy. Report each target and keep going instead.
+    $stuck = @()
     foreach ($target in $targets) {
-        if (Test-Path -LiteralPath $target) {
-            Remove-Item -LiteralPath $target -Force
-            Write-Host "[uninstall] removed: $target"
-        } else {
+        if (-not (Test-Path -LiteralPath $target)) {
             Write-Host "[uninstall] not present: $target"
+            continue
+        }
+        Remove-Item -LiteralPath $target -Force -ErrorAction SilentlyContinue
+        if (Test-Path -LiteralPath $target) {
+            $stuck += $target
+            Write-Host "[uninstall] still in use, left in place: $target"
+        } else {
+            Write-Host "[uninstall] removed: $target"
         }
     }
 
@@ -139,7 +150,14 @@ if ($Uninstall) {
     foreach ($stale in @(Get-ChildItem -LiteralPath $InstallDir -File -ErrorAction SilentlyContinue |
             Where-Object { $_.Name -like "$BinaryName.old.*" -or $_.Name -like "$BinaryName.tmp.*" })) {
         Remove-Item -LiteralPath $stale.FullName -Force -ErrorAction SilentlyContinue
-        Write-Host "[uninstall] removed: $($stale.FullName)"
+        # Report what actually happened. A retired binary stays locked while a
+        # process started from it is alive, and claiming to have removed it
+        # would leave the user puzzling over why the directory survives below.
+        if (Test-Path -LiteralPath $stale.FullName) {
+            Write-Host "[uninstall] still in use, left in place: $($stale.FullName)"
+        } else {
+            Write-Host "[uninstall] removed: $($stale.FullName)"
+        }
     }
 
     # Drop $InstallDir only when it is now empty (never recursive).
@@ -147,6 +165,15 @@ if ($Uninstall) {
         -not (Get-ChildItem -LiteralPath $InstallDir -Force)) {
         Remove-Item -LiteralPath $InstallDir -Force
         Write-Host "[uninstall] removed empty dir: $InstallDir"
+    }
+
+    if ($stuck.Count -gt 0) {
+        Write-Host ''
+        Write-Host '[uninstall] Some files were still in use and remain on disk:'
+        foreach ($t in $stuck) { Write-Host "    $t" }
+        Write-Host '    Quit your MCP client and close Chrome, then re-run this script to'
+        Write-Host '    finish. The registration is already removed, so Chrome will not'
+        Write-Host '    start browser-bridge again in the meantime.'
     }
 
     Write-Host '[uninstall] done. Host artifacts removed. Two things this script does NOT touch:'
