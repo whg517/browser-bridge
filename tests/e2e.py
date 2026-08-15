@@ -824,6 +824,23 @@ def test_native_host_mode():
         content = json.loads(r["result"]["content"][0]["text"])
         check(content[0]["title"] == "NM Round Trip",
               "extension reply traveled host -> MCP -> client")
+
+        # …and a FAILING reply keeps its taxonomy code across the same hops. The
+        # host forwards frames as generic serde_json::Value in both directions,
+        # so `code` survives without it knowing the field exists — this pins that
+        # property, which a future refactor to typed parsing would silently break.
+        c.send({"jsonrpc": "2.0", "id": 9, "method": "tools/call",
+                "params": {"name": "tab_focus", "arguments": {"tabId": 999}}})
+        frame = nm_read(nh)
+        check(frame is not None and frame.get("op") == "tab_focus",
+              "second BridgeReq reached the host")
+        nm_write(nh, {"id": frame["id"], "ok": False,
+                      "error": "tab 999 not found", "code": "TAB_NOT_FOUND"})
+        r = c.recv()
+        text = r["result"]["content"][0]["text"]
+        check(r["result"].get("isError") is True, "the failing reply is an error")
+        check("TAB_NOT_FOUND" in text,
+              f"the code survived NM framing end to end ({text[:60]})")
     finally:
         # Unconditional: `nh` used to be killed on the happy path only, after the
         # last check, so any earlier failure leaked a live native host — which
