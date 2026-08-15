@@ -21,8 +21,16 @@ export async function runEval(args: OpArgs) {
     result = await fn();
   } catch (e: any) {
     // The isolated-world CSP block is not a fault in the caller's code and the
-    // model cannot work around it — throw the marked error so the SW recognises
-    // it and re-runs the call through the debugger (background/eval-escalation).
+    // model cannot work around it, so it must not come back as an __evalError
+    // payload that reads like a result. Throw the marked message instead: it
+    // reaches the agent as a tool error and tells it to stop and ask the
+    // operator to enable CDP mode.
+    //
+    // Nothing escalates on the agent's behalf. Catching this in the service
+    // worker and re-running the call through chrome.debugger was built, tested
+    // end to end, and REJECTED — attaching the debugger is a strictly larger
+    // surface and granting it is the operator's decision, not a model's
+    // (ADR-0025).
     if (isCspEvalBlock(e)) throw new Error(CSP_EVAL_MESSAGE, { cause: e });
     // Ordinary JS errors stay structured data, so the model can react
     // (e.g. fix the code and retry).
