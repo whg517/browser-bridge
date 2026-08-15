@@ -430,6 +430,75 @@ def test_tab_list_round_trip():
         mcp.wait(timeout=3)
 
 
+def test_relative_tab_open_never_reaches_the_extension():
+    print("\n[test] tab_open rejects a relative url before it reaches the extension")
+    try:
+        os.remove(LOCK)
+    except FileNotFoundError:
+        pass
+    mcp, log = start_server()
+    try:
+        lf = wait_lock(mcp)
+        check(lf is not None, "lock file written")
+
+        def responder(req):
+            # tab_open here would mean the guard let it through; chrome.tabs.create
+            # would then resolve "notaurl" against the extension's own origin.
+            return {"id": req["id"], "ok": True, "data": []}
+
+        s, serve = mock_extension(lf, responder, log=log)
+        c = McpClient(mcp)
+        c.initialize()
+        c.initialized()
+        time.sleep(0.1)
+
+        served = []
+
+        def try_serve():
+            try:
+                served.append(serve())
+            except Exception:
+                pass
+
+        t = threading.Thread(target=try_serve, daemon=True)
+        t.start()
+
+        r = c.call("tab_open", {"url": "notaurl"}, _id=5)
+        check(r["result"].get("isError") is True, "relative url is rejected")
+        text = r["result"]["content"][0]["text"]
+        check("INVALID_ARGUMENT" in text, "rejection carries the argument code")
+        check("absolute" in text, "rejection says the url must be absolute")
+
+        # Prove the rejected call never reached the wire WITHOUT racing a timeout:
+        # make a legitimate call and require it to be the FIRST thing the mock
+        # sees. Waiting a fixed interval and asserting "nothing arrived" would
+        # pass spuriously whenever the request merely arrived late.
+        c.call("tab_list", {}, _id=6)
+        t.join(timeout=5)
+        check(bool(served), "the mock served a request")
+        check(
+            served[0] is not None and served[0]["op"] == "tab_list",
+            f"first op on the wire is tab_list, not the rejected tab_open "
+            f"(got {served[0] and served[0].get('op')})",
+        )
+
+        # Same argument for the wrong-typed form, which the schema type check now
+        # rejects before the coercion in build_tab_open could blank it out.
+        r = c.call("tab_open", {"url": 123}, _id=7)
+        check(r["result"].get("isError") is True, "a non-string url is rejected")
+        check(
+            "INVALID_ARGUMENT" in r["result"]["content"][0]["text"],
+            "the type rejection carries the argument code",
+        )
+        s.close()
+    finally:
+        try:
+            mcp.stdin.close()
+        except Exception:
+            pass
+        mcp.wait(timeout=3)
+
+
 def test_page_eval_round_trip():
     print("\n[test] page_eval round-trip (op reaches extension)")
     try:
@@ -888,6 +957,7 @@ def main():
     test_announce_is_absorbed_not_routed()
     test_unknown_id_zero_frame_does_not_break_the_loop()
     test_tab_list_round_trip()
+    test_relative_tab_open_never_reaches_the_extension()
     test_page_eval_round_trip()
     test_page_snapshot_precise_round_trip()
     test_cookie_get_round_trip()
