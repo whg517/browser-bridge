@@ -50,9 +50,31 @@ pub enum CallError {
     InvalidArgument(String),
 
     /// The extension executed the op and reported a failure of its own.
-    #[error("{0}")]
-    Extension(String),
+    ///
+    /// `code` is the extension's own classification when it had one. Before it
+    /// existed every extension-side failure — a missing tab, a page whose scheme
+    /// cannot be driven, a tab that has not navigated yet — arrived here
+    /// indistinguishable from a genuine page-execution error, and all of them
+    /// were reported as EXECUTION_FAILED. That made `retryable` in
+    /// contracts/errors.json meaningless for this whole half of the taxonomy.
+    #[error("{message}")]
+    Extension {
+        code: Option<String>,
+        message: String,
+    },
 }
+
+/// Codes the extension is allowed to put on the wire.
+///
+/// Kept as an allowlist rather than passed through: the code ends up in the
+/// audit trail and in client-side retry decisions, so an unknown or misspelled
+/// one must degrade to the honest generic answer instead of inventing taxonomy.
+const EXTENSION_CODES: &[&str] = &[
+    "TAB_NOT_FOUND",
+    "UNSUPPORTED_PAGE",
+    "EXTENSION_NOT_READY",
+    "TOOL_DISABLED",
+];
 
 impl CallError {
     /// The stable, cross-process error code for this variant.
@@ -69,7 +91,10 @@ impl CallError {
             CallError::Disconnected => "CONNECTION_LOST",
             CallError::UnknownTool(_) => "INVALID_ARGUMENT",
             CallError::InvalidArgument(_) => "INVALID_ARGUMENT",
-            CallError::Extension(_) => "EXECUTION_FAILED",
+            CallError::Extension { code, .. } => code
+                .as_deref()
+                .and_then(|c| EXTENSION_CODES.iter().copied().find(|known| *known == c))
+                .unwrap_or("EXECUTION_FAILED"),
         }
     }
 }
@@ -88,7 +113,14 @@ mod tests {
             "unknown tool: foo"
         );
         // The extension's own error text passes through verbatim.
-        assert_eq!(CallError::Extension("boom".into()).to_string(), "boom");
+        assert_eq!(
+            CallError::Extension {
+                code: None,
+                message: "boom".into()
+            }
+            .to_string(),
+            "boom"
+        );
         assert!(CallError::Timeout(Duration::from_secs(120))
             .to_string()
             .contains("did not respond"));
@@ -97,6 +129,79 @@ mod tests {
     // contracts/errors.json is the single source of truth for cross-process
     // error codes. Each CallError variant's `code()` is verified against it
     // here (mirrors `tools::matches_contract`).
+    // The gap that made contracts/errors.json a document rather than a contract:
+    // `codes_match_contract` only checks that codes the server EMITS exist in the
+    // file. It says nothing about codes in the file nobody emits — and five of
+    // them had no producer anywhere, including the one retryable code a transient
+    // extension-side failure needed. Clients act on `retryable`, so a code that
+    // cannot be produced is not harmless documentation (#134).
+    #[test]
+    fn every_code_has_a_producer() {
+        let path = format!("{}/contracts/errors.json", env!("CARGO_MANIFEST_DIR"));
+        let raw = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {path}: {e}"));
+        let contract: serde_json::Value = serde_json::from_str(&raw).unwrap();
+
+        for entry in contract["errors"].as_array().expect("errors array") {
+            let code = entry["code"].as_str().expect("code");
+            let producer = entry["producer"].as_str().unwrap_or_else(|| {
+                panic!(
+                    "{code} has no `producer`. Every code must say who emits it: \
+                     \"rust\", \"extension\", or \"reserved\" with a reason."
+                )
+            });
+            match producer {
+                // Emitted by the server: it must have a `rust` array, which
+                // codes_match_contract then holds to the actual mapping.
+                "rust" => assert!(
+                    entry["rust"].as_array().is_some_and(|a| !a.is_empty()),
+                    "{code} is produced by rust but lists no CallError variants"
+                ),
+                // Travels on BridgeResp.code, so the server must be willing to
+                // accept it — an extension code outside EXTENSION_CODES is
+                // silently downgraded to EXECUTION_FAILED and never seen.
+                "extension" => assert!(
+                    EXTENSION_CODES.contains(&code),
+                    "{code} is produced by the extension but is not in EXTENSION_CODES, \
+                     so the server would downgrade it to EXECUTION_FAILED"
+                ),
+                // Deliberately unimplemented — allowed, but it has to say why,
+                // so the next reader can tell intent from oversight.
+                "reserved" => assert!(
+                    entry["reserved"]
+                        .as_str()
+                        .is_some_and(|r| !r.trim().is_empty()),
+                    "{code} is reserved but does not say why"
+                ),
+                other => panic!("{code} has unknown producer {other:?}"),
+            }
+        }
+    }
+
+    // …and the reverse: nothing may be allowlisted on the server that the
+    // contract does not describe, or the audit trail gains codes with no
+    // documented meaning or retry semantics.
+    #[test]
+    fn extension_codes_are_all_in_the_contract() {
+        let path = format!("{}/contracts/errors.json", env!("CARGO_MANIFEST_DIR"));
+        let raw = std::fs::read_to_string(&path).unwrap();
+        let contract: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        let errors = contract["errors"].as_array().unwrap();
+
+        for code in EXTENSION_CODES {
+            let entry = errors
+                .iter()
+                .find(|e| e["code"].as_str() == Some(code))
+                .unwrap_or_else(|| panic!("EXTENSION_CODES has {code}, errors.json does not"));
+            assert_eq!(
+                entry["producer"].as_str(),
+                Some("extension"),
+                "{code} is accepted from the extension but the contract calls it \
+                 {:?}",
+                entry["producer"]
+            );
+        }
+    }
+
     #[test]
     fn codes_match_contract() {
         use std::io;
@@ -118,7 +223,13 @@ mod tests {
                 "InvalidArgument",
                 CallError::InvalidArgument("bad args".into()),
             ),
-            ("Extension", CallError::Extension("boom".into())),
+            (
+                "Extension",
+                CallError::Extension {
+                    code: None,
+                    message: "boom".into(),
+                },
+            ),
         ];
 
         let path = format!("{}/contracts/errors.json", env!("CARGO_MANIFEST_DIR"));

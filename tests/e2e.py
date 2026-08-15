@@ -499,6 +499,78 @@ def test_relative_tab_open_never_reaches_the_extension():
         mcp.wait(timeout=3)
 
 
+def test_extension_error_code_reaches_the_client():
+    print("\n[test] a coded extension failure keeps its code end to end")
+    try:
+        os.remove(LOCK)
+    except FileNotFoundError:
+        pass
+    mcp, log = start_server()
+    try:
+        lf = wait_lock(mcp)
+        check(lf is not None, "lock file written")
+
+        # Two failures that used to be indistinguishable: both arrived as
+        # EXECUTION_FAILED (retryable: false), so a tab that had merely not
+        # navigated yet was reported to the agent as permanently broken.
+        replies = {
+            "tab_focus": {"ok": False, "error": "tab 999 not found", "code": "TAB_NOT_FOUND"},
+            "page_snapshot": {
+                "ok": False,
+                "error": "the tab has not navigated yet",
+                "code": "EXTENSION_NOT_READY",
+            },
+            "page_text": {"ok": False, "error": "selector blew up"},  # unclassified
+            "page_links": {"ok": False, "error": "nope", "code": "MADE_UP_CODE"},
+        }
+
+        def responder(req):
+            r = dict(replies[req["op"]])
+            r["id"] = req["id"]
+            return r
+
+        s, serve = mock_extension(lf, responder, log=log)
+        c = McpClient(mcp)
+        c.initialize()
+        c.initialized()
+        time.sleep(0.1)
+
+        def call(tool, args, _id):
+            t = threading.Thread(target=serve, daemon=True)
+            t.start()
+            r = c.call(tool, args, _id=_id)
+            t.join(timeout=3)
+            return r["result"]["content"][0]["text"]
+
+        text = call("tab_focus", {"tabId": 999}, 5)
+        check("TAB_NOT_FOUND" in text, f"tab_focus keeps TAB_NOT_FOUND ({text[:60]})")
+
+        text = call("page_snapshot", {}, 6)
+        check(
+            "EXTENSION_NOT_READY" in text,
+            f"a not-yet-navigated tab is EXTENSION_NOT_READY, which is retryable ({text[:60]})",
+        )
+
+        # No code means "the op ran and failed" — the honest generic answer.
+        text = call("page_text", {}, 7)
+        check("EXECUTION_FAILED" in text, "an unclassified failure stays EXECUTION_FAILED")
+
+        # An unknown code must not be passed through: it would land in the audit
+        # trail and in client retry decisions with no documented meaning.
+        text = call("page_links", {}, 8)
+        check(
+            "EXECUTION_FAILED" in text and "MADE_UP_CODE" not in text,
+            f"an unrecognised code degrades instead of inventing taxonomy ({text[:60]})",
+        )
+        s.close()
+    finally:
+        try:
+            mcp.stdin.close()
+        except Exception:
+            pass
+        mcp.wait(timeout=3)
+
+
 def test_page_eval_round_trip():
     print("\n[test] page_eval round-trip (op reaches extension)")
     try:
@@ -958,6 +1030,7 @@ def main():
     test_unknown_id_zero_frame_does_not_break_the_loop()
     test_tab_list_round_trip()
     test_relative_tab_open_never_reaches_the_extension()
+    test_extension_error_code_reaches_the_client()
     test_page_eval_round_trip()
     test_page_snapshot_precise_round_trip()
     test_cookie_get_round_trip()

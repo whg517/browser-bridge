@@ -10,7 +10,7 @@ import { resolveTargetTab, injectIfNeeded } from "./tabs";
 // The chrome.debugger primitives + the non-debuggable URL filter now live in
 // the CdpSession facade (ADR-0017); precise.ts reuses them rather than keeping
 // its own private copies.
-import { dbgAttach, dbgDetach, dbgSend, isDebuggable } from "./cdp/session";
+import { assertDrivable, dbgAttach, dbgDetach, dbgSend } from "./cdp/session";
 import { cdpRegistry } from "./cdp/registry";
 import { t, initI18n } from "../shared/i18n";
 import { flattenFrameTree, type CdpFrame, type CdpFrameTree } from "./frames";
@@ -100,11 +100,7 @@ function axValue(v: AXValueLike | undefined): unknown {
 export async function snapshotPrecise(maybeTabId: number | undefined, _args: OpArgs) {
   const tab = await resolveTargetTab(maybeTabId);
 
-  if (!isDebuggable(tab.url)) {
-    throw new Error(
-      `page_snapshot_precise cannot debug this page (URL scheme not allowed): ${truncateUrl(tab.url)}`
-    );
-  }
+  assertDrivable(tab.url, "page_snapshot_precise cannot debug this page");
 
   // Warn the user via an informational toast in the page. Proceed unless they
   // actively cancel within the timeout. (Always shown — the toggle was removed.)
@@ -281,9 +277,6 @@ async function collectFrame(
   return idx;
 }
 
-function truncateUrl(u: string | undefined) {
-  return (u || "").slice(0, 80);
-}
 function truncateAx(s: unknown): unknown {
   if (typeof s !== "string") return s;
   return s.length > 120 ? s.slice(0, 120) + "…" : s;

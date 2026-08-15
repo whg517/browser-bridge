@@ -210,6 +210,10 @@ pub struct BridgeResp {
     pub data: Option<Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    /// Stable taxonomy code (contracts/errors.json) when the extension can name
+    /// the failure. Absent means unclassified, which maps to EXECUTION_FAILED.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub code: Option<String>,
 }
 
 impl BridgeResp {
@@ -220,6 +224,7 @@ impl BridgeResp {
             ok: true,
             data: Some(data),
             error: None,
+            code: None,
         }
     }
     #[allow(dead_code)]
@@ -229,6 +234,7 @@ impl BridgeResp {
             ok: false,
             data: None,
             error: Some(msg.into()),
+            code: None,
         }
     }
 }
@@ -502,8 +508,9 @@ mod proptests {
             ok in any::<bool>(),
             data in prop::option::of(arb_json_non_null()),
             error in prop::option::of(arb_string()),
+            code in prop::option::of(arb_string()),
         ) {
-            let resp = BridgeResp { id, ok, data, error };
+            let resp = BridgeResp { id, ok, data, error, code };
             let mut buf = Vec::new();
             bridge_write(&mut buf, &resp).unwrap();
             let got: BridgeResp = bridge_read(&mut Cursor::new(buf)).unwrap().unwrap();

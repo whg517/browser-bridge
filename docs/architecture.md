@@ -383,11 +383,30 @@ This section ties together the three contracts related to protocol boundaries.
 
 At the tool-call boundary, Rust's typed error `CallError` (see §4.1 `error.rs`) maps to the stable
 `code` values in [`contracts/errors.json`](../contracts/errors.json); `cargo test` validates the mapping
-against that file, and the extension side normalizes its own failures to the same set of `code` values.
-The `code` is for programmatic decisions (including `category` and
-`retryable`), while what the model/user sees is the `message`. This way the "three connection-layer failures"
-(`NOT_CONNECTED` / `EXTENSION_NOT_READY` / `CONNECTION_LOST`) have unified semantics across the three processes,
-rather than each speaking its own language.
+against that file. The `code` is for programmatic decisions (including `category` and
+`retryable`), while what the model/user sees is the `message`.
+
+Codes come from **two producers**, and every entry in `errors.json` says which one via its
+`producer` field:
+
+- **`rust`** — transport and protocol failures the server sees for itself: `NOT_CONNECTED`,
+  `RESPONSE_TIMEOUT`, `CONNECTION_LOST`, `INVALID_ARGUMENT`, and `EXECUTION_FAILED` as the
+  catch-all.
+- **`extension`** — failures only the extension can classify, carried on the optional
+  `BridgeResp.code` field (`extension/src/shared/bridge-error.ts` throws a `BridgeError`;
+  `port.ts` puts its code on the wire). The server allowlists these in `EXTENSION_CODES` and
+  degrades anything unrecognized to `EXECUTION_FAILED`, so a typo on the extension side cannot
+  invent taxonomy.
+
+A third value, `reserved`, marks a code that is deliberately not produced yet and must state why.
+The `every_code_has_a_producer` test fails on any code that claims none of the three: `retryable`
+is per-code metadata that clients act on, so a code nobody can emit is not harmless documentation
+— before this was enforced, five codes had no producer, including the only retryable one a
+transient extension-side failure could have used.
+
+This way the connection-layer failures (`NOT_CONNECTED` / `EXTENSION_NOT_READY` /
+`CONNECTION_LOST`) have unified semantics across the three processes, rather than each speaking
+its own language.
 
 ### 11.2 Capability / version handshake (capabilities.json + protocol-version.json)
 

@@ -400,9 +400,10 @@ impl Session {
                 if resp.ok {
                     Ok(resp.data.unwrap_or(Value::Null))
                 } else {
-                    Err(CallError::Extension(
-                        resp.error.unwrap_or_else(|| "unknown error".into()),
-                    ))
+                    Err(CallError::Extension {
+                        code: resp.code,
+                        message: resp.error.unwrap_or_else(|| "unknown error".into()),
+                    })
                 }
             }
             Err(mpsc::RecvTimeoutError::Timeout) => {

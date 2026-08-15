@@ -1,15 +1,21 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/whg517/browser-bridge/contracts/bridge-response.schema.json",
-  "$comment": "SINGLE SOURCE OF TRUTH for the internal bridge RESPONSE envelope shape (BridgeResp). Mirrors extension/src/shared/types.ts:BridgeResp; keep the two in sync (types.ts is not generated from this yet). `error` here is the extension-side free-text string per types.ts; the cross-process stable error CODES live in contracts/errors.json and are applied on the Rust side (see docs/architecture.md §11.1). RESERVED ID: a frame with id 0 is the extension's ANNOUNCE, not a reply — see the `id` property below.",
+  "$comment": "SINGLE SOURCE OF TRUTH for the internal bridge RESPONSE envelope shape (BridgeResp). Mirrors extension/src/shared/types.ts:BridgeResp; keep the two in sync (types.ts is not generated from this yet). `error` is the extension-side free-text reason and `code` its optional classification from contracts/errors.json -- the extension names the failures it can (see shared/bridge-error.ts), and the Rust side allowlists what it accepts and falls back to EXECUTION_FAILED. Transport-level codes (NOT_CONNECTED, RESPONSE_TIMEOUT, CONNECTION_LOST) are still assigned Rust-side and never travel on this envelope. RESERVED ID: a frame with id 0 is the extension's ANNOUNCE, not a reply -- see the `id` property below.",
   "title": "BridgeResp",
-  "description": "The response posted back from the extension to the native host over the Port. Shape: { id, ok, data?, error? }.",
+  "description": "The response posted back from the extension to the native host over the Port. Shape: { id, ok, data?, error?, code? }.",
   "type": "object",
-  "required": ["id", "ok"],
+  "required": [
+    "id",
+    "ok"
+  ],
   "additionalProperties": false,
   "properties": {
     "id": {
-      "type": ["integer", "string"],
+      "type": [
+        "integer",
+        "string"
+      ],
       "description": "Correlation id, echoed from the matching BridgeReq. The value 0 is RESERVED and never a request id (the server's counter starts at 1): a frame with id 0 carrying `data.announce` is the extension's version announce, sent unsolicited right after connecting. It wears this envelope deliberately, so that a server predating the announce still parses it (an undeserializable line would kill its reader loop and drop the connection) and merely logs an unroutable id. See extension/src/shared/announce.ts and src/peer.rs."
     },
     "ok": {
@@ -21,7 +27,11 @@
     },
     "error": {
       "type": "string",
-      "description": "Human-readable failure reason when ok is false. The stable programmatic code is assigned from contracts/errors.json on the Rust side."
+      "description": "Human-readable failure reason when ok is false. Always present on a failure; `code` is the machine-readable companion and may be absent."
+    },
+    "code": {
+      "type": "string",
+      "description": "Optional stable taxonomy code from contracts/errors.json, set when the extension can name the failure (TAB_NOT_FOUND, UNSUPPORTED_PAGE, EXTENSION_NOT_READY, TOOL_DISABLED). Absent means unclassified, which the server reports as EXECUTION_FAILED -- the honest answer for 'the op ran and failed'. An unrecognised value degrades the same way rather than being passed through, so a typo cannot invent taxonomy."
     }
   }
 }

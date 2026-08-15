@@ -10,6 +10,7 @@
 
 import type { BridgeReq } from "../shared/types";
 import { announceFrame, buildAnnounce } from "../shared/announce";
+import { codeOf } from "../shared/bridge-error";
 import { dispatch } from "./dispatch";
 
 const NATIVE_HOST = "com.browser_bridge.host";
@@ -158,14 +159,21 @@ function onNativeMessage(msg: BridgeReq) {
   }
   dispatch(msg).then(
     (data) => sendResponse(msg.id, true, data),
-    (err) => sendResponse(msg.id, false, undefined, String(err?.message || err || "error"))
+    (err) =>
+      sendResponse(msg.id, false, undefined, String(err?.message || err || "error"), codeOf(err))
   );
 }
 
-function sendResponse(id: number | string, ok: boolean, data?: unknown, error?: string) {
+function sendResponse(
+  id: number | string,
+  ok: boolean,
+  data?: unknown,
+  error?: string,
+  code?: string
+) {
   if (!port) return; // host gone; nothing to do
   try {
-    port.postMessage({ id, ok, data, error: ok ? undefined : error });
+    port.postMessage({ id, ok, data, error: ok ? undefined : error, code: ok ? undefined : code });
   } catch (e) {
     // Port likely closed; the disconnect handler will reconnect.
     console.warn("[bb] postMessage failed", e);
