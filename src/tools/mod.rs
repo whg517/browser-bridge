@@ -140,6 +140,57 @@ fn check_required(name: &str, args: &Value) -> Result<(), CallError> {
     Ok(())
 }
 
+/// Does `s` carry a URI scheme — `scheme:` before any `/`, `?` or `#`?
+///
+/// RFC 3986's definition, hand-rolled: the dependency set is deliberately tiny
+/// and a whole URL crate to answer one question is not worth the supply-chain
+/// surface. Deliberately permissive about what the scheme IS (`file:`, `about:`,
+/// `chrome:` are all legitimate targets); the only question here is whether the
+/// caller supplied one at all.
+fn has_uri_scheme(s: &str) -> bool {
+    let Some(colon) = s.find(':') else {
+        return false;
+    };
+    // A `/`, `?` or `#` before the colon means the colon is inside a path or
+    // query, not a scheme delimiter — e.g. "/a:b".
+    let scheme = &s[..colon];
+    if scheme.is_empty() || scheme.contains(['/', '?', '#']) {
+        return false;
+    }
+    let mut chars = scheme.chars();
+    chars.next().is_some_and(|c| c.is_ascii_alphabetic())
+        && chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'))
+}
+
+/// Reject a `tab_open` whose `url` is not absolute.
+///
+/// `chrome.tabs.create` resolves a relative URL against the CALLER's base, and
+/// the caller is the extension's service worker — so `tab_open {"url": "/admin"}`
+/// silently opened `chrome-extension://<id>/admin` instead of failing, landing
+/// the tab inside the extension's own privileged origin. The schema has always
+/// said "Absolute URL to open"; nothing enforced it.
+///
+/// Enforced here rather than in the extension so it comes back as
+/// INVALID_ARGUMENT — a malformed call, which is what it is — instead of an
+/// extension-side failure, and so it never reaches the browser at all.
+fn check_absolute_url(name: &str, args: &Value) -> Result<(), CallError> {
+    if name != "tab_open" {
+        return Ok(());
+    }
+    // Absence is already `check_required`'s job; only shape is checked here.
+    let Some(url) = args.get("url").and_then(Value::as_str) else {
+        return Ok(());
+    };
+    if has_uri_scheme(url.trim()) {
+        return Ok(());
+    }
+    Err(CallError::InvalidArgument(format!(
+        "tab_open: `url` must be absolute and include a scheme (e.g. https://example.com), \
+         got `{url}`. A relative path would resolve against the extension's own origin, \
+         not the site you meant."
+    )))
+}
+
 /// The result of dispatching one tool call: the MCP content blocks, whether it
 /// is an error, and — on error — the stable taxonomy code (contracts/errors.json)
 /// so the caller can record it in the audit trail without re-parsing the text.
@@ -154,6 +205,7 @@ pub struct Outcome {
 pub fn dispatch(session: &Session, name: &str, args: &Value) -> Outcome {
     let result = match HANDLERS.iter().find(|h| h.name == name) {
         Some(h) => check_required(name, args)
+            .and_then(|()| check_absolute_url(name, args))
             .and_then(|()| call(session, name, None, (h.build_payload)(args))),
         None => Err(CallError::UnknownTool(name.to_string())),
     };
@@ -260,6 +312,48 @@ mod tests {
         assert!(check_required("page_eval", &json!({ "expression": "1+1" })).is_err());
         // Satisfied calls pass through.
         assert!(check_required("page_eval", &json!({ "code": "1+1" })).is_ok());
+    }
+
+    // A relative url is not a harmless typo: chrome.tabs.create resolves it
+    // against the service worker's base, so it opened a tab on the extension's
+    // own origin and reported success.
+    #[test]
+    fn relative_tab_open_urls_are_invalid_arguments() {
+        for bad in ["notaurl", "/admin", "example.com/path", "./x", "?q=1"] {
+            let err = check_absolute_url("tab_open", &json!({ "url": bad })).unwrap_err();
+            assert_eq!(err.code(), "INVALID_ARGUMENT", "{bad}");
+            assert!(
+                err.to_string().contains("absolute"),
+                "the message says what is wrong: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn absolute_tab_open_urls_pass_through() {
+        for ok in [
+            "https://example.com",
+            "http://localhost:18099/page.html",
+            "file:///tmp/x.html",
+            "about:blank",
+            "chrome://extensions",
+            "  https://example.com/padded  ",
+        ] {
+            assert!(
+                check_absolute_url("tab_open", &json!({ "url": ok })).is_ok(),
+                "{ok} is absolute"
+            );
+        }
+    }
+
+    #[test]
+    fn the_url_check_is_scoped_to_tab_open() {
+        // page_fill's `value` and page_eval's `code` are free text; nothing here
+        // may start rejecting them for looking un-URL-like.
+        assert!(check_absolute_url("page_fill", &json!({ "value": "notaurl" })).is_ok());
+        assert!(check_absolute_url("page_eval", &json!({ "code": "1+1" })).is_ok());
+        // Absence stays check_required's job, not this one's.
+        assert!(check_absolute_url("tab_open", &json!({})).is_ok());
     }
 
     #[test]

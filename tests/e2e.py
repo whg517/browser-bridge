@@ -430,6 +430,56 @@ def test_tab_list_round_trip():
         mcp.wait(timeout=3)
 
 
+def test_relative_tab_open_never_reaches_the_extension():
+    print("\n[test] tab_open rejects a relative url before it reaches the extension")
+    try:
+        os.remove(LOCK)
+    except FileNotFoundError:
+        pass
+    mcp, log = start_server()
+    try:
+        lf = wait_lock(mcp)
+        check(lf is not None, "lock file written")
+
+        def responder(req):
+            # Reached only if the guard let the call through. chrome.tabs.create
+            # would resolve "notaurl" against the extension's own origin.
+            return {"id": req["id"], "ok": True, "data": {"opened": 7}}
+
+        s, serve = mock_extension(lf, responder, log=log)
+        c = McpClient(mcp)
+        c.initialize()
+        c.initialized()
+        time.sleep(0.1)
+
+        served = []
+
+        def try_serve():
+            try:
+                served.append(serve())
+            except Exception:
+                pass  # the socket read times out, which is the expected outcome
+
+        t = threading.Thread(target=try_serve, daemon=True)
+        t.start()
+
+        r = c.call("tab_open", {"url": "notaurl"}, _id=5)
+        t.join(timeout=1.5)
+
+        check(r["result"].get("isError") is True, "relative url is rejected")
+        text = r["result"]["content"][0]["text"]
+        check("INVALID_ARGUMENT" in text, "rejection carries the argument code")
+        check("absolute" in text, "rejection says the url must be absolute")
+        check(not served, "the extension never received the call")
+        s.close()
+    finally:
+        try:
+            mcp.stdin.close()
+        except Exception:
+            pass
+        mcp.wait(timeout=3)
+
+
 def test_page_eval_round_trip():
     print("\n[test] page_eval round-trip (op reaches extension)")
     try:
@@ -888,6 +938,7 @@ def main():
     test_announce_is_absorbed_not_routed()
     test_unknown_id_zero_frame_does_not_break_the_loop()
     test_tab_list_round_trip()
+    test_relative_tab_open_never_reaches_the_extension()
     test_page_eval_round_trip()
     test_page_snapshot_precise_round_trip()
     test_cookie_get_round_trip()
