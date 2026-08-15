@@ -14,7 +14,6 @@ import { dispatch } from "./dispatch";
 
 const NATIVE_HOST = "com.browser_bridge.host";
 const WAKE_ALARM = "bb-reconnect";
-const WAKE_ALARM_B = "bb-reconnect-b";
 
 let port: chrome.runtime.Port | null = null;
 let portOk = false; // did the most recent connect succeed?
@@ -105,41 +104,30 @@ function scheduleReconnect() {
  * the worker alive by itself, so the alarm only matters while nothing is
  * connected — the cost when a server IS running is zero.
  *
- * Why TWO alarms rather than one — and what is NOT the reason.
+ * Cadence: one alarm at `periodInMinutes: 0.5` — the documented floor since
+ * Chrome 120, and honoured (only values BELOW it are raised to 30s).
  *
- * An earlier version of this comment claimed Chrome clamps `periodInMinutes:
- * 0.5` up to a minute. That is wrong on two counts. Since Chrome 120 the
- * documented floor IS 30s (0.5 is honoured; only values BELOW 0.5 are raised to
- * 30s), and an unpacked extension — which is what the measurement below ran on —
- * has no frequency limit at all. There is no clamp here to work around.
+ * v0.7.0 shipped TWO alarms on a 1-minute period offset by half of it, to work
+ * around a clamp of 0.5 to a minute. That clamp does not exist. The belief came
+ * from two samples showing first-connect times of ~50-60s, which cannot be a
+ * clamp for two reasons: 0.5 is honoured on a packed extension, and the samples
+ * were taken on an UNPACKED one, where the frequency limit does not apply at all.
  *
- * What the docs do say is the actual constraint: Chrome fires alarms "at most
- * once every 30 seconds but may delay them arbitrarily more". The delay has no
- * upper bound, so no alarm configuration can promise a reconnect deadline.
- *
- * Two alarms are therefore a HEDGE, not a clamp workaround: two independent
- * delay draws, and the worker wakes on whichever lands first. The evidence is
- * narrow but one-directional — against Chrome 150, one 0.5 alarm gave
- * first-connect times of 50.6s and 63.0s, two offset alarms gave 1.3s, 1.9s,
- * 2.2s, 4.1s and 7.4s. Two samples versus five, and the mechanism behind the
- * difference is not established; if a future measurement shows a single alarm
- * doing as well, prefer the simpler one.
- *
- * Because the tail is unbounded, a wake can still land outside the window the
- * host waits, so a first call after a long idle may need one retry —
- * NOT_CONNECTED says so. The guarantee this buys is that a retry works, where
- * before nothing did short of the user clicking the toolbar icon.
+ * The real constraint is that Chrome fires alarms "at most once every 30 seconds
+ * but may delay them arbitrarily more" — an unbounded tail that no alarm
+ * configuration can close. Doubling the alarms cannot close it either, since the
+ * delay comes from system-level throttling that would postpone both together.
+ * What actually absorbs the tail is the host waiting a full cycle on the first
+ * call of a session (see Session::call).
  *
  * Alarms can be dropped, and the docs recommend re-asserting them on every worker
  * start. `create()` with an existing name replaces it, so calling it here — on
  * every worker start — is that check, expressed as an unconditional write.
  */
 export function installKeepalive() {
-  chrome.alarms.create(WAKE_ALARM, { periodInMinutes: 1 });
-  // delayInMinutes staggers the second one half a cycle behind the first.
-  chrome.alarms.create(WAKE_ALARM_B, { delayInMinutes: 0.5, periodInMinutes: 1 });
+  chrome.alarms.create(WAKE_ALARM, { periodInMinutes: 0.5 });
   chrome.alarms.onAlarm.addListener((a) => {
-    if (a.name !== WAKE_ALARM && a.name !== WAKE_ALARM_B) return;
+    if (a.name !== WAKE_ALARM) return;
     // Waking is most of the point; only reconnect when we actually need to, so
     // a live port is never torn down and replaced for no reason.
     if (!isNativeConnected()) connectNative();
