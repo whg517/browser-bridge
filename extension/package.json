@@ -16,7 +16,7 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/chrome": "^0.2.5",
-    "esbuild": "^0.28.1",
+    "esbuild": "^0.28.2",
     "eslint": "^10.8.0",
     "prettier": "^3.9.6",
     "typescript": "^6.0.3",
