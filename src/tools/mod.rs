@@ -12,7 +12,7 @@
 //! This module is split across:
 //!   - [`catalogue`] — the [`Tool`] struct, [`all`] catalogue, and `schema` helper,
 //!   - [`handlers`] — the per-op `build_*` payload fns and arg helpers,
-//!   - this root — [`dispatch`], [`Outcome`], and the `Handler`/`HANDLERS` registry.
+//!   - this root — [`dispatch`], [`Outcome`], and the `HANDLERS` registry.
 
 mod catalogue;
 mod handlers;
@@ -30,82 +30,31 @@ use handlers::{
     build_storage_get, build_tab_close, build_tab_focus, build_tab_open, call, ref_or_selector,
 };
 
-/// A registered tool handler. The bridge `op` name equals the tool `name`;
-/// `build_payload` maps the (schema-shaped) MCP args into the op's argument
-/// object. Responses are formatted centrally in [`dispatch`]. `HANDLERS` is the
-/// single dispatch registry — `registry_covers_catalogue` (tests) asserts it
-/// stays in lockstep with [`all`], so a new tool can't be added to the
-/// catalogue without a handler (or vice versa).
-struct Handler {
-    name: &'static str,
-    build_payload: fn(&Value) -> Value,
-}
+/// Maps the (schema-shaped) MCP args of one tool into the op's argument
+/// object. Responses are formatted centrally in [`dispatch`].
+type PayloadFn = fn(&Value) -> Value;
 
-const HANDLERS: &[Handler] = &[
-    Handler {
-        name: "tab_list",
-        build_payload: build_empty,
-    },
-    Handler {
-        name: "tab_focus",
-        build_payload: build_tab_focus,
-    },
-    Handler {
-        name: "tab_open",
-        build_payload: build_tab_open,
-    },
-    Handler {
-        name: "tab_close",
-        build_payload: build_tab_close,
-    },
-    Handler {
-        name: "page_snapshot",
-        build_payload: build_empty,
-    },
-    Handler {
-        name: "page_click",
-        build_payload: ref_or_selector,
-    },
-    Handler {
-        name: "page_fill",
-        build_payload: build_page_fill,
-    },
-    Handler {
-        name: "page_text",
-        build_payload: build_page_text,
-    },
-    Handler {
-        name: "page_links",
-        build_payload: build_page_links,
-    },
-    Handler {
-        name: "page_screenshot",
-        build_payload: build_empty,
-    },
-    Handler {
-        name: "page_scroll",
-        build_payload: build_page_scroll,
-    },
-    Handler {
-        name: "page_wait_for",
-        build_payload: build_page_wait_for,
-    },
-    Handler {
-        name: "page_eval",
-        build_payload: build_page_eval,
-    },
-    Handler {
-        name: "page_snapshot_precise",
-        build_payload: build_page_snapshot_precise,
-    },
-    Handler {
-        name: "cookie_get",
-        build_payload: build_cookie_get,
-    },
-    Handler {
-        name: "storage_get",
-        build_payload: build_storage_get,
-    },
+/// The single dispatch registry — `(tool name, payload builder)` pairs, where
+/// the bridge `op` name equals the tool `name`. `registry_covers_catalogue`
+/// (tests) asserts it stays in lockstep with [`all`], so a new tool can't be
+/// added to the catalogue without a handler (or vice versa).
+const HANDLERS: &[(&str, PayloadFn)] = &[
+    ("tab_list", build_empty),
+    ("tab_focus", build_tab_focus),
+    ("tab_open", build_tab_open),
+    ("tab_close", build_tab_close),
+    ("page_snapshot", build_empty),
+    ("page_click", ref_or_selector),
+    ("page_fill", build_page_fill),
+    ("page_text", build_page_text),
+    ("page_links", build_page_links),
+    ("page_screenshot", build_empty),
+    ("page_scroll", build_page_scroll),
+    ("page_wait_for", build_page_wait_for),
+    ("page_eval", build_page_eval),
+    ("page_snapshot_precise", build_page_snapshot_precise),
+    ("cookie_get", build_cookie_get),
+    ("storage_get", build_storage_get),
 ];
 
 /// Reject a call whose arguments don't satisfy the tool's own `inputSchema`
@@ -271,11 +220,11 @@ pub struct Outcome {
 /// Dispatch a tool call. Returns the MCP result `content` value (an array)
 /// and the isError flag. Errors are tool-level (isError=true), not RPC-level.
 pub fn dispatch(session: &Session, name: &str, args: &Value) -> Outcome {
-    let result = match HANDLERS.iter().find(|h| h.name == name) {
-        Some(h) => check_required(name, args)
+    let result = match HANDLERS.iter().find(|(op, _)| *op == name) {
+        Some((_, build_payload)) => check_required(name, args)
             .and_then(|()| check_arg_types(name, args))
             .and_then(|()| check_absolute_url(name, args))
-            .and_then(|()| call(session, name, None, (h.build_payload)(args))),
+            .and_then(|()| call(session, name, None, build_payload(args))),
         None => Err(CallError::UnknownTool(name.to_string())),
     };
 
@@ -324,7 +273,7 @@ mod tests {
     fn registry_covers_catalogue() {
         use std::collections::BTreeSet;
         let catalogue: BTreeSet<&str> = all().iter().map(|t| t.name).collect();
-        let registry: BTreeSet<&str> = HANDLERS.iter().map(|h| h.name).collect();
+        let registry: BTreeSet<&str> = HANDLERS.iter().map(|(name, _)| *name).collect();
         assert_eq!(
             catalogue, registry,
             "every tool needs exactly one dispatch handler (and vice versa)"
@@ -337,8 +286,8 @@ mod tests {
     #[test]
     fn build_payload_shapes() {
         let build = |name: &str, args: Value| -> Value {
-            let h = HANDLERS.iter().find(|h| h.name == name).unwrap();
-            (h.build_payload)(&args)
+            let (_, build_payload) = HANDLERS.iter().find(|(op, _)| *op == name).unwrap();
+            build_payload(&args)
         };
         // page_fill merges ref/selector with the value.
         assert_eq!(

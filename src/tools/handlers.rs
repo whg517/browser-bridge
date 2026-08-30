@@ -2,7 +2,8 @@
 //!
 //! Each `build_*` fn maps the (schema-shaped) MCP args into the bridge op's
 //! argument object. [`call`] forwards the built payload to the session, and
-//! the small `sarg`/`iarg`/`ref_or_selector` helpers coerce individual args.
+//! the small `sarg`/`iarg`/`opt_*`/`ref_or_selector` helpers coerce individual
+//! args.
 
 use serde_json::{json, Value};
 
@@ -30,59 +31,38 @@ pub(super) fn build_page_eval(args: &Value) -> Value {
 }
 
 pub(super) fn build_page_fill(args: &Value) -> Value {
-    let value = sarg(args, "value");
     let mut payload = ref_or_selector(args);
-    payload["value"] = json!(value);
+    payload["value"] = json!(sarg(args, "value"));
     payload
 }
 
 pub(super) fn build_page_scroll(args: &Value) -> Value {
     let mut payload = serde_json::Map::new();
-    if let Some(d) = args.get("direction").and_then(|v| v.as_str()) {
-        payload.insert("direction".into(), json!(d));
-    }
-    if let Some(p) = args.get("pixels").and_then(|v| v.as_i64()) {
-        payload.insert("pixels".into(), json!(p));
-    }
+    opt_str(&mut payload, args, "direction");
+    opt_i64(&mut payload, args, "pixels");
     Value::Object(payload)
 }
 
 pub(super) fn build_page_text(args: &Value) -> Value {
     let mut payload = serde_json::Map::new();
-    if let Some(m) = args.get("mode").and_then(|v| v.as_str()) {
-        payload.insert("mode".into(), json!(m));
-    }
+    opt_str(&mut payload, args, "mode");
     Value::Object(payload)
 }
 
 pub(super) fn build_page_links(args: &Value) -> Value {
     let mut payload = serde_json::Map::new();
-    if let Some(t) = args.get("type").and_then(|v| v.as_str()) {
-        payload.insert("type".into(), json!(t));
-    }
+    opt_str(&mut payload, args, "type");
     Value::Object(payload)
 }
 
 pub(super) fn build_page_wait_for(args: &Value) -> Value {
     let mut payload = serde_json::Map::new();
-    if let Some(s) = args.get("selector").and_then(|v| v.as_str()) {
-        payload.insert("selector".into(), json!(s));
-    }
-    if let Some(c) = args.get("minCount").and_then(|v| v.as_i64()) {
-        payload.insert("minCount".into(), json!(c));
-    }
-    if let Some(t) = args.get("text").and_then(|v| v.as_str()) {
-        payload.insert("text".into(), json!(t));
-    }
-    if let Some(n) = args.get("nav").and_then(|v| v.as_bool()) {
-        payload.insert("nav".into(), json!(n));
-    }
-    if let Some(u) = args.get("until").and_then(|v| v.as_str()) {
-        payload.insert("until".into(), json!(u));
-    }
-    if let Some(b) = args.get("settled").and_then(|v| v.as_bool()) {
-        payload.insert("settled".into(), json!(b));
-    }
+    opt_str(&mut payload, args, "selector");
+    opt_i64(&mut payload, args, "minCount");
+    opt_str(&mut payload, args, "text");
+    opt_bool(&mut payload, args, "nav");
+    opt_str(&mut payload, args, "until");
+    opt_bool(&mut payload, args, "settled");
     payload.insert(
         "timeoutMs".into(),
         json!(args
@@ -95,34 +75,22 @@ pub(super) fn build_page_wait_for(args: &Value) -> Value {
 
 pub(super) fn build_page_snapshot_precise(args: &Value) -> Value {
     let mut payload = serde_json::Map::new();
-    if let Some(f) = args.get("frameId").and_then(|v| v.as_str()) {
-        payload.insert("frameId".into(), json!(f));
-    }
+    opt_str(&mut payload, args, "frameId");
     Value::Object(payload)
 }
 
 pub(super) fn build_cookie_get(args: &Value) -> Value {
     let mut payload = serde_json::Map::new();
-    if let Some(u) = args.get("url").and_then(|v| v.as_str()) {
-        payload.insert("url".into(), json!(u));
-    }
-    if let Some(d) = args.get("domain").and_then(|v| v.as_str()) {
-        payload.insert("domain".into(), json!(d));
-    }
-    if let Some(n) = args.get("name").and_then(|v| v.as_str()) {
-        payload.insert("name".into(), json!(n));
-    }
+    opt_str(&mut payload, args, "url");
+    opt_str(&mut payload, args, "domain");
+    opt_str(&mut payload, args, "name");
     Value::Object(payload)
 }
 
 pub(super) fn build_storage_get(args: &Value) -> Value {
     let mut payload = serde_json::Map::new();
-    if let Some(t) = args.get("type").and_then(|v| v.as_str()) {
-        payload.insert("type".into(), json!(t));
-    }
-    if let Some(k) = args.get("key").and_then(|v| v.as_str()) {
-        payload.insert("key".into(), json!(k));
-    }
+    opt_str(&mut payload, args, "type");
+    opt_str(&mut payload, args, "key");
     Value::Object(payload)
 }
 
@@ -146,13 +114,38 @@ fn iarg(args: &Value, key: &str) -> i64 {
     args.get(key).and_then(|v| v.as_i64()).unwrap_or(0)
 }
 
+/// Copy an optional string field from `args` into `payload` — but only when
+/// present, and only when it really is a string.
+///
+/// Absent and wrong-typed fields are omitted rather than defaulted: the schema
+/// checks in `tools` (`check_required` / `check_arg_types`) own rejection, so
+/// by the time a builder runs through [`dispatch`](super::dispatch) every field
+/// it names is either absent by choice or valid. The builders stay dumb shapers
+/// of what survived them.
+fn opt_str(payload: &mut serde_json::Map<String, Value>, args: &Value, key: &str) {
+    if let Some(v) = args.get(key).and_then(Value::as_str) {
+        payload.insert(key.into(), json!(v));
+    }
+}
+
+/// [`opt_str`], for optional integer fields.
+fn opt_i64(payload: &mut serde_json::Map<String, Value>, args: &Value, key: &str) {
+    if let Some(v) = args.get(key).and_then(Value::as_i64) {
+        payload.insert(key.into(), json!(v));
+    }
+}
+
+/// [`opt_str`], for optional boolean fields.
+fn opt_bool(payload: &mut serde_json::Map<String, Value>, args: &Value, key: &str) {
+    if let Some(v) = args.get(key).and_then(Value::as_bool) {
+        payload.insert(key.into(), json!(v));
+    }
+}
+
+/// The shared ref-or-selector addressing pair used by the DOM-acting tools.
 pub(super) fn ref_or_selector(args: &Value) -> Value {
     let mut payload = serde_json::Map::new();
-    if let Some(r) = args.get("ref").and_then(|v| v.as_str()) {
-        payload.insert("ref".into(), json!(r));
-    }
-    if let Some(s) = args.get("selector").and_then(|v| v.as_str()) {
-        payload.insert("selector".into(), json!(s));
-    }
+    opt_str(&mut payload, args, "ref");
+    opt_str(&mut payload, args, "selector");
     Value::Object(payload)
 }
