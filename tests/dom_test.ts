@@ -17,33 +17,12 @@
 import { spawn, type Subprocess } from "bun";
 import * as fs from "fs";
 import * as path from "path";
+import { REPO, check, fixtureUrl, finish, resolveChromeBin } from "./helpers";
 
-const REPO = path.resolve(import.meta.dir, "..");
 // The built bundle (esbuild strips TS types from src/content.ts). Run
 // `npm --prefix extension run build` first; `run_all.sh` / `just` do this.
 const CONTENT_JS = path.join(REPO, "extension", "dist", "content.js");
-const FIXTURES_DIR = path.join(REPO, "tests", "fixtures");
-const CHROME =
-  process.env.CHROME_BIN ||
-  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
-
-/** Resolve a fixture filename to its file:// URL. */
-function fixtureUrl(name: string): string {
-  return "file://" + path.join(FIXTURES_DIR, name);
-}
-
-// ─── assertion helpers (same style as tests/e2e.py) ────────────────────────
-let _pass = 0;
-let _fail = 0;
-function check(cond: boolean, label: string): void {
-  if (cond) {
-    _pass++;
-    console.log("  PASS  " + label);
-  } else {
-    _fail++;
-    console.log("  FAIL  " + label);
-  }
-}
+const CHROME = resolveChromeBin();
 
 // ─── headless Chrome process ───────────────────────────────────────────────
 class Chrome {
@@ -299,8 +278,7 @@ async function main() {
   } finally {
     await chrome.stop();
   }
-  console.log(`\n${"=".repeat(40)}\n${_pass} passed, ${_fail} failed`);
-  process.exit(_fail > 0 ? 1 : 0);
+  finish();
 }
 
 async function runAllTests(page: Page): Promise<void> {
