@@ -6,8 +6,8 @@
 // user's disabledTools list — no chrome.* calls, no I/O, no import-time side
 // effects — so it is trivially unit-testable and can be reused from anywhere.
 //
-// NOTE: this module is not yet wired into background/dispatch.ts. Wiring is a
-// separate, supervised step; for now this is scaffolding.
+// Live enforcement point: background/dispatch.ts routes the per-tool
+// enable/disable gate through `decide` (assertNotDisabled) before any op runs.
 
 import { TOOL_META, type Confirmation, type Risk } from "../shared/ops";
 
