@@ -31,18 +31,21 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import { createInterface } from "readline";
-import { fileURLToPath, pathToFileURL } from "url";
+import {
+  REPO,
+  assertIsolatedBrowser,
+  check,
+  failedCount,
+  finish,
+  fixtureUrl,
+  resolveChromeBin,
+  sleep,
+} from "./helpers";
 
-const HERE = path.dirname(fileURLToPath(import.meta.url));
-const REPO = path.resolve(HERE, "..");
 const IS_WINDOWS = process.platform === "win32";
 const BIN = path.join(REPO, "target", "release", "browser-bridge" + (IS_WINDOWS ? ".exe" : ""));
 const DIST = path.join(REPO, "extension", "dist");
-const CHROME =
-  process.env.CHROME_BIN ||
-  (IS_WINDOWS
-    ? "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
-    : "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome");
+const CHROME = resolveChromeBin();
 const HOST_NAME = "com.browser_bridge.host";
 const REG_KEY = `HKCU\\Software\\Google\\Chrome\\NativeMessagingHosts\\${HOST_NAME}`;
 const LOCK = lockPath();
@@ -69,7 +72,7 @@ function lockPath(): string {
     path.join(os.homedir(), ".cache/browser-bridge");
   return path.join(dir, "run.lock");
 }
-const FIXTURE = pathToFileURL(path.join(REPO, "tests", "fixtures", "page.html")).href;
+const FIXTURE = fixtureUrl("page.html");
 
 // ── preflight (opt-in) ─────────────────────────────────────────────────────
 if (process.env.BB_REAL_E2E !== "1") {
@@ -84,18 +87,7 @@ if (process.platform !== "darwin" && !IS_WINDOWS && process.platform !== "linux"
 // --load-extension. Driving your daily Google Chrome can capture and then CLOSE
 // your real browser session. Require an ISOLATED Chrome for Testing / Chromium
 // binary via CHROME_BIN — never the everyday browser.
-{
-  const isDailyMac = CHROME.includes("/Google Chrome.app/") && CHROME.endsWith("/Google Chrome");
-  const isDailyWin = /\\Google\\Chrome\\Application\\chrome\.exe$/i.test(CHROME);
-  if (!process.env.CHROME_BIN || isDailyMac || isDailyWin) {
-    console.log(
-      "SKIP: refusing to drive your daily Chrome (it can capture and close your\n" +
-        "real session). Set CHROME_BIN to a Chrome for Testing / Chromium binary\n" +
-        "(see tests/README.md → Safety)."
-    );
-    process.exit(0);
-  }
-}
+assertIsolatedBrowser(CHROME);
 for (const [label, p] of [
   ["release binary", BIN],
   ["extension dist", DIST],
@@ -106,19 +98,6 @@ for (const [label, p] of [
     process.exit(0);
   }
 }
-
-let _pass = 0;
-let _fail = 0;
-function check(cond: boolean, label: string): void {
-  if (cond) {
-    _pass++;
-    console.log("  PASS  " + label);
-  } else {
-    _fail++;
-    console.log("  FAIL  " + label);
-  }
-}
-const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
 /** Chrome derives an extension id from its public key when pinned, or from the
  * unpacked extension's absolute path otherwise. */
@@ -454,15 +433,14 @@ async function main(): Promise<void> {
     // The server's log is the only window into the connection and announce
     // handshake; without it a failure here is unactionable, since the browser and
     // its profile are gone by the time anything is printed.
-    if (_fail > 0 || process.env.BB_REAL_E2E_DEBUG === "1") {
+    if (failedCount() > 0 || process.env.BB_REAL_E2E_DEBUG === "1") {
       console.log(`\n── host manifest registered at ──\n${registeredAt || "(never written)"}`);
       console.log("\n── MCP server log ──\n" + (stderrLog || "(empty)"));
       console.log("\n── extension service-worker log ──\n" + (swLog.join("\n") || "(empty)"));
     }
   }
 
-  console.log(`\n${"=".repeat(40)}\n${_pass} passed, ${_fail} failed`);
-  process.exit(_fail > 0 ? 1 : 0);
+  finish();
 }
 
 main().catch((e) => {

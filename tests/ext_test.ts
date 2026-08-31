@@ -19,45 +19,13 @@ import puppeteer, { type Target } from "puppeteer-core";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
+import { REPO, assertIsolatedBrowser, check, finish, resolveChromeBin, sleep } from "./helpers";
 
-const REPO = path.resolve(import.meta.dir, "..");
 // The load-unpacked target is the built bundle. Run
 // `npm --prefix extension run build` first (run_all.sh / just handle this).
 // Override with BB_EXT_DIR to point at a different unpacked extension.
 const EXTENSION_DIR = process.env.BB_EXT_DIR || path.join(REPO, "extension", "dist");
-const CHROME =
-  process.env.CHROME_BIN || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
-
-// SAFETY (do not remove): this launches a NON-HEADLESS Chrome with
-// --load-extension. On macOS, launching your normal Google Chrome while it is
-// running forwards the flags to the EXISTING instance (ignoring --user-data-dir),
-// so the test captures — and on cleanup CLOSES — your real browser session.
-// (This actually happened.) Refuse unless CHROME_BIN points at an ISOLATED
-// browser (Chrome for Testing / Chromium) that is NOT your daily Chrome.
-function assertIsolatedBrowser(bin: string): void {
-  const isDailyChrome = bin.includes("/Google Chrome.app/") && bin.endsWith("/Google Chrome");
-  if (!process.env.CHROME_BIN || isDailyChrome) {
-    console.log(
-      "SKIP: refusing to drive your daily Google Chrome — it can capture and close\n" +
-        "your real session. Set CHROME_BIN to a Chrome for Testing / Chromium binary\n" +
-        "(see tests/README.md → Safety) to run this test."
-    );
-    process.exit(0);
-  }
-}
-
-let _pass = 0;
-let _fail = 0;
-function check(cond: boolean, label: string): void {
-  if (cond) {
-    _pass++;
-    console.log("  PASS  " + label);
-  } else {
-    _fail++;
-    console.log("  FAIL  " + label);
-  }
-}
-const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+const CHROME = resolveChromeBin();
 
 async function main(): Promise<void> {
   assertIsolatedBrowser(CHROME);
@@ -167,8 +135,7 @@ async function main(): Promise<void> {
     } catch {}
   }
 
-  console.log(`\n${"=".repeat(50)}\n${_pass} passed, ${_fail} failed`);
-  process.exit(_fail > 0 ? 1 : 0);
+  finish(50);
 }
 
 main().catch((e) => {
