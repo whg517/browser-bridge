@@ -161,10 +161,10 @@ class ServerLog:
         return False
 
 
-def start_server(env=None):
+def start_server(env=None, extra_args=None):
     """Spawn an MCP server with its stderr drained. Returns (proc, ServerLog)."""
     global _current_log
-    proc = subprocess.Popen([BIN], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+    proc = subprocess.Popen([BIN] + list(extra_args or []), stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE, text=True, encoding="utf-8",
                             env=bb_env(env))
     log = ServerLog(proc)
@@ -908,7 +908,7 @@ def test_native_host_mode():
 
 
 def test_server_takeover():
-    print("\n[test] new MCP server supplants the previous server")
+    print("\n[test] `--takeover` supplants the previous server")
     try:
         os.remove(LOCK)
     except FileNotFoundError:
@@ -918,15 +918,52 @@ def test_server_takeover():
     try:
         first_lock = wait_lock(first)
         check(first_lock is not None, "first server wrote its lock file")
-        second, _ = start_server()
+        # ADR-0028 Phase 0: displacement is opt-in — a bare second server
+        # refuses (see test_server_refuses_live_bridge), so supplanting must
+        # say so on the command line.
+        second, _ = start_server(extra_args=["--takeover"])
         second_lock = wait_lock(second)
-        check(second_lock is not None, "second server replaced the lock file")
+        check(second_lock is not None, "second server (--takeover) replaced the lock file")
         first.wait(timeout=8)
         check(first.poll() is not None, "previous server was terminated")
     finally:
         if first.poll() is None:
             first.kill()
         if second is not None:
+            try:
+                second.stdin.close()
+            except Exception:
+                pass
+            second.wait(timeout=3)
+
+
+def test_server_refuses_live_bridge():
+    print("\n[test] a second server without --takeover refuses and leaves the first alive")
+    try:
+        os.remove(LOCK)
+    except FileNotFoundError:
+        pass
+    first, _ = start_server()
+    second = None
+    try:
+        check(wait_lock(first) is not None, "first server wrote its lock file")
+        # The default flipped from "silently take over" to "refuse" (ADR-0028
+        # Phase 0): a live lock is an error naming the way out, not a victim.
+        second, second_log = start_server()
+        try:
+            second.wait(timeout=8)
+        except subprocess.TimeoutExpired:
+            pass
+        check(second.poll() is not None, "second server exited instead of running")
+        check(second.returncode not in (0, None), "second server exited non-zero")
+        check("--takeover" in second_log.text(),
+              "refusal names --takeover as the way out")
+        check(first.poll() is None, "first server is still alive")
+        check(wait_lock(first) is not None, "first server's lock file still present")
+    finally:
+        if first.poll() is None:
+            first.kill()
+        if second is not None and second.poll() is None:
             try:
                 second.stdin.close()
             except Exception:
@@ -1101,6 +1138,7 @@ def main():
     test_storage_get_round_trip()
     test_native_host_mode()
     test_server_takeover()
+    test_server_refuses_live_bridge()
     test_unknown_method_returns_32601()
     print(f"\n{'='*40}\n{_passed} passed, {_failed} failed")
     sys.exit(0 if _failed == 0 else 1)

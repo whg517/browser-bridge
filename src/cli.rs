@@ -32,6 +32,7 @@ const KNOWN_ARGS: &[&str] = &[
     "-V",
     "--version",
     "--native-host",
+    "--takeover",
     "doctor",
     "status",
     "tools",
@@ -41,10 +42,11 @@ const KNOWN_ARGS: &[&str] = &[
 /// An unrecognized argv[1], if there is one.
 ///
 /// Without this the mode dispatch has no unknown-argument branch: anything
-/// unmatched falls through to the default, which starts an MCP server — and
-/// starting one deliberately terminates whichever server holds the lock. So
-/// `browser-bridge --version` did not print an error, it silently killed a
-/// running agent session, and `browser-bridge doctro` did the same.
+/// unmatched falls through to the default, which starts an MCP server and
+/// claims the bridge. (Before ADR-0028 Phase 0 that claim was a silent
+/// takeover — `browser-bridge --version` printed no error and killed the
+/// running agent session; the default now refuses, but a typo should never
+/// get as far as starting a server at all.)
 ///
 /// Matching against the full accepted set rather than only `-`-prefixed input
 /// is deliberate: a mistyped subcommand is exactly as destructive as a mistyped
@@ -82,6 +84,7 @@ pub fn print_help() {
          Bridge an MCP client to a real Chrome via an extension + native host.\n\n\
          USAGE:\n    \
          browser-bridge              Run as MCP server (for your MCP client)\n    \
+         browser-bridge --takeover   Run as MCP server, taking over a live bridge\n    \
          browser-bridge tools [--json]      List the available tools + arguments\n    \
          browser-bridge call <tool> [json]  Run one tool and print its result (no MCP)\n    \
          browser-bridge doctor       Print a read-only health report (alias: status)\n    \
@@ -184,8 +187,9 @@ mod tests {
     }
 
     // The bug this guards: an unmatched argv[1] fell through to the default
-    // branch, which starts an MCP server — and that terminates whichever server
-    // holds the lock. So a typo ended somebody's session instead of erroring.
+    // branch, which starts an MCP server — which (before ADR-0028 Phase 0)
+    // terminated whichever server held the lock. So a typo ended somebody's
+    // session instead of erroring.
     #[test]
     fn unrecognized_args_are_rejected_not_run_as_a_server() {
         // Mistyped flags...

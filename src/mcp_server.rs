@@ -12,7 +12,7 @@ use crate::protocol::{install_stderr_panic_hook, mcp_read, mcp_write, JsonRpc};
 use crate::session::Session;
 use crate::tools;
 
-pub fn run() -> i32 {
+pub fn run(supplant_live: bool) -> i32 {
     install_stderr_panic_hook();
     crate::protocol::ignore_sigpipe();
 
@@ -27,10 +27,13 @@ pub fn run() -> i32 {
         ipc::LockFile::remove();
     });
 
-    // Bind the bridge, take over from any prior *live* MCP server (a fresh MCP
-    // client session legitimately replaces the old one), and start accepting the
-    // native host. See `start_bridge`.
-    let session = match start_bridge(true) {
+    // Bind the bridge and claim the lock — refusing by default when another
+    // live server owns it, displacing it only when the caller asked for that
+    // (`--takeover`). Then start accepting the native host. See `start_bridge`
+    // and ADR-0028 Phase 0 for why the default flipped from "take over" to
+    // "refuse": with multi-agent use real, a fresh MCP client session silently
+    // replacing the old one is a bug, not a feature.
+    let session = match start_bridge(supplant_live) {
         Some(s) => s,
         None => return 1,
     };
@@ -76,6 +79,29 @@ pub fn run() -> i32 {
 /// over (MCP server mode — a fresh client session replaces the old). `call` mode
 /// passes `false`: it refuses up front rather than interrupting a running client,
 /// so here it only ever overwrites a stale (dead-pid) lock.
+/// What a starter should do about an existing lock file (ADR-0028 Phase 0).
+///
+/// Pure, so the refuse / takeover / stale policy is unit-testable without
+/// sockets or real processes.
+#[derive(Debug, PartialEq)]
+enum LockHeld {
+    /// A live server owns the bridge: refuse by default, supplant it only
+    /// under `--takeover`.
+    Live(u32),
+    /// No lock at all, a lock naming our own pid (crash leftover with pid
+    /// reuse, or a same-pid restart), or a dead owner — safe to claim as-is
+    /// after clearing.
+    Claimable,
+}
+
+fn lock_conflict(prev: Option<ipc::LockFile>, my_pid: u32) -> LockHeld {
+    match prev {
+        Some(lf) if lf.pid == my_pid => LockHeld::Claimable,
+        Some(lf) if pid_is_alive(lf.pid) => LockHeld::Live(lf.pid),
+        _ => LockHeld::Claimable,
+    }
+}
+
 fn start_bridge(supplant_live: bool) -> Option<Session> {
     let (listener, lock) = match ipc::listen() {
         Ok(x) => x,
@@ -84,28 +110,76 @@ fn start_bridge(supplant_live: bool) -> Option<Session> {
             return None;
         }
     };
-    if supplant_live {
-        // The native host keeps talking to whichever server it's connected to (it
-        // doesn't follow lock-file changes), so kill the old one to force the
-        // extension to reconnect against our new lock.
-        if let Ok(Some(prev)) = ipc::LockFile::read() {
-            if prev.pid != lock.pid && pid_is_alive(prev.pid) {
-                log_info!("mcp", "supplanting prior MCP server pid {}", prev.pid);
-                terminate_process(prev.pid);
-                for _ in 0..50 {
-                    if !pid_is_alive(prev.pid) {
-                        break;
+    // Claim the bridge exclusively. `claim` is create-new, so an existing lock
+    // is an obstacle we must decide about — never something we silently
+    // overwrite. A LIVE owner is refused (naming the way out) unless
+    // `--takeover` made the displacement explicit; a STALE one (crashed
+    // owner, leftover, corrupt file) is cleared and claimed.
+    let mut attempts = 0u8;
+    let lock = loop {
+        attempts += 1;
+        match lock.claim() {
+            Ok(()) => break lock,
+            Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {
+                match lock_conflict(ipc::LockFile::read().ok().flatten(), lock.pid) {
+                    LockHeld::Claimable => {
+                        if attempts > 5 {
+                            log_error!(
+                                "mcp",
+                                "lock file at {} cannot be cleared (repeatedly present but not \
+                                 owned by a live server)",
+                                ipc::LockFile::path().display()
+                            );
+                            return None;
+                        }
+                        ipc::LockFile::remove();
                     }
-                    std::thread::sleep(std::time::Duration::from_millis(100));
+                    LockHeld::Live(prev_pid) if supplant_live => {
+                        // The native host keeps talking to whichever server it's
+                        // connected to (it doesn't follow lock-file changes), so
+                        // kill the old one to force the extension to reconnect
+                        // against our new lock.
+                        log_info!(
+                            "mcp",
+                            "supplanting prior MCP server pid {prev_pid} (--takeover)"
+                        );
+                        terminate_process(prev_pid);
+                        for _ in 0..50 {
+                            if !pid_is_alive(prev_pid) {
+                                break;
+                            }
+                            std::thread::sleep(std::time::Duration::from_millis(100));
+                        }
+                        ipc::LockFile::remove();
+                        if attempts > 5 {
+                            log_error!(
+                                "mcp",
+                                "supplanted pid {prev_pid} but its lock file at {} still cannot \
+                                 be re-claimed",
+                                ipc::LockFile::path().display()
+                            );
+                            return None;
+                        }
+                    }
+                    LockHeld::Live(prev_pid) => {
+                        log_error!(
+                            "mcp",
+                            "another browser-bridge server is already running (pid {prev_pid}) \
+                             and owns the bridge; refusing to start over it. Multi-agent use is \
+                             served by the broker (ADR-0028) — for now, pass --takeover to take \
+                             the bridge over deliberately (the previous server is terminated), \
+                             or stop the other MCP client first."
+                        );
+                        return None;
+                    }
                 }
-                ipc::LockFile::remove();
+            }
+            Err(e) => {
+                log_error!("mcp", "failed to claim lock file: {e}");
+                return None;
             }
         }
-    }
-    if let Err(e) = lock.write() {
-        log_error!("mcp", "failed to write lock file: {e}");
-        return None;
-    }
+    };
     log_info!(
         "mcp",
         "bridge listening on 127.0.0.1:{} (pid {}) lock at {}",
@@ -433,6 +507,57 @@ fn terminate_process(pid: u32) {
 mod call_tests {
     use super::parse_call_args;
     use serde_json::{json, Value};
+
+    // ADR-0028 Phase 0: the refuse / takeover / stale decision, socket-less.
+    #[test]
+    fn lock_conflict_classifies_own_stale_and_live_owners() {
+        use super::{lock_conflict, LockHeld};
+        // No previous lock: nothing to decide.
+        assert_eq!(lock_conflict(None, 42), LockHeld::Claimable);
+        // A lock naming OUR pid counts as ours even though that pid is very
+        // much alive — pid reuse and same-pid restarts must not read as a
+        // foreign live server.
+        let mine = std::process::id();
+        assert_eq!(
+            lock_conflict(
+                Some(crate::ipc::LockFile {
+                    port: 1,
+                    secret: "s".into(),
+                    pid: mine
+                }),
+                mine
+            ),
+            LockHeld::Claimable
+        );
+        // Stale: pid 0 can never be a live process (reserved, and the pid
+        // classifier rejects it before any signal is sent).
+        assert_eq!(
+            lock_conflict(
+                Some(crate::ipc::LockFile {
+                    port: 1,
+                    secret: "s".into(),
+                    pid: 0
+                }),
+                mine
+            ),
+            LockHeld::Claimable
+        );
+        // A genuinely live foreign owner: Live — the caller refuses or takes
+        // over, never silently claims. pid 1 (launchd/init) is alive on every
+        // unix; the liveness probe differs on Windows, so gate this arm.
+        #[cfg(unix)]
+        assert_eq!(
+            lock_conflict(
+                Some(crate::ipc::LockFile {
+                    port: 1,
+                    secret: "s".into(),
+                    pid: 1
+                }),
+                mine
+            ),
+            LockHeld::Live(1)
+        );
+    }
 
     #[test]
     fn no_args_parse_to_null() {

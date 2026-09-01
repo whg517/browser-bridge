@@ -91,20 +91,31 @@ impl LockFile {
         }
     }
 
-    pub fn write(&self) -> io::Result<()> {
+    /// Atomically CLAIM the lock: create run.lock exclusively and write our
+    /// record into it. `create_new` fails with `AlreadyExists` when any file
+    /// is in the way, so claiming can never silently displace an existing
+    /// lock — the starter gets to decide instead (live owner: refuse, or
+    /// supplant under `--takeover`; dead owner: stale, remove and retry).
+    ///
+    /// This replaces the old write-tmp-then-rename, which was "last writer
+    /// wins" by construction: whichever server started second overwrote the
+    /// first one's lock, which is how two MCP clients ended up fighting over
+    /// one bridge with no error on either side (#45, ADR-0028 Phase 0).
+    ///
+    /// There is no half-written state to worry about: the JSON is written only
+    /// after the exclusive create succeeded, and readers either see the whole
+    /// previous file or the whole ours.
+    pub fn claim(&self) -> io::Result<()> {
         let path = Self::path();
-        let mut tmp = path.clone();
-        tmp.set_extension("lock.tmp");
         let bytes = serde_json::to_vec(self)?;
         #[cfg(unix)]
         {
             use std::os::unix::fs::OpenOptionsExt;
             let mut f = fs::OpenOptions::new()
                 .write(true)
-                .create(true)
-                .truncate(true)
+                .create_new(true)
                 .mode(0o600)
-                .open(&tmp)?;
+                .open(&path)?;
             f.write_all(&bytes)?;
             f.flush()?;
         }
@@ -112,22 +123,11 @@ impl LockFile {
         {
             let mut f = fs::OpenOptions::new()
                 .write(true)
-                .create(true)
-                .truncate(true)
-                .open(&tmp)?;
+                .create_new(true)
+                .open(&path)?;
             f.write_all(&bytes)?;
             f.flush()?;
         }
-        // Unix rename atomically replaces an existing destination. Windows'
-        // std::fs::rename does not, so remove a stale destination first. That
-        // creates a tiny not-found window, but the extension's reconnect loop
-        // retries after 2 seconds and can never observe a half-written JSON
-        // file because all bytes were flushed to the temporary file first.
-        #[cfg(windows)]
-        if path.exists() {
-            fs::remove_file(&path)?;
-        }
-        fs::rename(&tmp, &path)?;
         Ok(())
     }
 
@@ -326,14 +326,44 @@ mod tests {
 
     #[test]
     fn bb_lock_dir_overrides_path() {
-        // Only this test touches BB_LOCK_DIR; the other path() test asserts the
-        // filename, which stays "run.lock" under the override, so no race.
+        // Only this test touches BB_LOCK_DIR — cargo runs tests in parallel
+        // threads, so a second env-var user would race this one and could aim
+        // a claim at the REAL user lock. The claim/unclaim cycle below lives
+        // here for exactly that reason. (The other path() test asserts only
+        // the filename, which stays "run.lock" under the override either way.)
         let tmp = std::env::temp_dir().join(format!("bb-lockdir-test-{}", std::process::id()));
         std::env::set_var("BB_LOCK_DIR", &tmp);
         let p = LockFile::path();
-        std::env::remove_var("BB_LOCK_DIR");
         assert!(p.starts_with(&tmp), "path {p:?} should be under {tmp:?}");
         assert_eq!(p.file_name().unwrap(), "run.lock");
+        // The claim cycle, isolated in the throwaway dir: exclusive create
+        // refuses a second claimer without touching the first claimer's
+        // record, and the stale path (remove) lets the next claimer win.
+        let first = LockFile {
+            port: 1,
+            secret: "ab".into(),
+            pid: std::process::id(),
+        };
+        first.claim().expect("first claim succeeds");
+        let second = LockFile {
+            port: 2,
+            secret: "cd".into(),
+            pid: 999_999,
+        };
+        let err = second
+            .claim()
+            .expect_err("claiming over a live lock must fail");
+        assert_eq!(err.kind(), io::ErrorKind::AlreadyExists);
+        assert_eq!(
+            LockFile::read().unwrap().unwrap().port,
+            1,
+            "the second claim must not have overwritten the first"
+        );
+        LockFile::remove();
+        second.claim().expect("claim after remove succeeds");
+        assert_eq!(LockFile::read().unwrap().unwrap().port, 2);
+        LockFile::remove();
+        std::env::remove_var("BB_LOCK_DIR");
         let _ = fs::remove_dir_all(&tmp);
     }
 }
