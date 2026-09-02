@@ -3,6 +3,7 @@
 
 import { BridgeError } from "../shared/bridge-error";
 import { TOP_FRAME } from "./frames";
+import { clearCurrentTabId, getCurrentTabId, setCurrentTabId } from "./current-tab";
 
 /**
  * Run a chrome.tabs call, classifying "that tab is gone" as TAB_NOT_FOUND.
@@ -28,9 +29,33 @@ async function asTabLookup<T>(tabId: number, work: () => Promise<T>): Promise<T>
   }
 }
 
+/**
+ * Resolve the tab a page-level op should act on (ADR-0028 Phase 1a).
+ *
+ * 1. An explicit `tabId` wins — and becomes the session's current tab, because
+ *    targeting a tab is how a conversation says "work here".
+ * 2. Otherwise the session's current tab (the virtual-focus pointer), as long
+ *    as it still exists. A pointer at a closed tab is cleared rather than
+ *    failing forever: the next call falls back to the active tab.
+ * 3. Otherwise the active tab, exactly as before the pointer existed.
+ *
+ * The fallback to active on a dead pointer is deliberately broad: pointer
+ * restoration is best-effort — an explicit `tabId` still gets the strict
+ * TAB_NOT_FOUND classification via `asTabLookup`.
+ */
 export async function resolveTargetTab(maybeTabId: number | undefined): Promise<chrome.tabs.Tab> {
   if (maybeTabId) {
-    return await asTabLookup(maybeTabId, () => chrome.tabs.get(maybeTabId));
+    const tab = await asTabLookup(maybeTabId, () => chrome.tabs.get(maybeTabId));
+    await setCurrentTabId(maybeTabId);
+    return tab;
+  }
+  const current = await getCurrentTabId();
+  if (current !== null) {
+    try {
+      return await chrome.tabs.get(current);
+    } catch {
+      await clearCurrentTabId();
+    }
   }
   const [active] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!active) throw new BridgeError("TAB_NOT_FOUND", "no active tab in the current window");
@@ -121,6 +146,8 @@ export async function tabFocus(tabId: number) {
   const t = await asTabLookup(tabId, () => chrome.tabs.update(tabId, { active: true }));
   if (!t) throw new BridgeError("TAB_NOT_FOUND", `tab ${tabId} not found — call tab_list again`);
   await chrome.windows.update(t.windowId, { focused: true });
+  // Focusing a tab makes it the session's current tab (ADR-0028 Phase 1a).
+  await setCurrentTabId(tabId);
   return { focused: tabId };
 }
 
@@ -136,6 +163,9 @@ export async function tabOpen(url: string) {
   // (ADR-0018). The groupTabs toggle was removed — grouping is unconditional.
   let groupId: number | undefined;
   if (typeof t.id === "number") {
+    // Opening a tab makes it the session's current tab (ADR-0028 Phase 1a) —
+    // the agent's very next page op should hit the tab it just created.
+    await setCurrentTabId(t.id);
     groupId = await addToWorkspaceGroup(t.id, t.windowId);
   }
   return { opened: t.id, url, groupId };
@@ -170,5 +200,10 @@ export async function tabClose(tabId: number) {
   // remove rejection.
   await asTabLookup(tabId, () => chrome.tabs.get(tabId));
   await asTabLookup(tabId, () => chrome.tabs.remove(tabId));
+  // Closing the session's current tab leaves the pointer dangling; clear it so
+  // the next op falls back to the active tab instead of a dead id.
+  if ((await getCurrentTabId()) === tabId) {
+    await clearCurrentTabId();
+  }
   return { closed: tabId };
 }

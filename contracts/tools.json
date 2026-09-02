@@ -85,9 +85,14 @@
       "scope": "page",
       "permission": "scripting",
       "confirmation": "none",
-      "description": "Capture the active tab's interactive elements as an accessibility-style tree. Each node has a stable `ref` (e.g. \"e3\"), a role, an accessible name, and a fallback CSS selector. Use the `ref` in page_click/page_fill when possible. Same-origin sub-frames are included automatically; a sub-frame node's `ref` is prefixed `f<frameId>:` (e.g. \"f2:e3\") and page_click/page_fill route it back to that frame.",
+      "description": "Capture the target tab's interactive elements as an accessibility-style tree. Each node has a stable `ref` (e.g. \"e3\"), a role, an accessible name, and a fallback CSS selector. Use the `ref` in page_click/page_fill when possible. Same-origin sub-frames are included automatically; a sub-frame node's `ref` is prefixed `f<frameId>:` (e.g. \"f2:e3\") and page_click/page_fill route it back to that frame.",
       "inputSchema": {
-        "properties": {},
+        "properties": {
+          "tabId": {
+            "description": "Tab id from tab_list to act on instead of the session's current tab. Targeting a tab (here, or via tab_focus / tab_open) makes it the session's current tab.",
+            "type": "integer"
+          }
+        },
         "required": [],
         "type": "object"
       }
@@ -99,7 +104,7 @@
       "scope": "page",
       "permission": "scripting",
       "confirmation": "none",
-      "description": "Click an element on the active tab. Prefer passing `ref` (from page_snapshot); fall back to `selector`.",
+      "description": "Click an element on the target tab. Prefer passing `ref` (from page_snapshot); fall back to `selector`.",
       "inputSchema": {
         "properties": {
           "ref": {
@@ -109,6 +114,10 @@
           "selector": {
             "description": "CSS selector fallback",
             "type": "string"
+          },
+          "tabId": {
+            "description": "Tab id from tab_list to act on instead of the session's current tab. Targeting a tab (here, or via tab_focus / tab_open) makes it the session's current tab.",
+            "type": "integer"
           }
         },
         "required": [],
@@ -122,7 +131,7 @@
       "scope": "page",
       "permission": "scripting",
       "confirmation": "none",
-      "description": "Type a value into a form field on the active tab. Prefer `ref`; fall back to `selector`. Password fields are masked in logs/history.",
+      "description": "Type a value into a form field on the target tab. Prefer `ref`; fall back to `selector`. Password fields are masked in logs/history.",
       "inputSchema": {
         "properties": {
           "ref": {
@@ -136,6 +145,10 @@
           "value": {
             "description": "Text to type into the field",
             "type": "string"
+          },
+          "tabId": {
+            "description": "Tab id from tab_list to act on instead of the session's current tab. Targeting a tab (here, or via tab_focus / tab_open) makes it the session's current tab.",
+            "type": "integer"
           }
         },
         "required": [
@@ -151,12 +164,16 @@
       "scope": "page",
       "permission": "scripting",
       "confirmation": "none",
-      "description": "Return the text content of the active tab (sensitive fields masked). `mode` \"visible\" (default) returns only rendered text — it excludes display:none / hidden inactive-tab panels; `mode` \"full\" also includes that hidden/inactive-tab text (script/style/noscript stripped). Use \"full\" when content is split across tabs/accordions. Same-origin sub-frames are appended under a frame marker.",
+      "description": "Return the text content of the target tab (sensitive fields masked). `mode` \"visible\" (default) returns only rendered text — it excludes display:none / hidden inactive-tab panels; `mode` \"full\" also includes that hidden/inactive-tab text (script/style/noscript stripped). Use \"full\" when content is split across tabs/accordions. Same-origin sub-frames are appended under a frame marker.",
       "inputSchema": {
         "properties": {
           "mode": {
             "description": "\"visible\" (default, rendered text only) or \"full\" (include hidden / inactive-tab content)",
             "type": "string"
+          },
+          "tabId": {
+            "description": "Tab id from tab_list to act on instead of the session's current tab. Targeting a tab (here, or via tab_focus / tab_open) makes it the session's current tab.",
+            "type": "integer"
           }
         },
         "required": [],
@@ -170,12 +187,16 @@
       "scope": "page",
       "permission": "scripting",
       "confirmation": "none",
-      "description": "Return the links on the active tab as an array of {text, href, type}, where type is one of mailto | tel | external | internal | anchor. Surfaces contact links (mailto:/tel:) and href targets that page_text only shows as anchor labels, and works even when page_snapshot is empty. hrefs are masked (token-like query strings redacted; emails / phone numbers preserved). Optional `type` filters to one kind; result is capped at 500. Includes links from same-origin sub-frames.",
+      "description": "Return the links on the target tab as an array of {text, href, type}, where type is one of mailto | tel | external | internal | anchor. Surfaces contact links (mailto:/tel:) and href targets that page_text only shows as anchor labels, and works even when page_snapshot is empty. hrefs are masked (token-like query strings redacted; emails / phone numbers preserved). Optional `type` filters to one kind; result is capped at 500. Includes links from same-origin sub-frames.",
       "inputSchema": {
         "properties": {
           "type": {
             "description": "Optional filter: one of mailto | tel | external | internal | anchor",
             "type": "string"
+          },
+          "tabId": {
+            "description": "Tab id from tab_list to act on instead of the session's current tab. Targeting a tab (here, or via tab_focus / tab_open) makes it the session's current tab.",
+            "type": "integer"
           }
         },
         "required": [],
@@ -189,9 +210,14 @@
       "scope": "page",
       "permission": "tabs",
       "confirmation": "none",
-      "description": "Capture the visible viewport of the active tab as a PNG (base64).",
+      "description": "Capture the visible viewport of the target tab as a PNG (base64).",
       "inputSchema": {
-        "properties": {},
+        "properties": {
+          "tabId": {
+            "description": "Tab id from tab_list to act on instead of the session's current tab. Targeting a tab (here, or via tab_focus / tab_open) makes it the session's current tab.",
+            "type": "integer"
+          }
+        },
         "required": [],
         "type": "object"
       }
@@ -203,7 +229,7 @@
       "scope": "page",
       "permission": "scripting",
       "confirmation": "none",
-      "description": "Scroll the active tab. Pass `direction` (up|down|top|bottom) or `pixels`.",
+      "description": "Scroll the target tab. Pass `direction` (up|down|top|bottom) or `pixels`.",
       "inputSchema": {
         "properties": {
           "direction": {
@@ -212,6 +238,10 @@
           },
           "pixels": {
             "description": "Number of pixels to scroll (positive = down)",
+            "type": "integer"
+          },
+          "tabId": {
+            "description": "Tab id from tab_list to act on instead of the session's current tab. Targeting a tab (here, or via tab_focus / tab_open) makes it the session's current tab.",
             "type": "integer"
           }
         },
@@ -226,7 +256,7 @@
       "scope": "page",
       "permission": "scripting",
       "confirmation": "none",
-      "description": "Wait until a condition is met on the active tab, or until timeout. One of: `selector` exists (optionally at least `minCount` matches), `text` appears, `nav` waits for the page to load (`until`: \"load\" default, or \"domcontentloaded\"), or `settled` waits for the DOM to stop mutating. SPA hash-route changes fire no navigation event — use `settled`, `selector`, or `text` for those.",
+      "description": "Wait until a condition is met on the target tab, or until timeout. One of: `selector` exists (optionally at least `minCount` matches), `text` appears, `nav` waits for the page to load (`until`: \"load\" default, or \"domcontentloaded\"), or `settled` waits for the DOM to stop mutating. SPA hash-route changes fire no navigation event — use `settled`, `selector`, or `text` for those.",
       "inputSchema": {
         "properties": {
           "nav": {
@@ -256,6 +286,10 @@
           "timeoutMs": {
             "description": "Max wait in ms (default 30000)",
             "type": "integer"
+          },
+          "tabId": {
+            "description": "Tab id from tab_list to act on instead of the session's current tab. Targeting a tab (here, or via tab_focus / tab_open) makes it the session's current tab.",
+            "type": "integer"
           }
         },
         "required": [],
@@ -269,12 +303,16 @@
       "scope": "page",
       "permission": "scripting",
       "confirmation": "none",
-      "description": "HIGH RISK — execute arbitrary JavaScript on the active tab. The return value is masked (JWT / long hex / long numbers / token-like strings). This is the most powerful tool: prefer page_click / page_fill / page_snapshot whenever possible, and only use page_eval when those cannot achieve the goal (custom events, reading framework state, SPA routing, canvas/WebGL, etc.). Code runs in the page's global scope, wrapped as `async`, so you can `await` and `return` a value. Async results are awaited. Errors are returned as {name, message}. REQUIRES the extension's \"CDP mode\" setting: Chrome forbids the extension from evaluating code in the page on every site, so with CDP mode off this tool always fails — the error says so, and you should relay it to the user (they enable it in the extension's Options page) rather than retrying or working around it. Every other tool works without it.",
+      "description": "HIGH RISK — execute arbitrary JavaScript on the target tab. The return value is masked (JWT / long hex / long numbers / token-like strings). This is the most powerful tool: prefer page_click / page_fill / page_snapshot whenever possible, and only use page_eval when those cannot achieve the goal (custom events, reading framework state, SPA routing, canvas/WebGL, etc.). Code runs in the page's global scope, wrapped as `async`, so you can `await` and `return` a value. Async results are awaited. Errors are returned as {name, message}. REQUIRES the extension's \"CDP mode\" setting: Chrome forbids the extension from evaluating code in the page on every site, so with CDP mode off this tool always fails — the error says so, and you should relay it to the user (they enable it in the extension's Options page) rather than retrying or working around it. Every other tool works without it.",
       "inputSchema": {
         "properties": {
           "code": {
             "description": "JavaScript code to execute",
             "type": "string"
+          },
+          "tabId": {
+            "description": "Tab id from tab_list to act on instead of the session's current tab. Targeting a tab (here, or via tab_focus / tab_open) makes it the session's current tab.",
+            "type": "integer"
           }
         },
         "required": [
@@ -296,6 +334,10 @@
           "frameId": {
             "description": "Optional: limit to a specific frame's tree",
             "type": "string"
+          },
+          "tabId": {
+            "description": "Tab id from tab_list to act on instead of the session's current tab. Targeting a tab (here, or via tab_focus / tab_open) makes it the session's current tab.",
+            "type": "integer"
           }
         },
         "required": [],
@@ -309,7 +351,7 @@
       "scope": "tab",
       "permission": "cookies",
       "confirmation": "none",
-      "description": "Read cookies for the active tab (or a url/domain you specify). Includes httpOnly cookies (the main reason to use this over document.cookie). Read-only; there is no cookie_set (writing httpOnly cookies is a session-fixation risk). Values are masked before being returned — by pattern (JWT / long hex / long digit runs / provider API keys) and by name, so a cookie called e.g. `csrftoken` or `sessionid` is redacted whatever its value looks like. If you omit url/domain/name, cookies for the active tab's URL are returned.",
+      "description": "Read cookies for the target tab (or a url/domain you specify). Includes httpOnly cookies (the main reason to use this over document.cookie). Read-only; there is no cookie_set (writing httpOnly cookies is a session-fixation risk). Values are masked before being returned — by pattern (JWT / long hex / long digit runs / provider API keys) and by name, so a cookie called e.g. `csrftoken` or `sessionid` is redacted whatever its value looks like. If you omit url/domain/name, cookies for the target tab's URL are returned.",
       "inputSchema": {
         "properties": {
           "domain": {
@@ -323,6 +365,10 @@
           "url": {
             "description": "Return cookies that would be sent to this URL",
             "type": "string"
+          },
+          "tabId": {
+            "description": "Tab id from tab_list to act on instead of the session's current tab. Targeting a tab (here, or via tab_focus / tab_open) makes it the session's current tab.",
+            "type": "integer"
           }
         },
         "required": [],
@@ -336,7 +382,7 @@
       "scope": "page",
       "permission": "scripting",
       "confirmation": "none",
-      "description": "Read the page's localStorage or sessionStorage (where frameworks like Auth0 / NextAuth / Firebase store tokens). Must run on the active tab; same-origin only (cross-origin iframes are not readable). Pass `key` to fetch one entry, or omit it to dump all entries (capped at 500). Values are ALWAYS masked — by pattern (JWT / long hex / long digit runs / provider API keys) and by key name, so an entry called e.g. `apiKey` or `authToken` is redacted whatever its value looks like. This masking is not toggleable. Read-only.",
+      "description": "Read the page's localStorage or sessionStorage (where frameworks like Auth0 / NextAuth / Firebase store tokens). Must run on the target tab; same-origin only (cross-origin iframes are not readable). Pass `key` to fetch one entry, or omit it to dump all entries (capped at 500). Values are ALWAYS masked — by pattern (JWT / long hex / long digit runs / provider API keys) and by key name, so an entry called e.g. `apiKey` or `authToken` is redacted whatever its value looks like. This masking is not toggleable. Read-only.",
       "inputSchema": {
         "properties": {
           "key": {
@@ -346,6 +392,10 @@
           "type": {
             "description": "\"local\" (default) or \"session\"",
             "type": "string"
+          },
+          "tabId": {
+            "description": "Tab id from tab_list to act on instead of the session's current tab. Targeting a tab (here, or via tab_focus / tab_open) makes it the session's current tab.",
+            "type": "integer"
           }
         },
         "required": [],

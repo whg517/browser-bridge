@@ -824,6 +824,55 @@ def test_storage_get_round_trip():
         mcp.wait(timeout=3)
 
 
+def test_page_op_tab_id_targets_the_bridge_envelope():
+    print("\n[test] page op tabId rides the BridgeReq envelope, not the op args")
+    try:
+        os.remove(LOCK)
+    except FileNotFoundError:
+        pass
+    mcp, log = start_server()
+    try:
+        lf = wait_lock(mcp)
+        check(lf is not None, "lock file written")
+        captured = {}
+
+        def responder(req):
+            captured["req"] = req
+            return {"id": req["id"], "ok": True, "data": {"mode": "visible", "text": "hi"}}
+
+        s, serve = mock_extension(lf, responder, log=log)
+        c = McpClient(mcp)
+        c.initialize()
+        c.initialized()
+        time.sleep(0.1)
+        served = []
+        t = threading.Thread(target=lambda: served.append(serve()))
+        t.start()
+
+        r = c.call("page_text", {"mode": "visible", "tabId": 424242}, _id=12)
+        t.join(timeout=3)
+        check(bool(served), "page_text BridgeReq reached extension")
+        # ADR-0028 Phase 1a: the optional op-level tabId is lifted onto the
+        # BridgeReq envelope so resolveTargetTab can act on it — and must NOT
+        # leak into the op args the content script receives.
+        check(captured.get("req", {}).get("tabId") == 424242,
+              "forwarded BridgeReq.tabId is the requested tab")
+        check("tabId" not in captured.get("req", {}).get("args", {}),
+              "op args do not carry the addressing tabId")
+        check(captured["req"]["args"].get("mode") == "visible",
+              "op args keep their own fields")
+        # Compare parsed, not strings: the server's serde JSON is compact,
+        # json.dumps is not.
+        check(json.loads(r["result"]["content"][0]["text"]) == {"mode": "visible", "text": "hi"},
+              "tool result passes through")
+    finally:
+        try:
+            mcp.stdin.close()
+        except Exception:
+            pass
+        mcp.wait(timeout=3)
+
+
 def test_native_host_mode():
     print("\n[test] --native-host mode with real NM framing")
     try:
@@ -1136,6 +1185,7 @@ def main():
     test_page_snapshot_precise_round_trip()
     test_cookie_get_round_trip()
     test_storage_get_round_trip()
+    test_page_op_tab_id_targets_the_bridge_envelope()
     test_native_host_mode()
     test_server_takeover()
     test_server_refuses_live_bridge()

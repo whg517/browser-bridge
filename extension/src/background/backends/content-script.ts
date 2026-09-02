@@ -7,6 +7,7 @@
 // here in the SW; the content script stays frame-agnostic (per-document).
 
 import type { OpArgs, PageResponse } from "../../shared/types";
+import { BridgeError } from "../../shared/bridge-error";
 import type { PageBackend } from "../page-backend";
 import { injectIfNeeded, injectAllFrames, enumerateFrames } from "../tabs";
 import {
@@ -25,6 +26,27 @@ const REF_OPS = new Set(["page_click", "page_fill"]);
 
 export class ContentScriptBackend implements PageBackend {
   async run(op: string, args: OpArgs, tab: chrome.tabs.Tab): Promise<unknown> {
+    // tabId targeting (ADR-0028 Phase 1a) makes "target is not what the user
+    // is looking at" a routine state, and this backend's page_screenshot goes
+    // through chrome.tabs.captureVisibleTab — a WINDOW-global API that always
+    // photographs whichever tab is visible, target or not. A silent picture of
+    // the wrong tab is worse than an error, so refuse and name the way out.
+    // The CDP backend screenshots its own tab via Page.captureScreenshot and
+    // handles background tabs fine.
+    if (op === "page_screenshot" && typeof tab.windowId === "number") {
+      const [visible] = await chrome.tabs.query({ active: true, windowId: tab.windowId });
+      // An empty answer fails open: captureVisibleTab will report its own
+      // error, and this guard's job is the wrong-tab picture, not harness
+      // edges where no visible tab is enumerable.
+      if (visible && visible.id !== tab.id) {
+        throw new BridgeError(
+          "UNSUPPORTED_PAGE",
+          "page_screenshot on a background tab needs CDP mode: the content-script path " +
+            "uses chrome.tabs.captureVisibleTab, which can only capture the tab the user " +
+            "is looking at."
+        );
+      }
+    }
     await injectIfNeeded(tab.id!);
     const tabId = tab.id!;
 

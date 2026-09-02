@@ -163,13 +163,13 @@ export type BridgeCommand =
   | { op: "tab_focus"; args: { tabId: number } }
   | { op: "tab_open"; args: { url: string } }
   | { op: "tab_close"; args: { tabId: number } }
-  | { op: "page_snapshot"; args: Record<string, never> }
-  | { op: "page_click"; args: { ref?: string; selector?: string } }
-  | { op: "page_fill"; args: { ref?: string; selector?: string; value: string } }
-  | { op: "page_text"; args: { mode?: string } }
-  | { op: "page_links"; args: { type?: string } }
-  | { op: "page_screenshot"; args: Record<string, never> }
-  | { op: "page_scroll"; args: { direction?: string; pixels?: number } }
+  | { op: "page_snapshot"; args: { tabId?: number } }
+  | { op: "page_click"; args: { ref?: string; selector?: string; tabId?: number } }
+  | { op: "page_fill"; args: { ref?: string; selector?: string; value: string; tabId?: number } }
+  | { op: "page_text"; args: { mode?: string; tabId?: number } }
+  | { op: "page_links"; args: { type?: string; tabId?: number } }
+  | { op: "page_screenshot"; args: { tabId?: number } }
+  | { op: "page_scroll"; args: { direction?: string; pixels?: number; tabId?: number } }
   | {
       op: "page_wait_for";
       args: {
@@ -180,9 +180,10 @@ export type BridgeCommand =
         text?: string;
         settled?: boolean;
         timeoutMs?: number;
+        tabId?: number;
       };
     }
-  | { op: "page_eval"; args: { code: string } }
-  | { op: "page_snapshot_precise"; args: { frameId?: string } }
-  | { op: "cookie_get"; args: { domain?: string; name?: string; url?: string } }
-  | { op: "storage_get"; args: { key?: string; type?: string } };
+  | { op: "page_eval"; args: { code: string; tabId?: number } }
+  | { op: "page_snapshot_precise"; args: { frameId?: string; tabId?: number } }
+  | { op: "cookie_get"; args: { domain?: string; name?: string; url?: string; tabId?: number } }
+  | { op: "storage_get"; args: { key?: string; type?: string; tabId?: number } };

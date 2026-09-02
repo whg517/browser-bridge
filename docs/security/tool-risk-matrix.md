@@ -24,7 +24,7 @@ content or navigates) · **High** (writes to the page, or reads credentials) ·
 | `page_wait_for` | Low | selector/text presence | — | no | `scripting` | — |
 | `page_eval` | **Critical** | anything the page can | **arbitrary JS** in the page | yes (can read tokens/cookies) | `scripting` (`<all_urls>`) + `debugger` (needs CDP mode) | **off unless the user enables CDP mode**; result always masked; per-tool disable is the kill switch — no origin gate, no per-action prompt |
 | `page_snapshot_precise` | Medium | authoritative a11y tree (CDP) | — | no | `debugger` | always-on informational pre-warn notice (not a blocking confirm); "debugging" infobar flashes |
-| `cookie_get` | High | cookies incl. **httpOnly** | — (read-only) | **yes** | `cookies` (`<all_urls>`) | scoped to active tab's domain; values masked; no `cookie_set` by design |
+| `cookie_get` | High | cookies incl. **httpOnly** | — (read-only) | **yes** | `cookies` (`<all_urls>`) | scoped to target tab's domain; values masked; no `cookie_set` by design |
 | `storage_get` | High | local/sessionStorage | — (read-only) | **yes** (tokens) | `scripting` | same-origin; values **always** masked |
 
 ¹ `page_click` is Medium for ordinary elements; **High** when the target is a
@@ -33,6 +33,12 @@ prompt before running.
 
 ## Cross-cutting protections
 
+- **Explicit tab targeting** (ADR-0028 Phase 1a): page-level tools accept an
+  optional `tabId` (from `tab_list`) and a session-scoped "current tab"
+  pointer replaces "whatever the active tab happens to be" as the default
+  target. This does not widen capability — `tab_focus` could already bring any
+  tab into play — but it makes the target explicit and stable across the
+  user's own tab-switching.
 - **Broad host access, no origin gate**: the extension holds `<all_urls>` and
   runs page-level ops on any tab with no per-site approval (see
   [ADR-0024](../adr/0024-remove-allowlist.md)). Origin is
