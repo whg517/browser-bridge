@@ -39,13 +39,17 @@ fn main() {
         }
     } else if let Some(flag) = unrecognized_arg(&args) {
         // Reject rather than fall through: the default branch starts an MCP
-        // server, and starting one terminates the server currently holding the
-        // lock. A mistyped flag must not end somebody's session.
+        // server, which claims the bridge (refusing if another live server
+        // holds it). A mistyped flag must not end up half-running a server.
         eprintln!("browser-bridge: unrecognized argument `{flag}`\n");
         print_help();
         2
     } else {
-        mcp_server::run()
+        // --takeover (ADR-0028 Phase 0): displace a live bridge deliberately.
+        // The default is to refuse, so multi-agent sessions can't silently
+        // kill each other.
+        let takeover = args.iter().skip(1).any(|a| a == "--takeover");
+        mcp_server::run(takeover)
     };
     std::process::exit(code);
 }

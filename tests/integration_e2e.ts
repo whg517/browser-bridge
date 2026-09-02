@@ -434,7 +434,10 @@ async function main(): Promise<void> {
     // A fresh server has an empty peer record, so if the announce were sent only
     // once per install it would never learn this extension's version and would
     // silently stop reporting drift for the rest of the session.
-    const mcp2 = spawn(BIN, [], { stdio: ["pipe", "pipe", "pipe"] });
+    // --takeover: since ADR-0028 Phase 0 a bare second server REFUSES rather
+    // than supplanting, which is exactly the property this test relies on to
+    // force the reconnect path — so the supplanter must opt in explicitly.
+    const mcp2 = spawn(BIN, ["--takeover"], { stdio: ["pipe", "pipe", "pipe"] });
     supplanter = mcp2;
     let stderr2 = "";
     mcp2.stderr.on("data", (chunk: Buffer) => {
