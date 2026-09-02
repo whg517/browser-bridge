@@ -18,6 +18,12 @@
  * nothing of yours; only Windows, whose registration is a global registry key,
  * needs a backup/restore.
  *
+ * The whole chain runs on a PRIVATE BB_LOCK_DIR bridge, so the test can neither
+ * supplant (kill) an MCP server you have running nor be answered by your daily
+ * browser — the same treatment e2e.py gives every binary it spawns. This needs
+ * the wrapper trick described at the hostPath write site: the native host is
+ * spawned by Chrome, so it does not inherit this test's environment.
+ *
  * OPT-IN, macOS/Windows/Linux + Chrome for Testing (or Chromium). Pops a
  * non-headless window, so Linux needs a display (WSLg counts). Not part of the
  * default suite or CI.
@@ -48,15 +54,21 @@ const DIST = path.join(REPO, "extension", "dist");
 const CHROME = resolveChromeBin();
 const HOST_NAME = "com.browser_bridge.host";
 const REG_KEY = `HKCU\\Software\\Google\\Chrome\\NativeMessagingHosts\\${HOST_NAME}`;
-const LOCK = lockPath();
 
 /** Where the server writes run.lock, mirroring `LockFile::path()` in src/ipc.rs.
+ *
+ *  The BB_LOCK_DIR override is checked first, exactly as the Rust side does —
+ *  this test always runs the bridge on a private lock dir (see main), so that
+ *  is the branch that matters here.
  *
  *  Linux follows XDG (ADR-0016) rather than the macOS location, and the fallback
  *  order matters: a WSL or container session often has no XDG_RUNTIME_DIR, and
  *  guessing the wrong directory here makes the test report "the MCP server never
  *  wrote a lock file" for a server that started perfectly well. */
 function lockPath(): string {
+  if (process.env.BB_LOCK_DIR) {
+    return path.join(process.env.BB_LOCK_DIR, "browser-bridge", "run.lock");
+  }
   if (IS_WINDOWS) {
     return path.join(
       process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData/Local"),
@@ -141,9 +153,30 @@ async function main(): Promise<void> {
   console.log("[e2e] extension id:", extId);
 
   let hostPath = BIN;
-  if (!IS_WINDOWS) {
+  // Run everything on a PRIVATE bridge: lock file, both spawned servers, and
+  // the native host all live under this dir, so the test can neither supplant
+  // (kill) an MCP server the developer has running nor be answered by their
+  // daily browser — the two ways sharing the default lock used to bite (#151).
+  // e2e.py gives every binary it spawns the same override.
+  const lockDir = path.join(work, "lock");
+  process.env.BB_LOCK_DIR = lockDir;
+  const LOCK = lockPath();
+
+  // The native host is spawned BY CHROME from the manifest, so it does NOT
+  // inherit this test's environment — pinning BB_LOCK_DIR only on the servers
+  // would leave the host looking for (and finding!) the default bridge. The
+  // manifest therefore points at a wrapper that sets it before exec'ing the
+  // binary, the same shape install.sh writes.
+  if (IS_WINDOWS) {
+    const wrapper = path.join(work, "run-host.bat");
+    fs.writeFileSync(
+      wrapper,
+      `@echo off\r\nset "BB_LOCK_DIR=${lockDir}"\r\n"${BIN}" --native-host\r\n`
+    );
+    hostPath = wrapper;
+  } else {
     const wrapper = path.join(work, "run-host.sh");
-    fs.writeFileSync(wrapper, `#!/bin/sh\nexec "${BIN}" --native-host\n`);
+    fs.writeFileSync(wrapper, `#!/bin/sh\nBB_LOCK_DIR="${lockDir}" exec "${BIN}" --native-host\n`);
     fs.chmodSync(wrapper, 0o755);
     hostPath = wrapper;
   }
