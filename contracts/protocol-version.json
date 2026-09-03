@@ -1,6 +1,6 @@
 {
   "$comment": "SINGLE SOURCE OF TRUTH for the INTERNAL bridge protocol version (MCP server <-> native host <-> extension). This is NOT the MCP JSON-RPC version (that is the date string '2025-06-18', see docs/adr/0007) and NOT the extension release version (the git tag is the release version source, see docs/adr/0026). It is a small monotonically-increasing integer, bumped only when the bridge wire contract (BridgeReq/BridgeResp shape, hello handshake, op/capability semantics) changes incompatibly. Both sides consume this file: src/peer.rs asserts PROTOCOL_VERSION against it in `cargo test`, and scripts/gen-ops.mjs emits it into extension/src/shared/ops.ts.",
-  "protocolVersion": 1,
+  "protocolVersion": 2,
   "announce": {
     "$comment": "LANDED (docs/adr/0027). The extension's self-description, sent unsolicited on connect. Additive and backward compatible, so it did NOT bump protocolVersion: an older server ignores it, and a newer server treats its absence as 'legacy extension, version unknown'.",
     "frame": "On connect the extension posts one frame shaped as a BridgeResp on the RESERVED id 0: {id: 0, ok: true, data: {announce: {protocolVersion, version, browser: {name, version}}}}. Server request ids start at 1, so id 0 can never collide with a reply.",
@@ -9,7 +9,7 @@
     "protocolVersionUse": "Recorded and logged only. See handshake.onMismatch below for the enforcement that is still deferred."
   },
   "handshake": {
-    "$comment": "STILL INTENDED, NOT WIRED. The announce frame above landed the reporting half; the enforcing half below is deliberately deferred until there is a real protocol v2 to reject — a bug here means no bridge at all. See docs/compatibility.md and docs/architecture.md.",
+    "$comment": "STILL INTENDED, NOT WIRED. The announce frame above landed the reporting half; the enforcing half below is deliberately deferred until there is a real protocol v2 to reject \u2014 a bug here means no bridge at all. See docs/compatibility.md and docs/architecture.md.",
     "flow": "On connect, the native host -> MCP server exchange carries {hello, protocolVersion, capabilities[]}: after the secret is validated, the extension advertises its available capability ids (from capabilities.json) and its protocolVersion. The server compares protocolVersion and the capability set against what it supports.",
     "onMismatch": "Fail fast: if protocolVersion is incompatible, the server rejects the connection with the PROTOCOL_MISMATCH error (see contracts/errors.json) and a clear message, instead of accepting the connection and only later surfacing a confusing 'unknown op' when a newer/older op is dispatched.",
     "onMissingCapability": "If a tool's required capability (per capabilities.json) is not advertised, the server rejects that tool call up front with a clear message rather than dispatching an op the extension cannot handle."

@@ -250,6 +250,15 @@ fn request_tab_id(tool: &Tool, args: &Value) -> Option<i64> {
 /// Dispatch a tool call. Returns the MCP result `content` value (an array)
 /// and the isError flag. Errors are tool-level (isError=true), not RPC-level.
 pub fn dispatch(session: &Session, name: &str, args: &Value) -> Outcome {
+    dispatch_for(session, None, name, args)
+}
+
+/// [`dispatch`], naming the brokered client the call came from (ADR-0028
+/// Phase 1b). `None` on the single-process paths (`call` mode, tests); the
+/// broker passes the label it assigned to the thin server's TCP connection —
+/// it travels onto the BridgeReq envelope and into the audit trail, so the
+/// client's identity is granted, never self-reported.
+pub fn dispatch_for(session: &Session, client: Option<&str>, name: &str, args: &Value) -> Outcome {
     let result = match HANDLERS.iter().find(|(op, _)| *op == name) {
         Some((op, build_payload)) => {
             let payload = build_payload(args);
@@ -263,7 +272,7 @@ pub fn dispatch(session: &Session, name: &str, args: &Value) -> Outcome {
             check_required(name, args)
                 .and_then(|()| check_arg_types(name, args))
                 .and_then(|()| check_absolute_url(name, args))
-                .and_then(|()| call(session, op, tab_id, payload))
+                .and_then(|()| call(session, client, op, tab_id, payload))
         }
         None => Err(CallError::UnknownTool(name.to_string())),
     };

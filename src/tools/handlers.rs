@@ -96,11 +96,12 @@ pub(super) fn build_storage_get(args: &Value) -> Value {
 
 pub(super) fn call(
     session: &Session,
+    client: Option<&str>,
     op: &str,
     tab_id: Option<i64>,
     args: Value,
 ) -> Result<Value, CallError> {
-    session.call(op, tab_id, args)
+    session.call(op, tab_id, args, client)
 }
 
 fn sarg(args: &Value, key: &str) -> String {

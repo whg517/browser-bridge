@@ -10,7 +10,7 @@
 // The internal bridge protocol version, advertised in the announce frame
 // (shared/announce.ts). Bumped only when the wire contract changes
 // incompatibly; src/peer.rs asserts the same value against the same contract.
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
 
 export interface ToolInfo {
   op: string;

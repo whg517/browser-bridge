@@ -192,15 +192,28 @@ impl Session {
     }
 
     /// Take ownership of a freshly-accepted connection from the native host.
-    /// Replaces any previous connection (the old one is dropped/closed).
-    /// Spawns a reader thread that dispatches BridgeResp by id.
-    pub fn attach_connection(&self, stream: TcpStream) -> io::Result<()> {
-        // Validate the hello line (auth) before trusting the connection.
-        let mut reader = BufReader::new(stream.try_clone()?);
-        let first: Option<Value> = bridge_read(&mut reader)?;
-        let hello_ok = first.as_ref().map(ipc::validate_hello).unwrap_or(false);
-        if !hello_ok {
-            log_warn!("session", "rejected inbound connection: bad/missing hello");
+    /// The CALLER has already read the hello line (the broker must see the
+    /// role before deciding where the connection goes), and passes it in
+    /// along with the reader positioned after it. Replaces any previous
+    /// connection (the old one is dropped/closed). Spawns a reader thread
+    /// that dispatches BridgeResp by id.
+    ///
+    /// Only `native-host` clients may attach: an `mcp-server` hello on this
+    /// slot would let a thin server drive the extension directly, bypassing
+    /// the broker's clientId stamping — exactly what the grant-based id
+    /// scheme (ADR-0028 Phase 1b) exists to prevent.
+    pub fn attach_connection(
+        &self,
+        stream: TcpStream,
+        mut reader: BufReader<TcpStream>,
+        hello: Value,
+    ) -> io::Result<()> {
+        let role_ok = matches!(ipc::hello_role(&hello), Some(ipc::HelloRole::NativeHost));
+        if !role_ok {
+            log_warn!(
+                "session",
+                "rejected inbound connection: bad hello, or a non-host role on the extension slot"
+            );
             return Err(io::Error::new(io::ErrorKind::PermissionDenied, "bad hello"));
         }
 
@@ -316,12 +329,41 @@ impl Session {
 
     /// Send a request to the extension and wait for the correlated response.
     /// Returns the response data on success, or a typed [`CallError`].
-    pub fn call(&self, op: &str, tab_id: Option<i64>, args: Value) -> Result<Value, CallError> {
+    /// Send a request to the extension and wait for the correlated response.
+    ///
+    /// `client` is the broker-granted client label (`c1:claude-code`) stamped
+    /// onto the BridgeReq envelope so the extension can scope per agent and
+    /// the audit can name the actor; `None` on the single-process paths.
+    ///
+    /// Before anything is sent, the version handshake gates the call: a peer
+    /// that ANNOUNCED a different protocol version gets PROTOCOL_MISMATCH —
+    /// with clientId on the envelope, a cross-version pairing misroutes ops
+    /// rather than degrading (ADR-0028 Phase 1b). A peer that announces
+    /// nothing predates the announce frame and keeps the soft advisory.
+    pub fn call(
+        &self,
+        op: &str,
+        tab_id: Option<i64>,
+        args: Value,
+        client: Option<&str>,
+    ) -> Result<Value, CallError> {
+        if let Some((_, info)) = self.peer.lock().unwrap().as_ref() {
+            if let Some(peer_v) = info
+                .protocol_version
+                .filter(|v| *v != peer::PROTOCOL_VERSION)
+            {
+                return Err(CallError::ProtocolMismatch {
+                    peer: peer_v,
+                    ours: peer::PROTOCOL_VERSION,
+                });
+            }
+        }
         let id = self.next_id.fetch_add(1, Ordering::SeqCst);
         let req = BridgeReq {
             id,
             op: op.to_string(),
             tab_id,
+            client_id: client.map(str::to_string),
             args,
         };
 

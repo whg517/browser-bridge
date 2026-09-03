@@ -33,6 +33,7 @@ const KNOWN_ARGS: &[&str] = &[
     "--version",
     "--native-host",
     "--takeover",
+    "--broker",
     "doctor",
     "status",
     "tools",
@@ -89,7 +90,9 @@ pub fn print_help() {
          browser-bridge call <tool> [json]  Run one tool and print its result (no MCP)\n    \
          browser-bridge doctor       Print a read-only health report (alias: status)\n    \
          browser-bridge --version    Print the version (alias: -V)\n    \
-         browser-bridge --native-host  Run as the Chrome native messaging host\n\n\
+         browser-bridge --native-host  Run as the Chrome native messaging host\n    \
+         browser-bridge --broker      Run as the multi-client broker (spawned\n    \
+                                      automatically; ADR-0028)\n\n\
          Configure your MCP client (Claude Code, Codex, …) to launch this \
          binary with no arguments as an MCP server; Chrome launches it with \
          --native-host via the host manifest.\n\n\

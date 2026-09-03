@@ -365,7 +365,15 @@ async function main(): Promise<void> {
       announce.includes(`extension v${manifestVersion}`),
       `announced version matches the loaded manifest (${manifestVersion})`
     );
-    check(announce.includes("protocol 1"), "announced the contract's protocol version");
+    // Contract-driven, not hardcoded: the protocol version bumps (it is 2
+    // since ADR-0028 Phase 1b) and this assertion must follow the contract.
+    const contractProtocol = JSON.parse(
+      fs.readFileSync(path.join(REPO, "contracts", "protocol-version.json"), "utf8")
+    ).protocolVersion;
+    check(
+      announce.includes(`protocol ${contractProtocol}`),
+      `announced the contract's protocol version (${contractProtocol})`
+    );
     check(
       /Chrome(?: for Testing)? \d+\.\d+/.test(announce) || /Chromium \d+/.test(announce),
       "announced a real browser name + version parsed from the user agent"

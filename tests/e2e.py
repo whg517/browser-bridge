@@ -172,17 +172,38 @@ def start_server(env=None, extra_args=None):
     return proc, log
 
 
+def _pid_alive(pid):
+    """os.kill(pid, 0) probes existence without signalling. EPERM counts as
+    alive (the process exists, it just isn't ours)."""
+    if not isinstance(pid, int) or pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except (OverflowError, OSError):
+        return False
+
+
 def wait_lock(proc=None, timeout=8):
-    """Wait for the lock file and return its contents. If `proc` is given,
-    require the lock to belong to it (lock["pid"] == proc.pid) — this ignores a
-    stale lock from a previous test's server that hasn't finished exiting, which
-    would otherwise point us at a dead port. Tolerates transient read errors."""
+    """Wait for the lock file and return its contents, requiring the owning
+    pid to be ALIVE.
+
+    Since the broker (ADR-0028 Phase 1b) the lock names the BROKER process, a
+    child of the spawned server — never the server itself — so the old
+    `lock["pid"] == proc.pid` ownership check would wait forever. Liveness is
+    the invariant that actually matters: it ignores a stale lock from a
+    crashed previous run, which would otherwise point us at a dead port.
+    Tolerates transient read errors."""
     t0 = time.time()
     while time.time() - t0 < timeout:
         try:
             with open(LOCK) as f:
                 lf = json.load(f)
-            if proc is None or lf.get("pid") == proc.pid:
+            if proc is None or _pid_alive(lf.get("pid")):
                 return lf
         except (FileNotFoundError, json.JSONDecodeError):
             pass
@@ -378,7 +399,10 @@ def test_stale_lock_is_replaced():
     mcp, log = start_server()
     try:
         lock = wait_lock(mcp)
-        check(lock is not None and lock.get("pid") == mcp.pid,
+        # The lock now belongs to the broker the server spawned — the
+        # assertion is that the dead pid's lock got replaced by a LIVE one.
+        check(lock is not None and lock.get("pid") != 4294967295
+              and _pid_alive(lock.get("pid")),
               "server replaced a dead process's lock file")
     finally:
         try:
@@ -812,6 +836,10 @@ def test_storage_get_round_trip():
               "forwarded op is storage_get")
         check(captured["req"]["args"].get("key") == "auth_token",
               "forwarded args.key matches")
+        # ADR-0028 Phase 1b: brokered calls name their client on the envelope
+        # (granted by the broker, never self-reported).
+        check(isinstance(captured["req"].get("clientId"), str),
+              "BridgeReq names the acting client")
         content = json.loads(r["result"]["content"][0]["text"])
         check(content.get("found") is True, "storage result has found:true")
         check("••••" in content.get("value", ""), "storage value is masked")
@@ -866,6 +894,55 @@ def test_page_op_tab_id_targets_the_bridge_envelope():
         check(json.loads(r["result"]["content"][0]["text"]) == {"mode": "visible", "text": "hi"},
               "tool result passes through")
     finally:
+        try:
+            mcp.stdin.close()
+        except Exception:
+            pass
+        mcp.wait(timeout=3)
+
+
+def test_stale_protocol_is_rejected():
+    print("\n[test] an extension announcing a stale bridge protocol is hard-rejected")
+    try:
+        os.remove(LOCK)
+    except FileNotFoundError:
+        pass
+    env = dict(os.environ, BB_LOG="info")
+    mcp, log = start_server(env)
+    try:
+        lf = wait_lock(mcp)
+        check(lf is not None, "lock file written")
+
+        def responder(req):
+            return {"id": req["id"], "ok": True, "data": []}
+
+        # ADR-0028 Phase 1b: with clientId on the envelope, a cross-version
+        # pairing misroutes ops rather than degrading, so the soft advisory
+        # became a hard gate. Protocol 1 = a pre-broker extension.
+        s, serve = mock_extension(lf, responder, log=log, announce={
+            "protocolVersion": 1,
+            "version": "9.9.9",
+            "browser": {"name": "Chrome", "version": "141.0.7390.55"},
+        })
+        c = McpClient(mcp)
+        c.initialize()
+        c.initialized()
+        time.sleep(0.2)  # let hello + announce land
+
+        t = threading.Thread(target=serve)
+        t.start()
+        r = c.call("tab_list", {}, _id=25)
+        t.join(timeout=5)
+        check(r["result"].get("isError") is True,
+              "a stale-protocol extension's tool call is an error")
+        text = r["result"]["content"][0]["text"]
+        check("PROTOCOL_MISMATCH" in text,
+              "the error carries the PROTOCOL_MISMATCH code")
+    finally:
+        try:
+            s.close()
+        except Exception:
+            pass
         try:
             mcp.stdin.close()
         except Exception:
@@ -957,7 +1034,7 @@ def test_native_host_mode():
 
 
 def test_server_takeover():
-    print("\n[test] `--takeover` supplants the previous server")
+    print("\n[test] `--takeover` supplants the running bridge")
     try:
         os.remove(LOCK)
     except FileNotFoundError:
@@ -966,58 +1043,115 @@ def test_server_takeover():
     second = None
     try:
         first_lock = wait_lock(first)
-        check(first_lock is not None, "first server wrote its lock file")
-        # ADR-0028 Phase 0: displacement is opt-in — a bare second server
-        # refuses (see test_server_refuses_live_bridge), so supplanting must
-        # say so on the command line.
+        check(first_lock is not None, "first server (via its broker) wrote the lock file")
+        old_broker_pid = first_lock.get("pid")
+        # ADR-0028 Phase 0/1b: displacement is opt-in and targets the BROKER
+        # (the lock owner), not the thin server process. The thin server is
+        # even allowed to rejoin the NEW bridge — self-healing is correct.
         second, _ = start_server(extra_args=["--takeover"])
-        second_lock = wait_lock(second)
+        # Wait until the lock names a DIFFERENT, live broker: the instant
+        # after the kill, the old lock can still be on disk.
+        second_lock = None
+        deadline = time.time() + 8
+        while time.time() < deadline:
+            lf = wait_lock(second)
+            if lf is not None and lf.get("pid") != old_broker_pid:
+                second_lock = lf
+                break
+            time.sleep(0.1)
         check(second_lock is not None, "second server (--takeover) replaced the lock file")
-        first.wait(timeout=8)
-        check(first.poll() is not None, "previous server was terminated")
+        deadline = time.time() + 8
+        while _pid_alive(old_broker_pid) and time.time() < deadline:
+            time.sleep(0.1)
+        check(not _pid_alive(old_broker_pid), "previous bridge (broker) was terminated")
+        check(second.poll() is None, "second server is alive on the new bridge")
+        check(second_lock is not None and second_lock.get("pid") != old_broker_pid,
+              "the new bridge is a fresh broker")
     finally:
         if first.poll() is None:
-            first.kill()
-        if second is not None:
             try:
-                second.stdin.close()
+                first.stdin.close()
             except Exception:
                 pass
-            second.wait(timeout=3)
-
-
-def test_server_refuses_live_bridge():
-    print("\n[test] a second server without --takeover refuses and leaves the first alive")
-    try:
-        os.remove(LOCK)
-    except FileNotFoundError:
-        pass
-    first, _ = start_server()
-    second = None
-    try:
-        check(wait_lock(first) is not None, "first server wrote its lock file")
-        # The default flipped from "silently take over" to "refuse" (ADR-0028
-        # Phase 0): a live lock is an error naming the way out, not a victim.
-        second, second_log = start_server()
-        try:
-            second.wait(timeout=8)
-        except subprocess.TimeoutExpired:
-            pass
-        check(second.poll() is not None, "second server exited instead of running")
-        check(second.returncode not in (0, None), "second server exited non-zero")
-        check("--takeover" in second_log.text(),
-              "refusal names --takeover as the way out")
-        check(first.poll() is None, "first server is still alive")
-        check(wait_lock(first) is not None, "first server's lock file still present")
-    finally:
-        if first.poll() is None:
-            first.kill()
+            try:
+                first.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                first.kill()
         if second is not None and second.poll() is None:
             try:
                 second.stdin.close()
             except Exception:
                 pass
-            second.wait(timeout=3)
+            try:
+                second.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                second.kill()
+
+
+def test_two_servers_share_one_broker():
+    print("\n[test] a second server joins the running bridge instead of supplanting it")
+    try:
+        os.remove(LOCK)
+    except FileNotFoundError:
+        pass
+    first, first_log = start_server()
+    second = None
+    second_log = None
+    host = None
+    serve = None
+    try:
+        check(wait_lock(first) is not None,
+              "first server (via its broker) wrote the lock file")
+        # ADR-0028 Phase 1b: a second bare server JOINS the running bridge —
+        # the property the broker exists for. (#176's e2e asserted the Phase 0
+        # interim refusal; multiplexing supersedes it.)
+
+        def responder(req):
+            return {"id": req["id"], "ok": True,
+                    "data": [{"id": 1, "title": "t", "url": "https://x.test",
+                              "active": True, "windowId": 1}]}
+
+        host, serve = mock_extension(wait_lock(first), responder, log=first_log)
+        # serve() answers exactly ONE bridge request; two clients call once each.
+        t = threading.Thread(target=lambda: [serve() for _ in range(2)])
+        t.start()
+
+        second, second_log = start_server()
+        time.sleep(0.4)  # a moment to join; failures surface in the checks below
+        check(second.poll() is None, "second server is alive on the shared bridge")
+        check(first.poll() is None, "first server is still alive")
+        check(first_log.wait_for("mcp client c", 5),
+              "broker registered a second mcp client")
+        check(second_log.wait_for("joined the bridge as client", 5),
+              "second server saw its broker ack")
+
+        c1, c2 = McpClient(first), McpClient(second)
+        c1.initialize()
+        c1.initialized()
+        c2.initialize()
+        c2.initialized()
+        r1 = c1.call("tab_list", {}, _id=21)
+        r2 = c2.call("tab_list", {}, _id=22)
+        check(r1["result"]["isError"] is False, "first client's tab_list works")
+        check(r2["result"]["isError"] is False, "second client's tab_list works")
+        check(first_log.wait_for("client=c", 5),
+              "audit lines name which client acted")
+    finally:
+        for p in (second, first):
+            if p is not None and p.poll() is None:
+                try:
+                    p.stdin.close()
+                except Exception:
+                    pass
+                try:
+                    p.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    p.kill()
+        if host is not None:
+            try:
+                host.close()
+            except Exception:
+                pass
 
 
 def test_unknown_method_returns_32601():
@@ -1075,9 +1209,11 @@ def test_announce_is_absorbed_not_routed():
                     "data": [{"id": 1, "title": "T", "url": "https://x", "active": True}]}
 
         # A version that differs from any release, announced the way the real
-        # extension does on connect.
+        # extension does on connect. Protocol 2 = this build's bridge protocol
+        # (since ADR-0028 Phase 1b a MISMATCHING protocol is hard-rejected —
+        # see test_stale_protocol_is_rejected).
         s, serve = mock_extension(lf, responder, log=log, announce={
-            "protocolVersion": 1,
+            "protocolVersion": 2,
             "version": "9.9.9",
             "browser": {"name": "Chrome", "version": "141.0.7390.55"},
         })
@@ -1188,7 +1324,8 @@ def main():
     test_page_op_tab_id_targets_the_bridge_envelope()
     test_native_host_mode()
     test_server_takeover()
-    test_server_refuses_live_bridge()
+    test_two_servers_share_one_broker()
+    test_stale_protocol_is_rejected()
     test_unknown_method_returns_32601()
     print(f"\n{'='*40}\n{_passed} passed, {_failed} failed")
     sys.exit(0 if _failed == 0 else 1)
