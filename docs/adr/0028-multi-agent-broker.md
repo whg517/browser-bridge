@@ -160,3 +160,40 @@ observed multi-agent demand makes queue-only insufficient as the end state.
   server→host) costing one localhost TCP leg.
 - The linger window means a browser session can outlive all clients by ~30 s;
   the lock/registry must make that state visible to `doctor`.
+
+## Implementation notes (updated during Phase 1b)
+
+Reality adjusted a few details; the architecture stands.
+
+- **Mutation set**: the v1 global mutation lock covers `page_click`,
+  `page_fill`, `page_eval`, `page_scroll`, `page_screenshot`, `tab_close` —
+  plus `tab_open` (it moves the Phase 1a current-tab pointer) and
+  `page_snapshot_precise` (a debugger attach excludes any concurrent CDP op
+  on the tab). Reads and waits run concurrently.
+- **Client handshake carries `proto`**: a stale pre-2.0 broker cannot be
+  detected via announce (clients never receive announcements), so thin
+  servers state their protocol in the hello and the broker rejects
+  mismatches with a structured `brokerRejected` line. The extension's half
+  of the handshake stays the announce frame — now a HARD gate
+  (`PROTOCOL_MISMATCH`) when the peer announces a version, soft advisory for
+  peers that predate announcing.
+- **Legacy hosts**: a hello without a `role` means `native-host` — older
+  installs spawn the host straight from the manifest with no way to add
+  arguments.
+- **Lock hygiene under succession**: every deferred lock removal (signal
+  handler, linger timer) deletes the lock only if it still names the exiting
+  process — a supplanting successor claims the lock the instant its
+  predecessor dies, and a late cleanup would orphan the new bridge (this
+  exact race made `--takeover` a silent no-op in e2e). `connect()` also no
+  longer clears a lock on a failed connect: a refused connect during a
+  broker's startup is normal, and the claim loop's liveness check owns
+  stale-lock recovery.
+- **Refusal semantics shift**: Phase 0's "second server refuses" described
+  server-owns-bridge; under the broker a second server JOINS.
+  `--takeover` displaces the broker — taking every client's bridge down
+  with it, deliberately — and the old thin server may rejoin the new
+  bridge (self-healing is correct behavior, and the e2e suite asserts the
+  broker death + fresh claim rather than the server's death).
+- **Client labels**: ids are granted per TCP connection (`c1`, `c2`, …);
+  display names come from the MCP `initialize` `clientInfo` and are for
+  labels only (audit, confirmation text) — authorization never reads them.

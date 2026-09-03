@@ -29,7 +29,7 @@ fn connect_waiting() -> std::net::TcpStream {
     const RETRY: Duration = Duration::from_millis(500);
     let mut logged = false;
     loop {
-        match ipc::connect() {
+        match ipc::connect(ipc::HelloRole::NativeHost) {
             Ok(s) => return s,
             Err(e) => {
                 if !logged {

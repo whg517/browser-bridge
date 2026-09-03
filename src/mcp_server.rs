@@ -2,73 +2,511 @@
 //! stdio with the MCP client, and accepts inbound bridge connections from the
 //! native host over a localhost TCP socket.
 
+use std::collections::HashMap;
 use std::io::{self, BufReader, BufWriter};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::Mutex;
 use std::thread;
 
 use serde_json::{json, Value};
 
 use crate::ipc;
-use crate::protocol::{install_stderr_panic_hook, mcp_read, mcp_write, JsonRpc};
+use crate::peer;
+use crate::protocol::{
+    bridge_read, bridge_write, install_stderr_panic_hook, mcp_read, mcp_write, JsonRpc,
+};
 use crate::session::Session;
 use crate::tools;
 
+/// MCP server mode (ADR-0028 Phase 1b): a THIN client. The broker — a
+/// standalone `--broker` process — owns the lock and the extension
+/// connection; this process joins it and relays its MCP client's JSON-RPC.
+/// If no broker is running, one is spawned from this same binary.
+///
+/// `supplant_live` (`--takeover`) deliberately displaces whoever owns the
+/// bridge first; the default refuses nothing here — joining is the whole
+/// point — but a *stale* bridge (pre-broker binary) is detected at the
+/// handshake and reported with the way out.
 pub fn run(supplant_live: bool) -> i32 {
     install_stderr_panic_hook();
     crate::protocol::ignore_sigpipe();
 
-    // Handle termination signals gracefully so we always remove the lock file
-    // on the way out (a stale lock is harmless but confuses diagnostics, and a
-    // supplanted server should clean up after itself). This must run BEFORE we
-    // spawn any worker threads: it blocks SIGTERM/SIGINT process-wide, and only
-    // threads created afterwards inherit that blocked mask — otherwise the
-    // kernel could deliver the signal to an unmasked worker and terminate us
-    // before the handler thread runs.
-    install_signal_cleanup(|| {
-        ipc::LockFile::remove();
-    });
+    // The broker owns the lock, so this process has nothing to clean up on
+    // exit — in particular it must NEVER remove the lock file (that would
+    // orphan a bridge other clients are still using).
+    match join_or_start_broker(supplant_live) {
+        Some(stream) => relay_mcp_over_broker(stream),
+        None => 1,
+    }
+}
 
-    // Bind the bridge and claim the lock — refusing by default when another
-    // live server owns it, displacing it only when the caller asked for that
-    // (`--takeover`). Then start accepting the native host. See `start_bridge`
-    // and ADR-0028 Phase 0 for why the default flipped from "take over" to
-    // "refuse": with multi-agent use real, a fresh MCP client session silently
-    // replacing the old one is a bug, not a feature.
-    let session = match start_bridge(supplant_live) {
-        Some(s) => s,
-        None => return 1,
+/// Join the running broker, or — when nobody owns the bridge — spawn one from
+/// this binary and join that. Returns the connected stream, already
+/// handshaken (see [`relay_mcp_over_broker`] for the ack line).
+fn join_or_start_broker(supplant_live: bool) -> Option<std::net::TcpStream> {
+    if supplant_live {
+        // Deliberate displacement (Phase 0 semantics). The lock owner is now
+        // the BROKER, and killing it takes the bridge away from every client
+        // using it — which is exactly what --takeover says: restart the
+        // bridge under me.
+        if let Ok(Some(prev)) = ipc::LockFile::read() {
+            if pid_is_alive(prev.pid) {
+                log_info!(
+                    "mcp",
+                    "supplanting prior bridge pid {} (--takeover)",
+                    prev.pid
+                );
+                terminate_process(prev.pid);
+                for _ in 0..50 {
+                    if !pid_is_alive(prev.pid) {
+                        break;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                }
+                ipc::LockFile::remove();
+            }
+        }
+    }
+    if let Ok(stream) = ipc::connect(ipc::HelloRole::McpServer) {
+        return Some(stream);
+    }
+    // Nobody home (or a stale lock, which connect() clears). Spawn a broker
+    // from THIS binary — the broker outlives this server on purpose (Unix
+    // re-parents orphans; Windows children are not tied to the parent), so a
+    // server restart never tears the browser session down.
+    let exe = std::env::current_exe().ok()?;
+    match std::process::Command::new(exe).arg("--broker").spawn() {
+        Ok(mut child) => {
+            // Reap the child when it eventually exits so it never sits in the
+            // process table as this server's zombie.
+            std::thread::spawn(move || {
+                let _ = child.wait();
+            });
+        }
+        Err(e) => {
+            log_error!("mcp", "failed to spawn broker: {e}");
+            return None;
+        }
+    }
+    for attempt in 1..=100 {
+        match ipc::connect(ipc::HelloRole::McpServer) {
+            Ok(stream) => return Some(stream),
+            Err(e) => {
+                // Visible at info: a fresh broker should be joinable within a
+                // couple of attempts, so more than a handful of these means
+                // something is wrong with the handoff.
+                if attempt == 1 || attempt % 10 == 0 {
+                    log_info!(
+                        "mcp",
+                        "waiting to join the spawned broker (attempt {attempt}): {e}"
+                    );
+                }
+            }
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    log_error!("mcp", "spawned a broker but could not connect to it");
+    None
+}
+
+/// Relay the MCP client's JSON-RPC to the broker and its answers back.
+///
+/// The broker's FIRST line is the handshake verdict — an ack naming the
+/// granted client id, or a rejection — never a tool result, so it is safe to
+/// read one line before the pumps start.
+fn relay_mcp_over_broker(stream: std::net::TcpStream) -> i32 {
+    let mut reader = match stream.try_clone() {
+        Ok(r) => BufReader::new(r),
+        Err(e) => {
+            log_error!("mcp", "stream clone: {e}");
+            return 1;
+        }
     };
+    let first: Option<Value> = bridge_read(&mut reader).ok().flatten();
+    match first {
+        Some(v) if v.get("broker").is_some() => {
+            if v.get("protocol").and_then(Value::as_u64) != Some(peer::PROTOCOL_VERSION) {
+                eprintln!(
+                    "the running broker speaks bridge protocol {}, this build speaks {}. \
+                     Stop your other browser-bridge MCP clients and start this one with \
+                     --takeover to replace the stale broker.",
+                    v.get("protocol").and_then(Value::as_u64).unwrap_or(0),
+                    crate::peer::PROTOCOL_VERSION
+                );
+                return 1;
+            }
+            if let Some(id) = v.get("clientId").and_then(Value::as_str) {
+                log_info!("mcp", "joined the bridge as client {id}");
+            }
+        }
+        Some(v) if v.get("brokerRejected").is_some() => {
+            eprintln!(
+                "the broker refused this client: {}",
+                v.get("reason")
+                    .and_then(Value::as_str)
+                    .unwrap_or("unknown reason")
+            );
+            return 1;
+        }
+        _ => {
+            eprintln!(
+                "whatever owns the browser-bridge lock did not answer the broker handshake. \
+                 It is probably a stale browser-bridge from before multi-client support: \
+                 stop your other MCP clients, or start this one with --takeover."
+            );
+            return 1;
+        }
+    }
 
-    // Main loop: read NDJSON JSON-RPC from stdin, respond on stdout.
-    let stdin = io::stdin();
-    let mut reader = BufReader::new(stdin.lock());
+    // Two pumps, like the native host: stdin -> broker (spawned thread), and
+    // broker -> stdout on this thread. Whichever direction dies ends the
+    // process: an MCP client gone means stdin EOF (and dropping the TCP
+    // connection drops our broker registration), a broker gone means this
+    // server has nothing to relay to and the MCP client should restart us
+    // against the fresh bridge.
+    thread::spawn(move || {
+        let stdin = io::stdin();
+        let mut r = BufReader::new(stdin.lock());
+        let mut w = BufWriter::new(stream);
+        loop {
+            match mcp_read(&mut r) {
+                Ok(Some(m)) => {
+                    if let Err(e) = mcp_write(&mut w, &m) {
+                        log_warn!("mcp", "broker write failed: {e}");
+                        std::process::exit(1);
+                    }
+                }
+                Ok(None) => {
+                    log_info!("mcp", "stdin EOF — MCP client gone, leaving the bridge");
+                    std::process::exit(0);
+                }
+                Err(e) => {
+                    log_warn!("mcp", "stdin parse error: {e}");
+                    std::process::exit(0);
+                }
+            }
+        }
+    });
     let stdout = io::stdout();
-    let mut writer = BufWriter::new(stdout.lock());
+    let mut out = BufWriter::new(stdout.lock());
+    loop {
+        let msg = bridge_read(&mut reader);
+        match msg {
+            Ok(Some(m)) => {
+                if let Err(e) = mcp_write(&mut out, &m) {
+                    log_error!("mcp", "stdout write failed: {e}");
+                    std::process::exit(1);
+                }
+            }
+            Ok(None) => {
+                log_error!("mcp", "broker went away — the bridge is gone");
+                std::process::exit(1);
+            }
+            Err(e) => {
+                log_warn!("mcp", "broker read error: {e}");
+                std::process::exit(1);
+            }
+        }
+    }
+}
+
+/// Broker mode (ADR-0028 Phase 1b): own the lock and the extension
+/// connection; thin MCP servers connect and relay their clients' JSON-RPC.
+/// One port, two client kinds, told apart by the hello `role`.
+pub fn broker_run() -> i32 {
+    install_stderr_panic_hook();
+    crate::protocol::ignore_sigpipe();
+    // The broker owns the lock: signals must remove it (Phase 0 hygiene) —
+    // but only while it is still OURS. A supplanting successor claims the
+    // lock the instant we die; a cleanup that fired late would delete THEIR
+    // claim and orphan the new bridge.
+    install_signal_cleanup(remove_lock_if_ours);
+
+    let Some((listener, lock)) = claim_bridge_lock(false) else {
+        return 1;
+    };
+    log_info!(
+        "mcp",
+        "broker listening on 127.0.0.1:{} (pid {}) lock at {}",
+        lock.port,
+        lock.pid,
+        ipc::LockFile::path().display()
+    );
+
+    let session = Session::new();
+    let clients = ClientState::new();
+    {
+        let session = session.clone();
+        let clients = clients.clone();
+        thread::spawn(move || loop {
+            match listener.accept() {
+                Ok((stream, _addr)) => {
+                    let session = session.clone();
+                    let clients = clients.clone();
+                    thread::spawn(move || accept_client(stream, session, clients));
+                }
+                Err(e) => {
+                    log_error!("mcp", "accept failed: {e}");
+                    break;
+                }
+            }
+        });
+    }
+    // The broker has no stdio role; every exit path is the linger timer or a
+    // signal. Park forever.
+    loop {
+        thread::park();
+    }
+}
+
+/// Remove the lock file ONLY if it still names this process.
+///
+/// Every deferred cleanup (signal handler, linger timer) must go through
+/// this: in a multi-broker world a delayed exit can race a successor that
+/// already claimed the lock, and deleting THEIR claim orphans the new bridge
+/// — which made `--takeover` a silent no-op in e2e until this guard existed.
+fn remove_lock_if_ours() {
+    if let Ok(Some(lf)) = ipc::LockFile::read() {
+        if lf.pid == std::process::id() {
+            ipc::LockFile::remove();
+        }
+    }
+}
+
+/// Per-broker state for the connected thin servers: id grant, live count,
+/// display names learned from `initialize`, the mutation lock (scheduling
+/// v1), and the linger guard.
+struct ClientState {
+    next_id: AtomicU64,
+    count: Mutex<usize>,
+    names: Mutex<HashMap<u64, String>>,
+    /// One mutation at a time, globally (v1): reads and waits run concurrently.
+    mutating: Mutex<()>,
+    linger_armed: AtomicBool,
+}
+
+impl ClientState {
+    fn new() -> std::sync::Arc<Self> {
+        std::sync::Arc::new(Self {
+            next_id: AtomicU64::new(1),
+            count: Mutex::new(0),
+            names: Mutex::new(HashMap::new()),
+            mutating: Mutex::new(()),
+            linger_armed: AtomicBool::new(false),
+        })
+    }
+
+    fn register(&self) -> u64 {
+        self.next_id.fetch_add(1, Ordering::SeqCst)
+    }
+
+    fn arrive(&self) -> usize {
+        let mut c = self.count.lock().unwrap();
+        *c += 1;
+        *c
+    }
+
+    fn depart(&self) -> usize {
+        let mut c = self.count.lock().unwrap();
+        *c = c.saturating_sub(1);
+        *c
+    }
+
+    fn count(&self) -> usize {
+        *self.count.lock().unwrap()
+    }
+
+    /// Learn the client's display name from its MCP `initialize` clientInfo —
+    /// the client's own identity claim is for LABELS only; authorization
+    /// never depends on it (ids are granted, not self-reported).
+    fn set_name(&self, id: u64, name: &str) {
+        self.names.lock().unwrap().insert(id, name.to_string());
+    }
+
+    fn label(&self, id: u64) -> String {
+        match self.names.lock().unwrap().get(&id) {
+            Some(n) => format!("c{id}:{n}"),
+            None => format!("c{id}"),
+        }
+    }
+
+    /// When the last client leaves, linger ~30s before exiting so a client
+    /// restart (crash, reload) finds the bridge — and its extension
+    /// connection — still warm instead of waking the service worker from
+    /// cold. Arming twice is a no-op; a joining client simply makes the
+    /// timer's final check see a non-zero count.
+    fn arm_linger(self: &std::sync::Arc<Self>) {
+        if self.linger_armed.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        let clients = self.clone();
+        thread::spawn(move || {
+            thread::sleep(std::time::Duration::from_secs(30));
+            if clients.count() == 0 {
+                log_info!("mcp", "no mcp clients for 30s — broker exiting");
+                remove_lock_if_ours();
+                std::process::exit(0);
+            }
+        });
+    }
+}
+
+/// Route one accepted connection by its hello role.
+fn accept_client(
+    stream: std::net::TcpStream,
+    session: Session,
+    clients: std::sync::Arc<ClientState>,
+) {
+    let Ok(writer_stream) = stream.try_clone() else {
+        return;
+    };
+    let mut reader = BufReader::new(stream);
+    let hello: Value = match bridge_read(&mut reader) {
+        Ok(Some(h)) => h,
+        _ => {
+            log_warn!("mcp", "connection closed before a valid hello");
+            return;
+        }
+    };
+    match ipc::hello_role(&hello) {
+        Some(ipc::HelloRole::NativeHost) => {
+            if let Err(e) = session.attach_connection(writer_stream, reader, hello) {
+                log_warn!("mcp", "native host rejected: {e}");
+            }
+        }
+        Some(ipc::HelloRole::McpServer) => {
+            serve_mcp_client(writer_stream, reader, hello, session, clients)
+        }
+        None => {
+            log_warn!(
+                "mcp",
+                "rejected inbound connection: bad/missing hello secret"
+            );
+        }
+    }
+}
+
+/// The whole broker side of one thin server: ack its handshake, learn its
+/// name, relay JSON-RPC through `handle` under the mutation lock, count it
+/// out on disconnect.
+fn serve_mcp_client(
+    stream: std::net::TcpStream,
+    mut reader: BufReader<std::net::TcpStream>,
+    hello: Value,
+    session: Session,
+    clients: std::sync::Arc<ClientState>,
+) {
+    // Cross-version gate for CLIENTS (the extension's half of the handshake is
+    // the announce frame): a client that speaks another protocol gets a
+    // structured rejection it can show its user.
+    if hello.get("proto").and_then(Value::as_u64) != Some(peer::PROTOCOL_VERSION) {
+        let writer = &mut BufWriter::new(stream);
+        let reject = serde_json::json!({
+            "brokerRejected": true,
+            "reason": format!(
+                "client speaks bridge protocol {}, broker speaks {}",
+                hello.get("proto").and_then(Value::as_u64).unwrap_or(0),
+                peer::PROTOCOL_VERSION
+            ),
+        });
+        let _ = bridge_write(writer, &reject);
+        log_warn!("mcp", "rejected mcp client: protocol mismatch");
+        return;
+    }
+
+    let id = clients.register();
+    let n = clients.arrive();
+    let label = clients.label(id);
+    log_info!("mcp", "mcp client {label} connected ({n} client(s))");
+    {
+        let mut writer = BufWriter::new(stream.try_clone().expect("clone for ack"));
+        let ack = serde_json::json!({
+            "broker": true,
+            "protocol": peer::PROTOCOL_VERSION,
+            "version": peer::HOST_VERSION,
+            "clientId": label,
+        });
+        if let Err(e) = bridge_write(&mut writer, &ack) {
+            log_warn!("mcp", "broker ack failed: {e}");
+            clients.depart();
+            return;
+        }
+    }
 
     loop {
-        let msg = match mcp_read(&mut reader) {
+        let msg: JsonRpc = match bridge_read(&mut reader) {
             Ok(Some(m)) => m,
-            Ok(None) => break, // stdin EOF
+            Ok(None) => break,
             Err(e) => {
-                log_warn!("mcp", "stdin parse error: {e}");
-                // Send a parse-error with null id; keep going if possible.
-                let err = JsonRpc::err(Value::Null, -32700, format!("parse error: {e}"));
-                let _ = mcp_write(&mut writer, &err);
-                continue;
+                log_warn!("mcp", "client {label} read error: {e}");
+                break;
             }
         };
-        let resp = handle(&session, &msg);
+        if msg.method.as_deref() == Some("initialize") {
+            if let Some(name) = msg
+                .params
+                .as_ref()
+                .and_then(|p| p.get("clientInfo"))
+                .and_then(|ci| ci.get("name"))
+                .and_then(Value::as_str)
+            {
+                clients.set_name(id, name);
+            }
+        }
+        let label = clients.label(id);
+        let _guard = if is_mutating_tool_call(&msg) {
+            Some(clients.mutating.lock().unwrap())
+        } else {
+            None
+        };
+        let resp = handle(&session, Some(&label), &msg);
+        drop(_guard);
         if let Some(r) = resp {
+            let mut writer = BufWriter::new(stream.try_clone().expect("clone for reply"));
             if let Err(e) = mcp_write(&mut writer, &r) {
-                log_error!("mcp", "stdout write failed: {e}");
+                log_warn!("mcp", "client {label} write failed: {e}");
                 break;
             }
         }
-        // None means notification (no response).
     }
 
-    // stdin EOF: the MCP client disconnected. Remove lock file.
-    ipc::LockFile::remove();
-    0
+    let remaining = clients.depart();
+    log_info!(
+        "mcp",
+        "mcp client {label} disconnected ({remaining} client(s))"
+    );
+    if remaining == 0 {
+        clients.arm_linger();
+    }
+}
+
+/// Ops whose effect another op could observe mid-flight (scheduling v1,
+/// ADR-0028 Phase 1b): one mutation at a time, globally; reads and waits run
+/// concurrently. `tab_open` and `page_snapshot_precise` join the ADR's core
+/// list: opening moves the session's current-tab pointer (Phase 1a), and a
+/// precise snapshot attaches the debugger, which excludes any concurrent CDP
+/// op on the same tab.
+fn is_mutating_tool_call(msg: &JsonRpc) -> bool {
+    if msg.method.as_deref() != Some("tools/call") {
+        return false;
+    }
+    const MUTATING_OPS: &[&str] = &[
+        "page_click",
+        "page_fill",
+        "page_eval",
+        "page_scroll",
+        "page_screenshot",
+        "tab_close",
+        "tab_open",
+        "page_snapshot_precise",
+    ];
+    let name = msg
+        .params
+        .as_ref()
+        .and_then(|p| p.get("name"))
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    MUTATING_OPS.contains(&name)
 }
 
 /// Bind the bridge socket, publish the lock file, and spawn the accept loop that
@@ -102,7 +540,12 @@ fn lock_conflict(prev: Option<ipc::LockFile>, my_pid: u32) -> LockHeld {
     }
 }
 
-fn start_bridge(supplant_live: bool) -> Option<Session> {
+/// Bind the bridge socket and CLAIM the lock — the exclusive-create decision
+/// loop from ADR-0028 Phase 0, shared by every mode that owns a bridge
+/// (one-shot `call`, and the broker). A LIVE owner is refused (naming the way
+/// out) unless `supplant_live` made the displacement explicit; a STALE one
+/// (crashed owner, leftover, corrupt file) is cleared and claimed.
+fn claim_bridge_lock(supplant_live: bool) -> Option<(std::net::TcpListener, ipc::LockFile)> {
     let (listener, lock) = match ipc::listen() {
         Ok(x) => x,
         Err(e) => {
@@ -110,11 +553,8 @@ fn start_bridge(supplant_live: bool) -> Option<Session> {
             return None;
         }
     };
-    // Claim the bridge exclusively. `claim` is create-new, so an existing lock
-    // is an obstacle we must decide about — never something we silently
-    // overwrite. A LIVE owner is refused (naming the way out) unless
-    // `--takeover` made the displacement explicit; a STALE one (crashed
-    // owner, leftover, corrupt file) is cleared and claimed.
+    // `claim` is create-new, so an existing lock is an obstacle we must decide
+    // about — never something we silently overwrite.
     let mut attempts = 0u8;
     let lock = loop {
         attempts += 1;
@@ -141,7 +581,7 @@ fn start_bridge(supplant_live: bool) -> Option<Session> {
                         // against our new lock.
                         log_info!(
                             "mcp",
-                            "supplanting prior MCP server pid {prev_pid} (--takeover)"
+                            "supplanting prior bridge pid {prev_pid} (--takeover)"
                         );
                         terminate_process(prev_pid);
                         for _ in 0..50 {
@@ -164,11 +604,12 @@ fn start_bridge(supplant_live: bool) -> Option<Session> {
                     LockHeld::Live(prev_pid) => {
                         log_error!(
                             "mcp",
-                            "another browser-bridge server is already running (pid {prev_pid}) \
-                             and owns the bridge; refusing to start over it. Multi-agent use is \
-                             served by the broker (ADR-0028) — for now, pass --takeover to take \
-                             the bridge over deliberately (the previous server is terminated), \
-                             or stop the other MCP client first."
+                            "another browser-bridge process is already running (pid {prev_pid}) \
+                             and owns the bridge; refusing to start over it. Multiple MCP \
+                             clients are served by the broker (ADR-0028): a second MCP server \
+                             JOINS it instead of starting its own bridge. Pass --takeover to \
+                             take the bridge over deliberately (the previous owner is \
+                             terminated), or stop the other MCP client first."
                         );
                         return None;
                     }
@@ -180,6 +621,13 @@ fn start_bridge(supplant_live: bool) -> Option<Session> {
             }
         }
     };
+    Some((listener, lock))
+}
+
+/// The bridge-owning bridge session used by one-shot `call` mode when no
+/// broker is running: bind, claim, accept native-host connections.
+fn start_bridge(supplant_live: bool) -> Option<Session> {
+    let (listener, lock) = claim_bridge_lock(supplant_live)?;
     log_info!(
         "mcp",
         "bridge listening on 127.0.0.1:{} (pid {}) lock at {}",
@@ -194,7 +642,23 @@ fn start_bridge(supplant_live: bool) -> Option<Session> {
         thread::spawn(move || loop {
             match listener.accept() {
                 Ok((stream, _addr)) => {
-                    if let Err(e) = session.attach_connection(stream) {
+                    // Read the hello here and hand it to attach: one shape for
+                    // both bridge owners (the broker needs the role first).
+                    let mut reader = match stream.try_clone() {
+                        Ok(r) => BufReader::new(r),
+                        Err(e) => {
+                            log_warn!("mcp", "stream clone failed: {e}");
+                            continue;
+                        }
+                    };
+                    let hello: Value = match bridge_read(&mut reader) {
+                        Ok(Some(h)) => h,
+                        _ => {
+                            log_warn!("mcp", "connection closed before a valid hello");
+                            continue;
+                        }
+                    };
+                    if let Err(e) = session.attach_connection(stream, reader, hello) {
                         log_warn!("mcp", "accept handler error: {e}");
                     }
                 }
@@ -308,7 +772,7 @@ fn print_outcome(out: &tools::Outcome) {
     }
 }
 
-fn handle(session: &Session, msg: &JsonRpc) -> Option<JsonRpc> {
+fn handle(session: &Session, client: Option<&str>, msg: &JsonRpc) -> Option<JsonRpc> {
     // Notifications have no id and expect no response.
     let id = match &msg.id {
         Some(i) => i.clone(),
@@ -371,17 +835,23 @@ fn handle(session: &Session, msg: &JsonRpc) -> Option<JsonRpc> {
             // Tool errors are returned as a *successful* RPC with isError=true
             // in the result (per MCP spec); only protocol errors use the
             // error field.
-            let out = tools::dispatch(session, name, &args);
+            let out = tools::dispatch_for(session, client, name, &args);
             let req_s = req_id.to_string();
             let dur_s = started.elapsed().as_millis().to_string();
-            crate::log::audit(&[
+            // Brokered calls carry which client acted (`client=c2:claude-code`);
+            // the single-process path has nobody to name.
+            let mut audit: Vec<(&str, &str)> = vec![
                 ("req", req_s.as_str()),
                 ("conn", conn_s.as_str()),
                 ("tool", name),
-                ("outcome", if out.is_error { "error" } else { "ok" }),
-                ("code", out.error_code.unwrap_or("-")),
-                ("dur_ms", dur_s.as_str()),
-            ]);
+            ];
+            if let Some(c) = client {
+                audit.push(("client", c));
+            }
+            audit.push(("outcome", if out.is_error { "error" } else { "ok" }));
+            audit.push(("code", out.error_code.unwrap_or("-")));
+            audit.push(("dur_ms", dur_s.as_str()));
+            crate::log::audit(&audit);
             let result = json!({
                 "content": with_advisory(session, out.content),
                 "isError": out.is_error,
@@ -603,9 +1073,56 @@ mod initialize_tests {
         }
     }
 
+    // ADR-0028 Phase 1b scheduling v1: mutations serialize, reads/waits and
+    // non-tool methods run concurrently.
+    #[test]
+    fn mutating_ops_are_classified_for_the_scheduler() {
+        use super::is_mutating_tool_call;
+        let call = |name: &str| JsonRpc {
+            jsonrpc: Some("2.0".into()),
+            id: Some(json!(1)),
+            method: Some("tools/call".into()),
+            params: Some(json!({ "name": name, "arguments": {} })),
+            result: None,
+            error: None,
+        };
+        let mutating = [
+            "page_click",
+            "page_fill",
+            "page_eval",
+            "page_scroll",
+            "page_screenshot",
+            "tab_close",
+            "tab_open",
+            "page_snapshot_precise",
+        ];
+        for m in mutating {
+            assert!(is_mutating_tool_call(&call(m)), "{m} must serialize");
+        }
+        let concurrent = [
+            "page_text",
+            "page_links",
+            "page_snapshot",
+            "page_wait_for",
+            "tab_list",
+            "cookie_get",
+            "storage_get",
+        ];
+        for m in concurrent {
+            assert!(
+                !is_mutating_tool_call(&call(m)),
+                "{m} must run concurrently"
+            );
+        }
+        // Non tools/call methods never take the lock.
+        let mut init = call("tab_list");
+        init.method = Some("initialize".into());
+        assert!(!is_mutating_tool_call(&init));
+    }
+
     #[test]
     fn initialize_serves_the_embedded_agent_prompt() {
-        let resp = super::handle(&Session::new(), &request("initialize"))
+        let resp = super::handle(&Session::new(), None, &request("initialize"))
             .expect("initialize returns a response");
         let result = resp.result.expect("initialize response has a result");
 

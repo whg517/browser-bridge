@@ -44,7 +44,7 @@ pub const ANNOUNCE_ID: u64 = 0;
 
 /// The internal bridge protocol version this binary speaks. The single source of
 /// truth is `contracts/protocol-version.json`; the test below keeps them equal.
-pub const PROTOCOL_VERSION: u64 = 1;
+pub const PROTOCOL_VERSION: u64 = 2;
 
 /// What the extension advertised about itself. Every field is optional: an
 /// extension older than this feature announces nothing at all, and a newer one

@@ -203,6 +203,12 @@ pub struct BridgeReq {
     /// tabIds onto the envelope.
     #[serde(rename = "tabId", default, skip_serializing_if = "Option::is_none")]
     pub tab_id: Option<i64>,
+    /// Which MCP client (thin server) issued the op — stamped by the broker
+    /// from the client's TCP connection, never by the client itself, so the
+    /// extension can scope per agent (ADR-0028 Phase 1b/1c) and the audit can
+    /// name the actor. `None` on the single-process (no broker) path.
+    #[serde(rename = "clientId", default, skip_serializing_if = "Option::is_none")]
+    pub client_id: Option<String>,
     #[serde(default, skip_serializing_if = "Value::is_null")]
     pub args: Value,
 }
@@ -366,11 +372,41 @@ mod tests {
     }
 
     #[test]
+    fn bridge_req_serializes_client_id_as_camel_case() {
+        // The extension reads req.clientId; the field must land on the wire
+        // under that exact name (the tabId wire-name break taught this the
+        // hard way — see the tab_id doc comment).
+        let req = BridgeReq {
+            id: 1,
+            op: "page_text".into(),
+            tab_id: None,
+            client_id: Some("c2:codex".into()),
+            args: json!({}),
+        };
+        let v = serde_json::to_value(&req).unwrap();
+        assert_eq!(v["clientId"], "c2:codex");
+        assert!(v.get("tab_id").is_none());
+        // Absent stays absent on the wire.
+        let bare = BridgeReq {
+            id: 1,
+            op: "page_text".into(),
+            tab_id: None,
+            client_id: None,
+            args: json!({}),
+        };
+        assert!(serde_json::to_value(&bare)
+            .unwrap()
+            .get("clientId")
+            .is_none());
+    }
+
+    #[test]
     fn bridge_envelope_roundtrip() {
         let req = BridgeReq {
             id: 7,
             op: "page_click".into(),
             tab_id: Some(3),
+            client_id: Some("c1".into()),
             args: json!({ "ref": "e3" }),
         };
         let mut buf = Vec::new();
@@ -497,7 +533,13 @@ mod proptests {
             tab_id in prop::option::of(any::<i64>()),
             args in arb_json(),
         ) {
-            let req = BridgeReq { id, op, tab_id, args };
+            let req = BridgeReq {
+                id,
+                op,
+                tab_id,
+                client_id: None,
+                args,
+            };
             let mut buf = Vec::new();
             bridge_write(&mut buf, &req).unwrap();
             let got: BridgeReq = bridge_read(&mut Cursor::new(buf)).unwrap().unwrap();

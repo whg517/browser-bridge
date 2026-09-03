@@ -63,6 +63,22 @@ pub enum CallError {
     )]
     PayloadTooLarge { bytes: usize },
 
+    /// The connected extension speaks a different bridge protocol version.
+    ///
+    /// ADR-0028 Phase 1b turned the version handshake from a soft advisory
+    /// into a hard gate: once `clientId` rides the BridgeReq envelope, a
+    /// pairing across protocol versions is a misroute waiting to happen, not
+    /// a degraded mode. The code was named PROTOCOL_MISMATCH in
+    /// contracts/errors.json from the start; this is the first thing that
+    /// emits it. A peer that announces nothing (a pre-announce extension)
+    /// still degrades to the soft advisory — the gate needs the peer's claim.
+    #[error(
+        "bridge protocol mismatch: the extension speaks protocol {peer}, this build \
+         speaks protocol {ours}. Reload the extension from the freshly built \
+         extension/dist so both sides agree, then retry."
+    )]
+    ProtocolMismatch { peer: u64, ours: u64 },
+
     /// The extension executed the op and reported a failure of its own.
     ///
     /// `code` is the extension's own classification when it had one. Before it
@@ -106,6 +122,7 @@ impl CallError {
             CallError::UnknownTool(_) => "INVALID_ARGUMENT",
             CallError::InvalidArgument(_) => "INVALID_ARGUMENT",
             CallError::PayloadTooLarge { .. } => "PAYLOAD_TOO_LARGE",
+            CallError::ProtocolMismatch { .. } => "PROTOCOL_MISMATCH",
             CallError::Extension { code, .. } => code
                 .as_deref()
                 .and_then(|c| EXTENSION_CODES.iter().copied().find(|known| *known == c))

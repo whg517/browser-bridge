@@ -37,6 +37,11 @@ fn main() {
                 2
             }
         }
+    } else if args.len() > 1 && args[1] == "--broker" {
+        // Multi-client broker (ADR-0028 Phase 1b): owns the lock and the
+        // extension connection; thin MCP servers join it. Spawned on demand by
+        // `browser-bridge` (no args), not usually run by hand.
+        browser_bridge::mcp_server::broker_run()
     } else if let Some(flag) = unrecognized_arg(&args) {
         // Reject rather than fall through: the default branch starts an MCP
         // server, which claims the bridge (refusing if another live server
