@@ -195,7 +195,13 @@ pub fn mcp_write<W: Write>(w: &mut W, msg: &JsonRpc) -> io::Result<()> {
 pub struct BridgeReq {
     pub id: u64,
     pub op: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// The tab the op targets, when the tool addressed one explicitly. The
+    /// wire name is camelCase to match the extension's BridgeReq type and the
+    /// contract's argument style — it used to serialize as `tab_id`, which the
+    /// extension (reading `req.tabId`) never saw: harmless while dispatch
+    /// always sent None, and a silent misroute the moment Phase 1a lifted real
+    /// tabIds onto the envelope.
+    #[serde(rename = "tabId", default, skip_serializing_if = "Option::is_none")]
     pub tab_id: Option<i64>,
     #[serde(default, skip_serializing_if = "Value::is_null")]
     pub args: Value,

@@ -35,13 +35,13 @@ pub fn all() -> Vec<Tool> {
         Tool {
             name: "page_snapshot",
             description:
-                "Capture the active tab's interactive elements as an accessibility-style tree. Each node has a stable `ref` (e.g. \"e3\"), a role, an accessible name, and a fallback CSS selector. Use the `ref` in page_click/page_fill when possible. Same-origin sub-frames are included automatically; a sub-frame node's `ref` is prefixed `f<frameId>:` (e.g. \"f2:e3\") and page_click/page_fill route it back to that frame.",
-            input_schema: schema(&[], &[]),
+                "Capture the target tab's interactive elements as an accessibility-style tree. Each node has a stable `ref` (e.g. \"e3\"), a role, an accessible name, and a fallback CSS selector. Use the `ref` in page_click/page_fill when possible. Same-origin sub-frames are included automatically; a sub-frame node's `ref` is prefixed `f<frameId>:` (e.g. \"f2:e3\") and page_click/page_fill route it back to that frame.",
+            input_schema: schema(&[], &[("tabId", "integer", "Tab id from tab_list to act on instead of the session's current tab. Targeting a tab (here, or via tab_focus / tab_open) makes it the session's current tab.")]),
         },
         Tool {
             name: "page_click",
             description:
-                "Click an element on the active tab. Prefer passing `ref` (from page_snapshot); \
+                "Click an element on the target tab. Prefer passing `ref` (from page_snapshot); \
                  fall back to `selector`.",
             input_schema: schema(
                 &[],
@@ -52,13 +52,14 @@ pub fn all() -> Vec<Tool> {
                         "Element ref from page_snapshot, e.g. \"e3\"",
                     ),
                     ("selector", "string", "CSS selector fallback"),
-                ],
-            ),
+                        ("tabId", "integer", "Tab id from tab_list to act on instead of the session's current tab. Targeting a tab (here, or via tab_focus / tab_open) makes it the session's current tab."),
+                    ],
+            )
         },
         Tool {
             name: "page_fill",
             description:
-                "Type a value into a form field on the active tab. Prefer `ref`; fall back to \
+                "Type a value into a form field on the target tab. Prefer `ref`; fall back to \
                  `selector`. Password fields are masked in logs/history.",
             input_schema: schema(
                 &["value"],
@@ -66,44 +67,45 @@ pub fn all() -> Vec<Tool> {
                     ("ref", "string", "Element ref from page_snapshot"),
                     ("selector", "string", "CSS selector fallback"),
                     ("value", "string", "Text to type into the field"),
-                ],
-            ),
+                        ("tabId", "integer", "Tab id from tab_list to act on instead of the session's current tab. Targeting a tab (here, or via tab_focus / tab_open) makes it the session's current tab."),
+                    ],
+            )
         },
         Tool {
             name: "page_text",
             description:
-                "Return the text content of the active tab (sensitive fields masked). `mode` \"visible\" (default) returns only rendered text — it excludes display:none / hidden inactive-tab panels; `mode` \"full\" also includes that hidden/inactive-tab text (script/style/noscript stripped). Use \"full\" when content is split across tabs/accordions. Same-origin sub-frames are appended under a frame marker.",
+                "Return the text content of the target tab (sensitive fields masked). `mode` \"visible\" (default) returns only rendered text — it excludes display:none / hidden inactive-tab panels; `mode` \"full\" also includes that hidden/inactive-tab text (script/style/noscript stripped). Use \"full\" when content is split across tabs/accordions. Same-origin sub-frames are appended under a frame marker.",
             input_schema: schema(
                 &[],
                 &[(
                     "mode",
                     "string",
                     "\"visible\" (default, rendered text only) or \"full\" (include hidden / inactive-tab content)",
-                )],
-            ),
+                ), ("tabId", "integer", "Tab id from tab_list to act on instead of the session's current tab. Targeting a tab (here, or via tab_focus / tab_open) makes it the session's current tab.")],
+            )
         },
         Tool {
             name: "page_links",
             description:
-                "Return the links on the active tab as an array of {text, href, type}, where type is one of mailto | tel | external | internal | anchor. Surfaces contact links (mailto:/tel:) and href targets that page_text only shows as anchor labels, and works even when page_snapshot is empty. hrefs are masked (token-like query strings redacted; emails / phone numbers preserved). Optional `type` filters to one kind; result is capped at 500. Includes links from same-origin sub-frames.",
+                "Return the links on the target tab as an array of {text, href, type}, where type is one of mailto | tel | external | internal | anchor. Surfaces contact links (mailto:/tel:) and href targets that page_text only shows as anchor labels, and works even when page_snapshot is empty. hrefs are masked (token-like query strings redacted; emails / phone numbers preserved). Optional `type` filters to one kind; result is capped at 500. Includes links from same-origin sub-frames.",
             input_schema: schema(
                 &[],
                 &[(
                     "type",
                     "string",
                     "Optional filter: one of mailto | tel | external | internal | anchor",
-                )],
-            ),
+                ), ("tabId", "integer", "Tab id from tab_list to act on instead of the session's current tab. Targeting a tab (here, or via tab_focus / tab_open) makes it the session's current tab.")],
+            )
         },
         Tool {
             name: "page_screenshot",
-            description: "Capture the visible viewport of the active tab as a PNG (base64).",
-            input_schema: schema(&[], &[]),
+            description: "Capture the visible viewport of the target tab as a PNG (base64).",
+            input_schema: schema(&[], &[("tabId", "integer", "Tab id from tab_list to act on instead of the session's current tab. Targeting a tab (here, or via tab_focus / tab_open) makes it the session's current tab.")]),
         },
         Tool {
             name: "page_scroll",
             description:
-                "Scroll the active tab. Pass `direction` (up|down|top|bottom) or `pixels`.",
+                "Scroll the target tab. Pass `direction` (up|down|top|bottom) or `pixels`.",
             input_schema: schema(
                 &[],
                 &[
@@ -113,13 +115,14 @@ pub fn all() -> Vec<Tool> {
                         "integer",
                         "Number of pixels to scroll (positive = down)",
                     ),
-                ],
-            ),
+                        ("tabId", "integer", "Tab id from tab_list to act on instead of the session's current tab. Targeting a tab (here, or via tab_focus / tab_open) makes it the session's current tab."),
+                    ],
+            )
         },
         Tool {
             name: "page_wait_for",
             description:
-                "Wait until a condition is met on the active tab, or until timeout. One of: `selector` exists (optionally at least `minCount` matches), `text` appears, `nav` waits for the page to load (`until`: \"load\" default, or \"domcontentloaded\"), or `settled` waits for the DOM to stop mutating. SPA hash-route changes fire no navigation event — use `settled`, `selector`, or `text` for those.",
+                "Wait until a condition is met on the target tab, or until timeout. One of: `selector` exists (optionally at least `minCount` matches), `text` appears, `nav` waits for the page to load (`until`: \"load\" default, or \"domcontentloaded\"), or `settled` waits for the DOM to stop mutating. SPA hash-route changes fire no navigation event — use `settled`, `selector`, or `text` for those.",
             input_schema: schema(
                 &[],
                 &[
@@ -146,13 +149,14 @@ pub fn all() -> Vec<Tool> {
                         "Wait until the DOM stops mutating for ~500ms (SPA/lazy-content friendly)",
                     ),
                     ("timeoutMs", "integer", "Max wait in ms (default 30000)"),
-                ],
-            ),
+                        ("tabId", "integer", "Tab id from tab_list to act on instead of the session's current tab. Targeting a tab (here, or via tab_focus / tab_open) makes it the session's current tab."),
+                    ],
+            )
         },
         Tool {
             name: "page_eval",
             description:
-                "HIGH RISK — execute arbitrary JavaScript on the active tab. The return value is \
+                "HIGH RISK — execute arbitrary JavaScript on the target tab. The return value is \
                  masked (JWT / long hex / long numbers / token-like strings). This is \
                  the most powerful tool: prefer page_click / page_fill / page_snapshot whenever \
                  possible, and only use page_eval when those cannot achieve the goal (custom \
@@ -166,8 +170,8 @@ pub fn all() -> Vec<Tool> {
                  Every other tool works without it.",
             input_schema: schema(
                 &["code"],
-                &[("code", "string", "JavaScript code to execute")],
-            ),
+                &[("code", "string", "JavaScript code to execute"), ("tabId", "integer", "Tab id from tab_list to act on instead of the session's current tab. Targeting a tab (here, or via tab_focus / tab_open) makes it the session's current tab.")],
+            )
         },
         Tool {
             name: "page_snapshot_precise",
@@ -190,19 +194,19 @@ pub fn all() -> Vec<Tool> {
                     "frameId",
                     "string",
                     "Optional: limit to a specific frame's tree",
-                )],
-            ),
+                ), ("tabId", "integer", "Tab id from tab_list to act on instead of the session's current tab. Targeting a tab (here, or via tab_focus / tab_open) makes it the session's current tab.")],
+            )
         },
         Tool {
             name: "cookie_get",
             description:
-                "Read cookies for the active tab (or a url/domain you specify). Includes httpOnly \
+                "Read cookies for the target tab (or a url/domain you specify). Includes httpOnly \
                  cookies (the main reason to use this over document.cookie). Read-only; \
                  there is no cookie_set (writing httpOnly cookies is a session-fixation risk). \
                  Values are masked before being returned — by pattern (JWT / long hex / long \
                  digit runs / provider API keys) and by name, so a cookie called e.g. \
                  `csrftoken` or `sessionid` is redacted whatever its value looks like. If you \
-                 omit url/domain/name, cookies for the active tab's URL are returned.",
+                 omit url/domain/name, cookies for the target tab's URL are returned.",
             input_schema: schema(
                 &[],
                 &[
@@ -213,14 +217,15 @@ pub fn all() -> Vec<Tool> {
                     ),
                     ("domain", "string", "Match this domain and its subdomains"),
                     ("name", "string", "Exact cookie name to match"),
-                ],
-            ),
+                        ("tabId", "integer", "Tab id from tab_list to act on instead of the session's current tab. Targeting a tab (here, or via tab_focus / tab_open) makes it the session's current tab."),
+                    ],
+            )
         },
         Tool {
             name: "storage_get",
             description:
                 "Read the page's localStorage or sessionStorage (where frameworks like Auth0 / \
-                 NextAuth / Firebase store tokens). Must run on the active tab; same-origin \
+                 NextAuth / Firebase store tokens). Must run on the target tab; same-origin \
                  only (cross-origin iframes are not readable). Pass `key` to fetch one entry, \
                  or omit it to dump all entries (capped at 500). Values are ALWAYS masked — by \
                  pattern (JWT / long hex / long digit runs / provider API keys) and by key name, \
@@ -235,8 +240,9 @@ pub fn all() -> Vec<Tool> {
                         "string",
                         "Specific key to read; omit for all entries",
                     ),
-                ],
-            ),
+                        ("tabId", "integer", "Tab id from tab_list to act on instead of the session's current tab. Targeting a tab (here, or via tab_focus / tab_open) makes it the session's current tab."),
+                    ],
+            )
         },
     ]
 }

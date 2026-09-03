@@ -26,6 +26,9 @@ function stubChrome(sent: Sent[], subFrames: number[] = []) {
   (globalThis as { chrome?: unknown }).chrome = {
     tabs: {
       get: async () => ({ id: 1 }),
+      // The resolved target IS the visible tab in these tests, so the
+      // background-tab screenshot guard (ADR-0028 Phase 1a) lets ops through.
+      query: async () => [{ id: 1, windowId: 1, active: true }],
       sendMessage: async (tabId: number, msg: Sent["msg"], opts?: Sent["opts"]) => {
         sent.push({ tabId, msg, opts });
         if (msg.op === "ping") return { pong: true };
@@ -55,6 +58,26 @@ describe("ContentScriptBackend frame targeting", () => {
     expect(op!.opts?.frameId).toBe(0);
     // No message at all may go out without a frameId — that is the broadcast.
     expect(sent.every((s) => typeof s.opts?.frameId === "number")).toBe(true);
+  });
+
+  test("page_screenshot refuses a background target instead of photographing the wrong tab", async () => {
+    const sent: Sent[] = [];
+    stubChrome(sent, []);
+    // The visible tab is 2, the resolved target is 1: captureVisibleTab would
+    // silently return tab 2's pixels for a call aimed at tab 1 (ADR-0028
+    // Phase 1a made non-visible targets routine via tabId).
+    const stub = (globalThis as { chrome?: { tabs?: { query?: unknown } } }).chrome!;
+    stub.tabs!.query = async () => [{ id: 2, windowId: 1, active: true }];
+    const backgroundTarget = { id: 1, windowId: 1 } as chrome.tabs.Tab;
+    let code = "(did not throw)";
+    try {
+      await new ContentScriptBackend().run("page_screenshot", {}, backgroundTarget);
+    } catch (e) {
+      code = (e as { code?: string }).code ?? "(no code)";
+    }
+    expect(code).toBe("UNSUPPORTED_PAGE");
+    // Nothing went out to the page — the refusal happens before any send.
+    expect(sent).toEqual([]);
   });
 
   test("page_scroll and page_eval are top-frame scoped too", async () => {

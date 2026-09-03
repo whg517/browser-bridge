@@ -217,14 +217,54 @@ pub struct Outcome {
     pub error_code: Option<&'static str>,
 }
 
+/// The explicit tab target an op-level `tabId` argument asks for, if the
+/// tool's schema declares one.
+///
+/// Page-level tools address a tab with an OPTIONAL `tabId` (tab_list is where
+/// ids come from); when given, it becomes the BridgeReq's TOP-LEVEL tab target
+/// and is stripped from the op args — the extension resolves it through
+/// `resolveTargetTab` (and makes it the session's current tab, ADR-0028
+/// Phase 1a). Declared-in-schema is the gate on purpose: tab-level tools own
+/// `tabId` as a required op argument (tab_focus / tab_close) or don't take one
+/// (tab_open / tab_list), and for them this must stay `None` so their args are
+/// forwarded untouched.
+fn request_tab_id(tool: &Tool, args: &Value) -> Option<i64> {
+    let declares = tool
+        .input_schema
+        .get("properties")
+        .and_then(|p| p.get("tabId"))
+        .is_some();
+    // tab_focus / tab_close own `tabId` as a REQUIRED op argument — theirs is
+    // addressing WITHIN the op, not an envelope target, and must not be lifted.
+    let required = tool
+        .input_schema
+        .get("required")
+        .and_then(Value::as_array)
+        .is_some_and(|r| r.iter().any(|k| k == "tabId"));
+    if !declares || required {
+        return None;
+    }
+    args.get("tabId").and_then(Value::as_i64)
+}
+
 /// Dispatch a tool call. Returns the MCP result `content` value (an array)
 /// and the isError flag. Errors are tool-level (isError=true), not RPC-level.
 pub fn dispatch(session: &Session, name: &str, args: &Value) -> Outcome {
     let result = match HANDLERS.iter().find(|(op, _)| *op == name) {
-        Some((_, build_payload)) => check_required(name, args)
-            .and_then(|()| check_arg_types(name, args))
-            .and_then(|()| check_absolute_url(name, args))
-            .and_then(|()| call(session, name, None, build_payload(args))),
+        Some((op, build_payload)) => {
+            let payload = build_payload(args);
+            // The builders whitelist their own fields, so an op-level `tabId`
+            // never leaks into the op args — when a tool declares one, it is
+            // lifted onto the BridgeReq envelope instead.
+            let tab_id = all()
+                .iter()
+                .find(|t| t.name == name)
+                .and_then(|tool| request_tab_id(tool, args));
+            check_required(name, args)
+                .and_then(|()| check_arg_types(name, args))
+                .and_then(|()| check_absolute_url(name, args))
+                .and_then(|()| call(session, op, tab_id, payload))
+        }
         None => Err(CallError::UnknownTool(name.to_string())),
     };
 
@@ -269,6 +309,47 @@ mod tests {
     // The dispatch registry must stay in lockstep with the catalogue: every
     // tool has exactly one handler and every handler names a real tool. This
     // closes the only drift the catalogue tests can't see.
+    // ADR-0028 Phase 1a: the optional op-level tabId on page-level tools lifts
+    // onto the BridgeReq envelope. tab-level tools keep their own tabId args.
+    #[test]
+    fn request_tab_id_lifts_only_declared_optional_tab_ids() {
+        use super::request_tab_id;
+        let tool = |name: &str| all().into_iter().find(|t| t.name == name).unwrap();
+        // Declared + present → lifted.
+        assert_eq!(
+            request_tab_id(&tool("page_fill"), &json!({ "tabId": 7, "value": "x" })),
+            Some(7)
+        );
+        // Declared + absent → no explicit target (session current tab wins).
+        assert_eq!(
+            request_tab_id(&tool("page_fill"), &json!({ "value": "x" })),
+            None
+        );
+        // Wrong-typed tabId is check_arg_types' business, not lifting's.
+        assert_eq!(
+            request_tab_id(&tool("page_fill"), &json!({ "tabId": "7" })),
+            None
+        );
+        // Required-arg tools (tab_focus/tab_close) keep theirs in the op args.
+        assert_eq!(
+            request_tab_id(&tool("tab_focus"), &json!({ "tabId": 7 })),
+            None
+        );
+        assert_eq!(
+            request_tab_id(&tool("tab_close"), &json!({ "tabId": 7 })),
+            None
+        );
+        // No tabId anywhere in the schema (tab_list/tab_open).
+        assert_eq!(
+            request_tab_id(&tool("tab_open"), &json!({ "tabId": 7 })),
+            None
+        );
+        assert_eq!(
+            request_tab_id(&tool("tab_list"), &json!({ "tabId": 7 })),
+            None
+        );
+    }
+
     #[test]
     fn registry_covers_catalogue() {
         use std::collections::BTreeSet;
