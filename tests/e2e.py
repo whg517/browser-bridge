@@ -840,6 +840,10 @@ def test_storage_get_round_trip():
         # (granted by the broker, never self-reported).
         check(isinstance(captured["req"].get("clientId"), str),
               "BridgeReq names the acting client")
+        # Phase 1c: the display name travels separately (labels only) — the
+        # broker learned it from this client's initialize clientInfo.
+        check(captured["req"].get("clientName") == "e2e",
+              "BridgeReq carries the client's display name")
         content = json.loads(r["result"]["content"][0]["text"])
         check(content.get("found") is True, "storage result has found:true")
         check("••••" in content.get("value", ""), "storage value is masked")

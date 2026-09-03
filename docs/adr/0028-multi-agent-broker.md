@@ -197,3 +197,28 @@ Reality adjusted a few details; the architecture stands.
 - **Client labels**: ids are granted per TCP connection (`c1`, `c2`, …);
   display names come from the MCP `initialize` `clientInfo` and are for
   labels only (audit, confirmation text) — authorization never reads them.
+
+## Implementation notes — Phase 1c (per-agent workspaces + scoping)
+
+- **Explicit targeting is scoped; the shared visible surface is not.** An
+  explicit `tabId` must name a tab in the calling agent's own workspace group
+  (`TAB_OUT_OF_SCOPE` otherwise — the user's ungrouped tabs included), and the
+  same boundary guards `tab_focus` / `tab_close` / `page_snapshot_precise` /
+  `cookie_get`. The active-tab fallback stays unscoped: driving what the user
+  is looking at is the product, it is physically one surface, and the mutation
+  lock serializes it. Per-action user confirmation remains future work; until
+  then the boundary is a hard reject whose message names the way out.
+- **Workspaces key off the granted `clientId`** (`c1`, …), stable for the
+  connection. The group is remembered BY ID in session storage so it survives
+  retitling when the display name lands later; a reconnecting client gets a
+  fresh id and therefore a fresh workspace — its old tabs remain visible in
+  `tab_list` (`owner: "agent"`) but out of reach. A persistent client
+  identity is a Phase 2 refinement.
+- **`tab_list` gains `owner`** (`"you" | "agent" | "user"`): information is
+  not hidden across agents — operations are.
+- **`clientName` rides the envelope separately from `clientId`** (labels
+  only): the name arrives asynchronously from `initialize` clientInfo, and
+  the scoping identity must never change underneath a conversation.
+- **Errors**: `TAB_OUT_OF_SCOPE` added to contracts/errors.json (producer:
+  extension), the extension's `BridgeErrorCode` union, and the Rust
+  `EXTENSION_CODES` allowlist.

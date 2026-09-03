@@ -16,7 +16,7 @@
       "code": "NOT_CONNECTED",
       "category": "connection",
       "retryable": true,
-      "message": "The browser extension is not connected. Most often its MV3 service worker is asleep (Chrome stops it after ~30s idle) — the extension re-checks every 30s, so a retry usually succeeds; otherwise the user clicks the toolbar icon.",
+      "message": "The browser extension is not connected. Most often its MV3 service worker is asleep (Chrome stops it after ~30s idle) \u2014 the extension re-checks every 30s, so a retry usually succeeds; otherwise the user clicks the toolbar icon.",
       "rust": [
         "NotConnected"
       ],
@@ -98,6 +98,13 @@
         "Write"
       ],
       "producer": "rust"
+    },
+    {
+      "code": "TAB_OUT_OF_SCOPE",
+      "category": "argument",
+      "retryable": false,
+      "message": "The targeted tab is outside your workspace (ADR-0028 Phase 1c): it belongs to another agent or to the user. Target tabs from your own group (see tab_list's owner field), or ask the user to move it.",
+      "producer": "extension"
     }
   ]
 }

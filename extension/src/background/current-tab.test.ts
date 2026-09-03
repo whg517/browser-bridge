@@ -1,8 +1,8 @@
-// The virtual-focus pointer (ADR-0028 Phase 1a): what makes "the session's
-// current tab" survive service-worker recycles and survive NOTHING else —
-// a browser restart invalidates tab ids, so storage.session is the durable
-//-but-not-too-durable home. These tests pin the read/write/clear contract and
-// the defensive read (a non-number under the key reads as "no pointer").
+// The per-client virtual-focus pointer (ADR-0028 Phase 1a/1c): what makes an
+// agent's "current tab" survive service-worker recycles and survive NOTHING
+// else — a browser restart invalidates tab ids, so storage.session is the
+// durable-but-not-too-durable home. Keyed by client: two agents sharing one
+// browser each keep their own focus.
 
 import { beforeEach, describe, expect, test } from "bun:test";
 import { clearCurrentTabId, getCurrentTabId, setCurrentTabId } from "./current-tab";
@@ -25,26 +25,36 @@ function withSessionStorage(seed: Record<string, unknown> = {}) {
   };
 }
 
-describe("the session's current tab", () => {
+describe("the per-client current tab", () => {
   beforeEach(() => withSessionStorage());
 
   test("unset reads as null", async () => {
-    expect(await getCurrentTabId()).toBeNull();
+    expect(await getCurrentTabId("solo")).toBeNull();
   });
 
   test("set then get round-trips", async () => {
-    await setCurrentTabId(42);
-    expect(await getCurrentTabId()).toBe(42);
+    await setCurrentTabId("solo", 42);
+    expect(await getCurrentTabId("solo")).toBe(42);
   });
 
-  test("clear forgets the pointer", async () => {
-    await setCurrentTabId(42);
-    await clearCurrentTabId();
-    expect(await getCurrentTabId()).toBeNull();
+  test("clients do not see each other's pointer", async () => {
+    await setCurrentTabId("c1", 42);
+    expect(await getCurrentTabId("c2")).toBeNull();
+    await setCurrentTabId("c2", 7);
+    expect(await getCurrentTabId("c1")).toBe(42);
+    expect(await getCurrentTabId("c2")).toBe(7);
+  });
+
+  test("clear forgets only that client's pointer", async () => {
+    await setCurrentTabId("c1", 42);
+    await setCurrentTabId("c2", 7);
+    await clearCurrentTabId("c1");
+    expect(await getCurrentTabId("c1")).toBeNull();
+    expect(await getCurrentTabId("c2")).toBe(7);
   });
 
   test("a non-number under the key reads as no pointer, not as a tab", async () => {
-    withSessionStorage({ bb_current_tab_id: "42" });
-    expect(await getCurrentTabId()).toBeNull();
+    withSessionStorage({ "bb_current_tab:solo": "42" });
+    expect(await getCurrentTabId("solo")).toBeNull();
   });
 });

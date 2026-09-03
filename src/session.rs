@@ -57,6 +57,31 @@ struct Conn {
     writer: BufWriter<TcpStream>,
 }
 
+/// Who issued a call: the broker-granted client identity plus its (optional,
+/// cosmetic) display name.
+///
+/// The `id` is the STABLE part — broker-assigned per TCP connection, stamped
+/// on every BridgeReq, and the key the extension scopes workspaces by. The
+/// `name` arrives asynchronously from the client's `initialize` clientInfo,
+/// so it travels as its own field and is used for labels only (group titles,
+/// audit); scoping never reads it, because a name is a claim while an id is
+/// a grant. `None` = the single-process paths (`call` mode, tests).
+#[derive(Debug, Clone)]
+pub struct ClientCtx {
+    pub id: String,
+    pub name: Option<String>,
+}
+
+impl ClientCtx {
+    /// The audit/label form: `c1` or `c1:claude-code`.
+    pub fn label(&self) -> String {
+        match &self.name {
+            Some(n) => format!("{}:{n}", self.id),
+            None => self.id.clone(),
+        }
+    }
+}
+
 /// Pending request callbacks keyed by `BridgeReq.id`. Each entry carries the
 /// generation it was sent under, so a disconnecting reader can drop exactly the
 /// callers that belonged to its (now-dead) connection.
@@ -345,7 +370,7 @@ impl Session {
         op: &str,
         tab_id: Option<i64>,
         args: Value,
-        client: Option<&str>,
+        client: Option<&ClientCtx>,
     ) -> Result<Value, CallError> {
         if let Some((_, info)) = self.peer.lock().unwrap().as_ref() {
             if let Some(peer_v) = info
@@ -363,7 +388,8 @@ impl Session {
             id,
             op: op.to_string(),
             tab_id,
-            client_id: client.map(str::to_string),
+            client_id: client.map(|c| c.id.clone()),
+            client_name: client.and_then(|c| c.name.clone()),
             args,
         };
 

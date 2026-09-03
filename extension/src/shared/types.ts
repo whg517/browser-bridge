@@ -18,12 +18,19 @@ export interface Settings {
 }
 
 // A request from the native host, forwarded to the right tab's content script.
-// Shape on the wire: { id, op, tabId?, args }. `op` + `args` come from the
-// generated BridgeCommand union (one arm per tool, args typed to that tool's
-// inputSchema), intersected with the request envelope so consumers can narrow
-// on `op` and get exactly the args that tool accepts. The intersection
-// distributes over the union, so BridgeReq stays a discriminated union.
-export type BridgeReq = BridgeCommand & { id: number | string; tabId?: number };
+// Shape on the wire: { id, op, tabId?, clientId?, clientName?, args }. `op` +
+// `args` come from the generated BridgeCommand union (one arm per tool, args
+// typed to that tool's inputSchema), intersected with the request envelope so
+// consumers can narrow on `op` and get exactly the args that tool accepts. The
+// intersection distributes over the union, so BridgeReq stays a discriminated
+// union. clientId is broker-granted (ADR-0028 Phase 1b); clientName is the
+// label learned from the client's initialize and is cosmetic.
+export type BridgeReq = BridgeCommand & {
+  id: number | string;
+  tabId?: number;
+  clientId?: string;
+  clientName?: string;
+};
 
 // The response posted back to the native host over the Port.
 export interface BridgeResp {

@@ -8,7 +8,7 @@
 use serde_json::{json, Value};
 
 use crate::error::CallError;
-use crate::session::Session;
+use crate::session::{ClientCtx, Session};
 
 pub(super) fn build_empty(_args: &Value) -> Value {
     json!({})
@@ -96,7 +96,7 @@ pub(super) fn build_storage_get(args: &Value) -> Value {
 
 pub(super) fn call(
     session: &Session,
-    client: Option<&str>,
+    client: Option<&ClientCtx>,
     op: &str,
     tab_id: Option<i64>,
     args: Value,
