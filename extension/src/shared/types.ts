@@ -36,6 +36,9 @@ export type BridgeReq = BridgeCommand & {
 export interface BridgeResp {
   id: number | string;
   ok: boolean;
+  /** The tab the op resolved to (ADR-0028 Phase 2): consumed by the broker's
+   * scheduler/audit; absent on errors and non-tab ops. */
+  tabId?: number;
   data?: unknown;
   error?: string;
   /** Stable taxonomy code from contracts/errors.json, when the failure is one

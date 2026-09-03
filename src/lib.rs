@@ -20,5 +20,6 @@ pub mod mcp_server;
 pub mod native_host;
 pub mod peer;
 pub mod protocol;
+pub mod scheduler;
 pub mod session;
 pub mod tools;

@@ -32,7 +32,15 @@ export function assertNotDisabled(op: string | undefined, disabledTools: string[
   }
 }
 
-export async function dispatch(req: BridgeReq): Promise<unknown> {
+/** What dispatch hands back: the tool's data plus the tab it actually
+ * resolved to (ADR-0028 Phase 2) — the broker keys per-tab mutation
+ * scheduling and audit on it. */
+export interface DispatchResult {
+  data: unknown;
+  tabId?: number;
+}
+
+export async function dispatch(req: BridgeReq): Promise<DispatchResult> {
   const { op } = req;
 
   // WHO is calling (ADR-0028 Phase 1c): the broker grants this per connection;
@@ -61,21 +69,23 @@ export async function dispatch(req: BridgeReq): Promise<unknown> {
   // required args (e.g. tabId, url) are typed non-optional — no `!` needed.
   switch (req.op) {
     case "tab_list":
-      return await tabList(client);
+      return { data: await tabList(client) };
     case "tab_focus":
-      return await tabFocus(req.args.tabId, client);
-    case "tab_open":
-      return await tabOpen(req.args.url, client);
+      return { data: await tabFocus(req.args.tabId, client), tabId: req.args.tabId };
+    case "tab_open": {
+      const opened = await tabOpen(req.args.url, client);
+      return { data: opened, tabId: opened.opened ?? undefined };
+    }
     case "tab_close":
-      return await tabClose(req.args.tabId, client);
+      return { data: await tabClose(req.args.tabId, client), tabId: req.args.tabId };
     case "page_snapshot_precise":
       // Handled in SW via chrome.debugger; does NOT go through content.js.
       await assertExplicitTabInScope();
-      return await snapshotPrecise(req.tabId, req.args, client);
+      return { data: await snapshotPrecise(req.tabId, req.args, client), tabId: req.tabId };
     case "cookie_get":
       // chrome.cookies API is only available in SW context.
       await assertExplicitTabInScope();
-      return await cookieGet(req.tabId, req.args, client);
+      return { data: await cookieGet(req.tabId, req.args, client), tabId: req.tabId };
   }
 
   // Page-level ops. Resolve the target tab, then run through the selected
@@ -84,5 +94,5 @@ export async function dispatch(req: BridgeReq): Promise<unknown> {
   const tab = await resolveTargetTab(req.tabId, client);
   const cdpMode = (await getSetting("cdpMode")) === true;
   const backend = selectBackend(cdpMode);
-  return await backend.run(op, req.args, tab);
+  return { data: await backend.run(op, req.args, tab), tabId: tab.id ?? undefined };
 }

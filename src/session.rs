@@ -365,13 +365,15 @@ impl Session {
     /// with clientId on the envelope, a cross-version pairing misroutes ops
     /// rather than degrading (ADR-0028 Phase 1b). A peer that announces
     /// nothing predates the announce frame and keeps the soft advisory.
+    /// Returns the op's data plus the tab the extension resolved the op to
+    /// (ADR-0028 Phase 2) — the scheduler's per-tab key and an audit field.
     pub fn call(
         &self,
         op: &str,
         tab_id: Option<i64>,
         args: Value,
         client: Option<&ClientCtx>,
-    ) -> Result<Value, CallError> {
+    ) -> Result<(Value, Option<i64>), CallError> {
         if let Some((_, info)) = self.peer.lock().unwrap().as_ref() {
             if let Some(peer_v) = info
                 .protocol_version
@@ -488,7 +490,9 @@ impl Session {
         match rx.recv_timeout(timeout) {
             Ok(resp) => {
                 if resp.ok {
-                    Ok(resp.data.unwrap_or(Value::Null))
+                    // The tab the extension resolved (ADR-0028 Phase 2) rides
+                    // alongside the data; the scheduler and audit consume it.
+                    Ok((resp.data.unwrap_or(Value::Null), resp.tab_id))
                 } else {
                     Err(CallError::Extension {
                         code: resp.code,

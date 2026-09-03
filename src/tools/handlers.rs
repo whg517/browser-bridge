@@ -100,7 +100,7 @@ pub(super) fn call(
     op: &str,
     tab_id: Option<i64>,
     args: Value,
-) -> Result<Value, CallError> {
+) -> Result<(Value, Option<i64>), CallError> {
     session.call(op, tab_id, args, client)
 }
 

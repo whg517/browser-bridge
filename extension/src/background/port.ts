@@ -158,7 +158,7 @@ function onNativeMessage(msg: BridgeReq) {
     return;
   }
   dispatch(msg).then(
-    (data) => sendResponse(msg.id, true, data),
+    (r) => sendResponse(msg.id, true, r.data, undefined, undefined, r.tabId),
     (err) =>
       sendResponse(msg.id, false, undefined, String(err?.message || err || "error"), codeOf(err))
   );
@@ -169,11 +169,22 @@ function sendResponse(
   ok: boolean,
   data?: unknown,
   error?: string,
-  code?: string
+  code?: string,
+  tabId?: number
 ) {
   if (!port) return; // host gone; nothing to do
   try {
-    port.postMessage({ id, ok, data, error: ok ? undefined : error, code: ok ? undefined : code });
+    // tabId (ADR-0028 Phase 2): the tab the op resolved to, for the broker's
+    // per-tab mutation scheduling and audit. Absent on errors and for ops
+    // with no tab target.
+    port.postMessage({
+      id,
+      ok,
+      tabId: ok ? tabId : undefined,
+      data,
+      error: ok ? undefined : error,
+      code: ok ? undefined : code,
+    });
   } catch (e) {
     // Port likely closed; the disconnect handler will reconnect.
     console.warn("[bb] postMessage failed", e);
