@@ -144,6 +144,44 @@ function removeWindowsRegistration(): void {
   } catch {}
 }
 
+/** A minimal MCP client over one thin server's stdio — used for the second
+ * and third agents in the two-agent scenario. */
+function makeMcpClient(proc: ReturnType<typeof spawn>) {
+  const lines = createInterface({ input: proc.stdout! });
+  const queued: string[] = [];
+  const waiters: Array<(line: string) => void> = [];
+  lines.on("line", (line) => {
+    const w = waiters.shift();
+    if (w) w(line);
+    else queued.push(line);
+  });
+  const send = (obj: unknown) => void proc.stdin!.write(JSON.stringify(obj) + "\n");
+  const recv = async (): Promise<any> =>
+    JSON.parse(queued.shift() || (await new Promise<string>((r) => waiters.push(r))));
+  let nextId = 100;
+  return {
+    async initialize() {
+      send({
+        jsonrpc: "2.0",
+        id: nextId++,
+        method: "initialize",
+        params: {
+          protocolVersion: "2025-06-18",
+          capabilities: {},
+          clientInfo: { name: `agent-${proc.pid}`, version: "0.0.0" },
+        },
+      });
+      await recv();
+      send({ jsonrpc: "2.0", method: "notifications/initialized" });
+    },
+    async call(name: string, args: unknown) {
+      const id = nextId++;
+      send({ jsonrpc: "2.0", id, method: "tools/call", params: { name, arguments: args } });
+      return await recv();
+    },
+  };
+}
+
 async function main(): Promise<void> {
   // Use a throwaway copy/profile so the test never operates on the real session.
   const work = fs.mkdtempSync(path.join(os.tmpdir(), "bb-e2e-"));
@@ -237,6 +275,8 @@ async function main(): Promise<void> {
   const swLog: string[] = [];
   let registeredAt: string | null = null;
   let supplanter: ReturnType<typeof spawn> | null = null;
+  // Extra thin servers spawned for the two-agent scenario; killed in finally.
+  const extraServers: Array<ReturnType<typeof spawn>> = [];
   try {
     for (let i = 0; i < 100; i++) {
       if (fs.existsSync(LOCK)) break;
@@ -461,10 +501,66 @@ async function main(): Promise<void> {
     }
     check(reannounced, "extension re-announces to a freshly started server (reconnect path)");
     if (!reannounced) console.log("\n── supplanting server log ──\n" + (stderr2 || "(empty)"));
+
+    // ── two agents, one real browser (ADR-0028 Phase 1c) ────────────────────
+    // mcp2 owns the bridge now. Two more thin servers JOIN it, and each gets
+    // its own workspace group in a REAL Chrome — the property no mock or unit
+    // test can prove: real chrome.tabGroups, real per-client scoping, and a
+    // real cross-agent rejection.
+    const agentA = spawn(BIN, [], { stdio: ["pipe", "pipe", "pipe"] });
+    const agentB = spawn(BIN, [], { stdio: ["pipe", "pipe", "pipe"] });
+    extraServers.push(agentA, agentB);
+    const a = makeMcpClient(agentA);
+    const b = makeMcpClient(agentB);
+    await a.initialize();
+    await b.initialize();
+
+    const openA = await a.call("tab_open", { url: `${FIXTURE}?agent=a` });
+    const openB = await b.call("tab_open", { url: `${FIXTURE}?agent=b` });
+    const resA = JSON.parse(openA.result.content[0].text);
+    const resB = JSON.parse(openB.result.content[0].text);
+    check(typeof resA.groupId === "number", "agent A's tab landed in its own workspace group");
+    check(typeof resB.groupId === "number", "agent B's tab landed in its own workspace group");
+    check(
+      resA.groupId !== resB.groupId,
+      "the two agents got SEPARATE workspace groups"
+    );
+
+    const listB = await b.call("tab_list", {});
+    const agentTabs = JSON.parse(listB.result.content[0].text);
+    const mineB = agentTabs.filter((t: { owner?: string }) => t.owner === "you");
+    check(
+      mineB.some((t: { id?: number }) => t.id === resB.opened),
+      "B sees its own tab as its own"
+    );
+    check(
+      !mineB.some((t: { id?: number }) => t.id === resA.opened),
+      "B does not claim A's tab as its own"
+    );
+    check(
+      agentTabs.some(
+        (t: { owner?: string; id?: number }) => t.owner === "agent" && t.id === resA.opened
+      ),
+      "A's tab is labeled as another agent's"
+    );
+
+    // The negative test, against the real enforcement: B explicitly targeting
+    // A's tab must be refused before any page traffic happens.
+    const scoped = await b.call("page_text", { tabId: resA.opened });
+    check(scoped.result.isError === true, "B cannot target A's tab");
+    check(
+      scoped.result.content[0].text.includes("TAB_OUT_OF_SCOPE"),
+      "the rejection carries TAB_OUT_OF_SCOPE"
+    );
   } finally {
     if (browser) await browser.close().catch(() => {});
     mcp.kill();
     supplanter?.kill();
+    for (const s of extraServers) {
+      try {
+        s.kill();
+      } catch {}
+    }
     if (IS_WINDOWS) {
       removeWindowsRegistration();
       if (backup) writeWindowsRegistration(backup);
