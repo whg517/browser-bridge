@@ -209,6 +209,17 @@ pub struct BridgeReq {
     /// name the actor. `None` on the single-process (no broker) path.
     #[serde(rename = "clientId", default, skip_serializing_if = "Option::is_none")]
     pub client_id: Option<String>,
+    /// The client's display name as learned from its MCP `initialize`
+    /// clientInfo — for group titles and confirmation labels only. Kept
+    /// SEPARATE from `clientId` because the name arrives asynchronously (the
+    /// broker learns it mid-connection), and the identity used for scoping
+    /// must never change underneath a conversation.
+    #[serde(
+        rename = "clientName",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub client_name: Option<String>,
     #[serde(default, skip_serializing_if = "Value::is_null")]
     pub args: Value,
 }
@@ -380,18 +391,25 @@ mod tests {
             id: 1,
             op: "page_text".into(),
             tab_id: None,
-            client_id: Some("c2:codex".into()),
+            client_id: Some("c2".into()),
+            client_name: Some("codex".into()),
             args: json!({}),
         };
         let v = serde_json::to_value(&req).unwrap();
-        assert_eq!(v["clientId"], "c2:codex");
+        // Identity and display name travel as separate camelCase fields: the
+        // id is the stable scoping key, the name arrives asynchronously and is
+        // labels-only.
+        assert_eq!(v["clientId"], "c2");
+        assert_eq!(v["clientName"], "codex");
         assert!(v.get("tab_id").is_none());
+        assert!(v.get("client_id").is_none());
         // Absent stays absent on the wire.
         let bare = BridgeReq {
             id: 1,
             op: "page_text".into(),
             tab_id: None,
             client_id: None,
+            client_name: None,
             args: json!({}),
         };
         assert!(serde_json::to_value(&bare)
@@ -407,6 +425,7 @@ mod tests {
             op: "page_click".into(),
             tab_id: Some(3),
             client_id: Some("c1".into()),
+            client_name: None,
             args: json!({ "ref": "e3" }),
         };
         let mut buf = Vec::new();
@@ -538,6 +557,7 @@ mod proptests {
                 op,
                 tab_id,
                 client_id: None,
+                client_name: None,
                 args,
             };
             let mut buf = Vec::new();

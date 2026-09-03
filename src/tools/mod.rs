@@ -20,7 +20,7 @@ mod handlers;
 use serde_json::{json, Value};
 
 use crate::error::CallError;
-use crate::session::Session;
+use crate::session::{ClientCtx, Session};
 
 pub use catalogue::{all, Tool};
 
@@ -255,10 +255,15 @@ pub fn dispatch(session: &Session, name: &str, args: &Value) -> Outcome {
 
 /// [`dispatch`], naming the brokered client the call came from (ADR-0028
 /// Phase 1b). `None` on the single-process paths (`call` mode, tests); the
-/// broker passes the label it assigned to the thin server's TCP connection —
+/// broker passes the identity it assigned to the thin server's TCP connection —
 /// it travels onto the BridgeReq envelope and into the audit trail, so the
 /// client's identity is granted, never self-reported.
-pub fn dispatch_for(session: &Session, client: Option<&str>, name: &str, args: &Value) -> Outcome {
+pub fn dispatch_for(
+    session: &Session,
+    client: Option<&ClientCtx>,
+    name: &str,
+    args: &Value,
+) -> Outcome {
     let result = match HANDLERS.iter().find(|(op, _)| *op == name) {
         Some((op, build_payload)) => {
             let payload = build_payload(args);

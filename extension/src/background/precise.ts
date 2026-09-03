@@ -97,8 +97,12 @@ function axValue(v: AXValueLike | undefined): unknown {
   return v;
 }
 
-export async function snapshotPrecise(maybeTabId: number | undefined, _args: OpArgs) {
-  const tab = await resolveTargetTab(maybeTabId);
+export async function snapshotPrecise(
+  maybeTabId: number | undefined,
+  _args: OpArgs,
+  client = "solo"
+) {
+  const tab = await resolveTargetTab(maybeTabId, client);
 
   assertDrivable(tab.url, "page_snapshot_precise cannot debug this page");
 

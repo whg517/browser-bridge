@@ -15,7 +15,7 @@ use crate::peer;
 use crate::protocol::{
     bridge_read, bridge_write, install_stderr_panic_hook, mcp_read, mcp_write, JsonRpc,
 };
-use crate::session::Session;
+use crate::session::{ClientCtx, Session};
 use crate::tools;
 
 /// MCP server mode (ADR-0028 Phase 1b): a THIN client. The broker — a
@@ -330,6 +330,11 @@ impl ClientState {
         }
     }
 
+    /// The learned display name, if the client's `initialize` has landed.
+    fn name_of(&self, id: u64) -> Option<String> {
+        self.names.lock().unwrap().get(&id).cloned()
+    }
+
     /// When the last client leaves, linger ~30s before exiting so a client
     /// restart (crash, reload) finds the bridge — and its extension
     /// connection — still warm instead of waking the service worker from
@@ -454,12 +459,16 @@ fn serve_mcp_client(
             }
         }
         let label = clients.label(id);
+        let ctx = ClientCtx {
+            id: format!("c{id}"),
+            name: clients.name_of(id),
+        };
         let _guard = if is_mutating_tool_call(&msg) {
             Some(clients.mutating.lock().unwrap())
         } else {
             None
         };
-        let resp = handle(&session, Some(&label), &msg);
+        let resp = handle(&session, Some(&ctx), &msg);
         drop(_guard);
         if let Some(r) = resp {
             let mut writer = BufWriter::new(stream.try_clone().expect("clone for reply"));
@@ -772,7 +781,7 @@ fn print_outcome(out: &tools::Outcome) {
     }
 }
 
-fn handle(session: &Session, client: Option<&str>, msg: &JsonRpc) -> Option<JsonRpc> {
+fn handle(session: &Session, client: Option<&ClientCtx>, msg: &JsonRpc) -> Option<JsonRpc> {
     // Notifications have no id and expect no response.
     let id = match &msg.id {
         Some(i) => i.clone(),
@@ -840,13 +849,14 @@ fn handle(session: &Session, client: Option<&str>, msg: &JsonRpc) -> Option<Json
             let dur_s = started.elapsed().as_millis().to_string();
             // Brokered calls carry which client acted (`client=c2:claude-code`);
             // the single-process path has nobody to name.
+            let client_label = client.map(|c| c.label());
             let mut audit: Vec<(&str, &str)> = vec![
                 ("req", req_s.as_str()),
                 ("conn", conn_s.as_str()),
                 ("tool", name),
             ];
-            if let Some(c) = client {
-                audit.push(("client", c));
+            if let Some(l) = &client_label {
+                audit.push(("client", l.as_str()));
             }
             audit.push(("outcome", if out.is_error { "error" } else { "ok" }));
             audit.push(("code", out.error_code.unwrap_or("-")));

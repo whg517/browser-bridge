@@ -15,7 +15,11 @@
 /** Codes the extension can attach. A subset of contracts/errors.json — the rest
  *  are assigned Rust-side (bridge/transport failures) or are reserved. */
 export type BridgeErrorCode =
-  "TAB_NOT_FOUND" | "UNSUPPORTED_PAGE" | "EXTENSION_NOT_READY" | "TOOL_DISABLED";
+  | "TAB_NOT_FOUND"
+  | "TAB_OUT_OF_SCOPE"
+  | "UNSUPPORTED_PAGE"
+  | "EXTENSION_NOT_READY"
+  | "TOOL_DISABLED";
 
 export class BridgeError extends Error {
   readonly code: BridgeErrorCode;

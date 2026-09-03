@@ -101,6 +101,7 @@ pub enum CallError {
 /// one must degrade to the honest generic answer instead of inventing taxonomy.
 const EXTENSION_CODES: &[&str] = &[
     "TAB_NOT_FOUND",
+    "TAB_OUT_OF_SCOPE",
     "UNSUPPORTED_PAGE",
     "EXTENSION_NOT_READY",
     "TOOL_DISABLED",

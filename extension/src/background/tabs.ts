@@ -4,6 +4,7 @@
 import { BridgeError } from "../shared/bridge-error";
 import { TOP_FRAME } from "./frames";
 import { clearCurrentTabId, getCurrentTabId, setCurrentTabId } from "./current-tab";
+import { addToAgentGroup, assertTabInScope, ownerOf } from "./workspace";
 
 /**
  * Run a chrome.tabs call, classifying "that tab is gone" as TAB_NOT_FOUND.
@@ -30,31 +31,37 @@ async function asTabLookup<T>(tabId: number, work: () => Promise<T>): Promise<T>
 }
 
 /**
- * Resolve the tab a page-level op should act on (ADR-0028 Phase 1a).
+ * Resolve the tab a page-level op should act on (ADR-0028 Phase 1a/1c).
  *
- * 1. An explicit `tabId` wins — and becomes the session's current tab, because
- *    targeting a tab is how a conversation says "work here".
- * 2. Otherwise the session's current tab (the virtual-focus pointer), as long
+ * 1. An explicit `tabId` wins — and becomes the CLIENT's current tab, because
+ *    targeting a tab is how a conversation says "work here". The target must
+ *    lie in the client's own workspace (assertTabInScope): reaching into
+ *    another agent's group, or the user's ungrouped tabs, is exactly what
+ *    Phase 1c exists to prevent.
+ * 2. Otherwise the client's current tab (its virtual-focus pointer), as long
  *    as it still exists. A pointer at a closed tab is cleared rather than
  *    failing forever: the next call falls back to the active tab.
- * 3. Otherwise the active tab, exactly as before the pointer existed.
+ * 3. Otherwise the active tab — the shared visible surface, deliberately NOT
+ *    scope-restricted: driving what the user is looking at is the product.
  *
- * The fallback to active on a dead pointer is deliberately broad: pointer
- * restoration is best-effort — an explicit `tabId` still gets the strict
- * TAB_NOT_FOUND classification via `asTabLookup`.
+ * `client` is the broker-granted id ("c1"); "solo" on single-process paths.
  */
-export async function resolveTargetTab(maybeTabId: number | undefined): Promise<chrome.tabs.Tab> {
+export async function resolveTargetTab(
+  maybeTabId: number | undefined,
+  client: string
+): Promise<chrome.tabs.Tab> {
   if (maybeTabId) {
     const tab = await asTabLookup(maybeTabId, () => chrome.tabs.get(maybeTabId));
-    await setCurrentTabId(maybeTabId);
+    await assertTabInScope(client, tab);
+    await setCurrentTabId(client, maybeTabId);
     return tab;
   }
-  const current = await getCurrentTabId();
+  const current = await getCurrentTabId(client);
   if (current !== null) {
     try {
       return await chrome.tabs.get(current);
     } catch {
-      await clearCurrentTabId();
+      await clearCurrentTabId(client);
     }
   }
   const [active] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -124,86 +131,72 @@ export async function enumerateFrames(
   }
 }
 
-export async function tabList() {
+export async function tabList(client: string) {
   const tabs = await chrome.tabs.query({});
   // groupId is -1 (chrome.tabGroups.TAB_GROUP_ID_NONE) for ungrouped tabs;
   // normalize that to undefined so the response only carries real group ids.
-  return tabs.map((t) => ({
-    id: t.id,
-    title: t.title,
-    url: t.url,
-    active: t.active,
-    windowId: t.windowId,
-    groupId: typeof t.groupId === "number" && t.groupId >= 0 ? t.groupId : undefined,
-  }));
+  // owner labels WHO the tab works for (ADR-0028 Phase 1c): information is
+  // not hidden across agents — operations are.
+  return Promise.all(
+    tabs.map(async (t) => {
+      const groupId = typeof t.groupId === "number" && t.groupId >= 0 ? t.groupId : undefined;
+      return {
+        id: t.id,
+        title: t.title,
+        url: t.url,
+        active: t.active,
+        windowId: t.windowId,
+        groupId,
+        owner: await ownerOf(client, groupId),
+      };
+    })
+  );
 }
 
-export async function tabFocus(tabId: number) {
+export async function tabFocus(tabId: number, client: string) {
   // @types/chrome >=0.1 types tabs.update as `Tab | undefined` (no tab for the id),
   // but in practice a bad id REJECTS rather than resolving undefined — so the
   // rejection is where the classification has to happen. The guard stays for the
   // shape the types describe.
-  const t = await asTabLookup(tabId, () => chrome.tabs.update(tabId, { active: true }));
+  const t = await asTabLookup(tabId, () => chrome.tabs.get(tabId));
   if (!t) throw new BridgeError("TAB_NOT_FOUND", `tab ${tabId} not found — call tab_list again`);
+  // An explicit focus is an explicit target: workspace scoping applies
+  // (ADR-0028 Phase 1c).
+  await assertTabInScope(client, t);
   await chrome.windows.update(t.windowId, { focused: true });
-  // Focusing a tab makes it the session's current tab (ADR-0028 Phase 1a).
-  await setCurrentTabId(tabId);
+  // Focusing a tab makes it the client's current tab (ADR-0028 Phase 1a).
+  await setCurrentTabId(client, tabId);
   return { focused: tabId };
 }
 
-// Name + color of the tab group browser-bridge collects its tabs into, so the
-// AI's tabs are visually separated from the user's and can be collapsed/closed
-// as a unit. See ADR-0018.
-const WORKSPACE_TITLE = "Browser Bridge";
-const WORKSPACE_COLOR = "blue";
-
-export async function tabOpen(url: string) {
+export async function tabOpen(url: string, client: string) {
   const t = await chrome.tabs.create({ url });
-  // Tabs the AI opens are always collected into the "Browser Bridge" group
-  // (ADR-0018). The groupTabs toggle was removed — grouping is unconditional.
+  // Tabs the AI opens are always collected into the client's workspace group
+  // (ADR-0018 generalized per agent in Phase 1c). The groupTabs toggle was
+  // removed — grouping is unconditional.
   let groupId: number | undefined;
   if (typeof t.id === "number") {
-    // Opening a tab makes it the session's current tab (ADR-0028 Phase 1a) —
+    // Opening a tab makes it the client's current tab (ADR-0028 Phase 1a) —
     // the agent's very next page op should hit the tab it just created.
-    await setCurrentTabId(t.id);
-    groupId = await addToWorkspaceGroup(t.id, t.windowId);
+    await setCurrentTabId(client, t.id);
+    groupId = await addToAgentGroup(client, t.id, t.windowId);
   }
   return { opened: t.id, url, groupId };
 }
 
-// Add a tab to the "Browser Bridge" workspace group in its window, creating the
-// group (named + colored) if it doesn't exist yet. Best-effort: grouping is a
-// UX nicety, so a failure here never fails the underlying tab_open.
-async function addToWorkspaceGroup(
-  tabId: number,
-  windowId: number | undefined
-): Promise<number | undefined> {
-  try {
-    const groups = await chrome.tabGroups.query(windowId != null ? { windowId } : {});
-    const existing = groups.find((g) => g.title === WORKSPACE_TITLE);
-    if (existing) {
-      await chrome.tabs.group({ tabIds: [tabId], groupId: existing.id });
-      return existing.id;
-    }
-    const groupId = await chrome.tabs.group({ tabIds: [tabId] });
-    await chrome.tabGroups.update(groupId, { title: WORKSPACE_TITLE, color: WORKSPACE_COLOR });
-    return groupId;
-  } catch (e) {
-    console.warn("[bb] tab grouping failed:", (e as Error)?.message || e);
-    return undefined;
-  }
-}
-
-export async function tabClose(tabId: number) {
+export async function tabClose(tabId: number, client: string) {
   // Closes the tab directly. `get` first so a bad id fails before anything is
   // removed, and so the failure is classified rather than surfacing as a bare
   // remove rejection.
-  await asTabLookup(tabId, () => chrome.tabs.get(tabId));
+  const t = await asTabLookup(tabId, () => chrome.tabs.get(tabId));
+  // Closing another agent's tab (or a user tab) is the data-loss case scoping
+  // exists for (ADR-0028 Phase 1c).
+  await assertTabInScope(client, t);
   await asTabLookup(tabId, () => chrome.tabs.remove(tabId));
-  // Closing the session's current tab leaves the pointer dangling; clear it so
+  // Closing the client's current tab leaves the pointer dangling; clear it so
   // the next op falls back to the active tab instead of a dead id.
-  if ((await getCurrentTabId()) === tabId) {
-    await clearCurrentTabId();
+  if ((await getCurrentTabId(client)) === tabId) {
+    await clearCurrentTabId(client);
   }
   return { closed: tabId };
 }
