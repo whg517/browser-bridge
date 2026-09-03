@@ -215,6 +215,9 @@ pub struct Outcome {
     pub content: Value,
     pub is_error: bool,
     pub error_code: Option<&'static str>,
+    /// The tab the extension resolved the op to (ADR-0028 Phase 2), when the
+    /// call got that far — the broker keys per-tab scheduling and audit on it.
+    pub resolved_tab: Option<i64>,
 }
 
 /// The explicit tab target an op-level `tabId` argument asks for, if the
@@ -283,7 +286,7 @@ pub fn dispatch_for(
     };
 
     match result {
-        Ok(data) => {
+        Ok((data, resolved_tab)) => {
             // Screenshots come back as base64 PNG; expose as an image content
             // block so the model sees the picture directly.
             if name == "page_screenshot" {
@@ -296,6 +299,7 @@ pub fn dispatch_for(
                         }]),
                         is_error: false,
                         error_code: None,
+                        resolved_tab,
                     };
                 }
             }
@@ -303,6 +307,7 @@ pub fn dispatch_for(
                 content: json!([{ "type": "text", "text": data.to_string() }]),
                 is_error: false,
                 error_code: None,
+                resolved_tab,
             }
         }
         Err(e) => Outcome {
@@ -312,6 +317,7 @@ pub fn dispatch_for(
             content: json!([{ "type": "text", "text": format!("Error [{}]: {e}", e.code()) }]),
             is_error: true,
             error_code: Some(e.code()),
+            resolved_tab: None,
         },
     }
 }

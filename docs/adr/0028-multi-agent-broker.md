@@ -222,3 +222,14 @@ Reality adjusted a few details; the architecture stands.
 - **Errors**: `TAB_OUT_OF_SCOPE` added to contracts/errors.json (producer:
   extension), the extension's `BridgeErrorCode` union, and the Rust
   `EXTENSION_CODES` allowlist.
+
+## Implementation notes — Phase 2 (per-tab scheduling)
+
+- **The extension reports the resolved tab on every response** (`BridgeResp
+  .tabId`, optional): the broker remembers each client's last-known target
+  and keys mutation scheduling on it. Same-tab mutations serialize; different
+  tabs run concurrently; an unknown target (usually a client's first op) is
+  conservative and excludes everything. `page_eval` — the one mutation that
+  can run for seconds — is the big winner.
+- **Audit gains `tab=`**: every tool call's audit line names the tab it acted
+  on, which was previously only implicit in payloads.

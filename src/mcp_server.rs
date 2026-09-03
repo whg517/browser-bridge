@@ -15,6 +15,7 @@ use crate::peer;
 use crate::protocol::{
     bridge_read, bridge_write, install_stderr_panic_hook, mcp_read, mcp_write, JsonRpc,
 };
+use crate::scheduler::Scheduler;
 use crate::session::{ClientCtx, Session};
 use crate::tools;
 
@@ -280,8 +281,13 @@ struct ClientState {
     next_id: AtomicU64,
     count: Mutex<usize>,
     names: Mutex<HashMap<u64, String>>,
-    /// One mutation at a time, globally (v1): reads and waits run concurrently.
-    mutating: Mutex<()>,
+    /// Each client's LAST-KNOWN target tab, reported by the extension on
+    /// every response (ADR-0028 Phase 2). The scheduler's key for the NEXT
+    /// mutating op from that client.
+    client_tabs: Mutex<HashMap<u64, i64>>,
+    /// Mutation scheduling v2: same-tab serialized, different tabs concurrent,
+    /// unknown-target conservative (see scheduler.rs).
+    sched: Scheduler,
     linger_armed: AtomicBool,
 }
 
@@ -291,7 +297,8 @@ impl ClientState {
             next_id: AtomicU64::new(1),
             count: Mutex::new(0),
             names: Mutex::new(HashMap::new()),
-            mutating: Mutex::new(()),
+            client_tabs: Mutex::new(HashMap::new()),
+            sched: Scheduler::new(),
             linger_armed: AtomicBool::new(false),
         })
     }
@@ -333,6 +340,15 @@ impl ClientState {
     /// The learned display name, if the client's `initialize` has landed.
     fn name_of(&self, id: u64) -> Option<String> {
         self.names.lock().unwrap().get(&id).cloned()
+    }
+
+    /// The client's last-known target tab (None until a response reported one).
+    fn tab_of(&self, id: u64) -> Option<i64> {
+        self.client_tabs.lock().unwrap().get(&id).copied()
+    }
+
+    fn set_tab(&self, id: u64, tab: i64) {
+        self.client_tabs.lock().unwrap().insert(id, tab);
     }
 
     /// When the last client leaves, linger ~30s before exiting so a client
@@ -463,13 +479,20 @@ fn serve_mcp_client(
             id: format!("c{id}"),
             name: clients.name_of(id),
         };
+        // Scheduling v2 (ADR-0028 Phase 2): mutations serialize per TAB —
+        // keyed on the client's last-reported target — instead of globally.
+        // An unknown target (usually a client's first op) is conservative and
+        // excludes everything.
         let _guard = if is_mutating_tool_call(&msg) {
-            Some(clients.mutating.lock().unwrap())
+            Some(clients.sched.acquire(clients.tab_of(id)))
         } else {
             None
         };
-        let resp = handle(&session, Some(&ctx), &msg);
+        let (resp, resolved_tab) = handle(&session, Some(&ctx), &msg);
         drop(_guard);
+        if let Some(tab) = resolved_tab {
+            clients.set_tab(id, tab);
+        }
         if let Some(r) = resp {
             let mut writer = BufWriter::new(stream.try_clone().expect("clone for reply"));
             if let Err(e) = mcp_write(&mut writer, &r) {
@@ -781,40 +804,49 @@ fn print_outcome(out: &tools::Outcome) {
     }
 }
 
-fn handle(session: &Session, client: Option<&ClientCtx>, msg: &JsonRpc) -> Option<JsonRpc> {
+/// Handle one MCP message. Returns the response (if any) plus the tab the op
+/// resolved to, for the scheduler and audit (`None` for notifications).
+fn handle(
+    session: &Session,
+    client: Option<&ClientCtx>,
+    msg: &JsonRpc,
+) -> (Option<JsonRpc>, Option<i64>) {
     // Notifications have no id and expect no response.
     let id = match &msg.id {
         Some(i) => i.clone(),
         None => {
             // Notification: the only one we care about is
             // notifications/initialized — no reply needed. Swallow the rest.
-            return None;
+            return (None, None);
         }
     };
 
     let method = msg.method.as_deref().unwrap_or("");
     match method {
-        "initialize" => Some(JsonRpc::ok(
-            id,
-            json!({
-                "protocolVersion": "2025-06-18",
-                "capabilities": { "tools": {} },
-                "serverInfo": {
-                    "name": "browser-bridge",
-                    "version": env!("CARGO_PKG_VERSION"),
-                },
-                // A short kickstart prompt the MCP client hands to the model so
-                // an agent knows how to drive the browser safely. The same text
-                // is a copy-paste block in the README. docs/agent-prompt.md is
-                // the single source; embedded into the binary at build time.
-                "instructions": include_str!("../docs/agent-prompt.md"),
-            }),
-        )),
+        "initialize" => {
+            let result = JsonRpc::ok(
+                id,
+                json!({
+                    "protocolVersion": "2025-06-18",
+                    "capabilities": { "tools": {} },
+                    "serverInfo": {
+                        "name": "browser-bridge",
+                        "version": env!("CARGO_PKG_VERSION"),
+                    },
+                    // A short kickstart prompt the MCP client hands to the model so
+                    // an agent knows how to drive the browser safely. The same text
+                    // is a copy-paste block in the README. docs/agent-prompt.md is
+                    // the single source; embedded into the binary at build time.
+                    "instructions": include_str!("../docs/agent-prompt.md"),
+                }),
+            );
+            (Some(result), None)
+        }
         "notifications/initialized" => {
             // Client signals ready; no reply.
-            None
+            (None, None)
         }
-        "ping" => Some(JsonRpc::ok(id, json!({}))),
+        "ping" => (Some(JsonRpc::ok(id, json!({}))), None),
         "tools/list" => {
             let list: Vec<Value> = tools::all()
                 .iter()
@@ -826,7 +858,7 @@ fn handle(session: &Session, client: Option<&ClientCtx>, msg: &JsonRpc) -> Optio
                     })
                 })
                 .collect();
-            Some(JsonRpc::ok(id, json!({ "tools": list })))
+            (Some(JsonRpc::ok(id, json!({ "tools": list }))), None)
         }
         "tools/call" => {
             let params = msg.params.clone().unwrap_or(Value::Null);
@@ -850,6 +882,7 @@ fn handle(session: &Session, client: Option<&ClientCtx>, msg: &JsonRpc) -> Optio
             // Brokered calls carry which client acted (`client=c2:claude-code`);
             // the single-process path has nobody to name.
             let client_label = client.map(|c| c.label());
+            let tab_s = out.resolved_tab.map(|t| t.to_string());
             let mut audit: Vec<(&str, &str)> = vec![
                 ("req", req_s.as_str()),
                 ("conn", conn_s.as_str()),
@@ -857,6 +890,9 @@ fn handle(session: &Session, client: Option<&ClientCtx>, msg: &JsonRpc) -> Optio
             ];
             if let Some(l) = &client_label {
                 audit.push(("client", l.as_str()));
+            }
+            if let Some(t) = &tab_s {
+                audit.push(("tab", t.as_str()));
             }
             audit.push(("outcome", if out.is_error { "error" } else { "ok" }));
             audit.push(("code", out.error_code.unwrap_or("-")));
@@ -866,14 +902,17 @@ fn handle(session: &Session, client: Option<&ClientCtx>, msg: &JsonRpc) -> Optio
                 "content": with_advisory(session, out.content),
                 "isError": out.is_error,
             });
-            Some(JsonRpc::ok(id, result))
+            (Some(JsonRpc::ok(id, result)), out.resolved_tab)
         }
         // Unknown method → JSON-RPC method-not-found.
-        _ => Some(JsonRpc::err(
-            id,
-            -32601,
-            format!("method not found: {method}"),
-        )),
+        _ => (
+            Some(JsonRpc::err(
+                id,
+                -32601,
+                format!("method not found: {method}"),
+            )),
+            None,
+        ),
     }
 }
 
@@ -1132,8 +1171,9 @@ mod initialize_tests {
 
     #[test]
     fn initialize_serves_the_embedded_agent_prompt() {
-        let resp = super::handle(&Session::new(), None, &request("initialize"))
-            .expect("initialize returns a response");
+        let (resp, resolved_tab) = super::handle(&Session::new(), None, &request("initialize"));
+        assert!(resolved_tab.is_none(), "initialize resolves no tab");
+        let resp = resp.expect("initialize returns a response");
         let result = resp.result.expect("initialize response has a result");
 
         // serverInfo is unchanged...

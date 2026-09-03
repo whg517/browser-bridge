@@ -229,6 +229,12 @@ pub struct BridgeReq {
 pub struct BridgeResp {
     pub id: u64,
     pub ok: bool,
+    /// The tab the op actually resolved to, reported by the extension
+    /// (ADR-0028 Phase 2): the broker keys per-tab mutation scheduling on it
+    /// and records it in the audit trail. Absent for ops without a tab
+    /// target, and from pre-Phase-2 extensions (serde default).
+    #[serde(rename = "tabId", default, skip_serializing_if = "Option::is_none")]
+    pub tab_id: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub data: Option<Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -245,6 +251,7 @@ impl BridgeResp {
         BridgeResp {
             id,
             ok: true,
+            tab_id: None,
             data: Some(data),
             error: None,
             code: None,
@@ -255,6 +262,7 @@ impl BridgeResp {
         BridgeResp {
             id,
             ok: false,
+            tab_id: None,
             data: None,
             error: Some(msg.into()),
             code: None,
@@ -578,7 +586,7 @@ mod proptests {
             error in prop::option::of(arb_string()),
             code in prop::option::of(arb_string()),
         ) {
-            let resp = BridgeResp { id, ok, data, error, code };
+            let resp = BridgeResp { id, ok, tab_id: None, data, error, code };
             let mut buf = Vec::new();
             bridge_write(&mut buf, &resp).unwrap();
             let got: BridgeResp = bridge_read(&mut Cursor::new(buf)).unwrap().unwrap();
