@@ -454,6 +454,18 @@ fn serve_mcp_client(
         }
     }
 
+    // Identity (ADR-0028 Phase 2, stable client identity): PROVISIONAL at
+    // hello ("c<N>" — per-connection, dies with it), then RE-KEYED at
+    // `initialize` to the deterministic `name:<clientInfoName>` — a pure
+    // function of the client's own declaration, so it survives server
+    // restarts and broker replacements with no registry to persist. No
+    // scoping-relevant op can precede `initialize` (MCP clients initialize
+    // first), so the re-key never moves a workspace underneath anything.
+    //
+    // Known semantics, documented in the ADR: same-name instances share one
+    // workspace, and a client lying about its name adopts that name's
+    // workspace — both inside the politeness-isolation threat model.
+    let mut client_key = format!("c{id}");
     loop {
         let msg: JsonRpc = match bridge_read(&mut reader) {
             Ok(Some(m)) => m,
@@ -472,11 +484,13 @@ fn serve_mcp_client(
                 .and_then(Value::as_str)
             {
                 clients.set_name(id, name);
+                client_key = format!("name:{name}");
+                log_info!("mcp", "client {label} identity is now {client_key}");
             }
         }
         let label = clients.label(id);
         let ctx = ClientCtx {
-            id: format!("c{id}"),
+            id: client_key.clone(),
             name: clients.name_of(id),
         };
         // Scheduling v2 (ADR-0028 Phase 2): mutations serialize per TAB —

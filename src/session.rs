@@ -73,9 +73,12 @@ pub struct ClientCtx {
 }
 
 impl ClientCtx {
-    /// The audit/label form: `c1` or `c1:claude-code`.
+    /// The audit/label form: `c1`, `c1:claude-code`, or — for the stable
+    /// name-keyed identity — `name:claude-code` as-is (it already displays
+    /// the name; appending it again would read `name:e2e:e2e`).
     pub fn label(&self) -> String {
         match &self.name {
+            Some(n) if self.id.ends_with(n.as_str()) => self.id.clone(),
             Some(n) => format!("{}:{n}", self.id),
             None => self.id.clone(),
         }
