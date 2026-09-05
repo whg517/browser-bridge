@@ -954,6 +954,96 @@ def test_stale_protocol_is_rejected():
         mcp.wait(timeout=3)
 
 
+def test_client_identity_survives_broker_replacement():
+    print("\n[test] a client's identity survives a server restart + broker replacement")
+    try:
+        os.remove(LOCK)
+    except FileNotFoundError:
+        pass
+    first, first_log = start_server()
+    captured = {}
+    host = None
+    second = None
+    restarted = None
+    try:
+        lf = wait_lock(first)
+        check(lf is not None, "lock file written")
+
+        def responder(req):
+            captured["clientId"] = req.get("clientId")
+            return {"id": req["id"], "ok": True, "data": []}
+
+        host, serve = mock_extension(lf, responder, log=first_log)
+        c = McpClient(first)
+        c.initialize()
+        c.initialized()
+        time.sleep(0.2)
+        t1 = threading.Thread(target=serve)
+        t1.start()
+        r = c.call("tab_list", {}, _id=41)
+        t1.join(timeout=3)
+        before = captured.get("clientId")
+        check(before == "name:e2e",
+              f"identity re-keyed to the deterministic name form (got {before})")
+
+        # Replace the bridge under the client (--takeover kills the broker;
+        # the MCP client restarts its thin server against the new bridge).
+        second, second_log = start_server(extra_args=["--takeover"])
+        deadline = time.time() + 8
+        new_lf = None
+        while time.time() < deadline:
+            new_lf = wait_lock(second)
+            if new_lf is not None and new_lf.get("pid") != lf.get("pid"):
+                break
+            time.sleep(0.1)
+        check(new_lf is not None and new_lf.get("pid") != lf.get("pid"),
+              "a fresh broker owns the bridge")
+
+        # The restarted MCP server, SAME clientInfo name.
+        restarted, _restarted_log = start_server()
+        # The AUTHED line is logged by the BROKER — which belongs to `second`
+        # (the restarted server merely joined it), so the mock must wait on
+        # second's log.
+        host2, serve2 = mock_extension(new_lf, responder, log=second_log)
+        c2 = McpClient(restarted)
+        c2.initialize()
+        c2.initialized()
+        time.sleep(0.2)
+        # serve2 is the NEW mock socket's reader (the phase-1 `serve` is bound
+        # to the dead broker's socket — shadowing it here cost a debugging
+        # session).
+        t2 = threading.Thread(target=serve2)
+        t2.start()
+        r2 = c2.call("tab_list", {}, _id=42)
+        t2.join(timeout=3)
+        after = captured.get("clientId")
+        check(after == before,
+              f"identity is identical across restart + replacement ({before} -> {after})")
+        if after != before:
+            for nm, lg, pr in [("first", first_log, first), ("second", second_log, second),
+                               ("restarted", restarted_log, restarted)]:
+                print(f"        --- {nm} log (alive={pr.poll() is None}) ---")
+                for line in lg.text().splitlines():
+                    print("        " + line)
+    finally:
+        for proc in (restarted, second, first):
+            if proc is not None and proc.poll() is None:
+                try:
+                    proc.stdin.close()
+                except Exception:
+                    pass
+                try:
+                    proc.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+        for h in (host,):
+            if h is not None:
+                try:
+                    h.close()
+                except Exception:
+                    pass
+
+
 def test_native_host_mode():
     print("\n[test] --native-host mode with real NM framing")
     try:
@@ -1138,7 +1228,10 @@ def test_two_servers_share_one_broker():
         r2 = c2.call("tab_list", {}, _id=22)
         check(r1["result"]["isError"] is False, "first client's tab_list works")
         check(r2["result"]["isError"] is False, "second client's tab_list works")
-        check(first_log.wait_for("client=c", 5),
+        # Identity is name-keyed now, so the audit label reads client=name:e2e.
+        check(first_log.wait_for("client=", 5)
+              and ("client=name:e2e" in first_log.text()
+                   or "client=c" in first_log.text()),
               "audit lines name which client acted")
     finally:
         for p in (second, first):
@@ -1330,6 +1423,7 @@ def main():
     test_server_takeover()
     test_two_servers_share_one_broker()
     test_stale_protocol_is_rejected()
+    test_client_identity_survives_broker_replacement()
     test_unknown_method_returns_32601()
     print(f"\n{'='*40}\n{_passed} passed, {_failed} failed")
     sys.exit(0 if _failed == 0 else 1)

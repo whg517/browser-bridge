@@ -233,3 +233,21 @@ Reality adjusted a few details; the architecture stands.
   can run for seconds — is the big winner.
 - **Audit gains `tab=`**: every tool call's audit line names the tab it acted
   on, which was previously only implicit in payloads.
+
+## Implementation notes — Phase 2 (stable client identity)
+
+- **Identity is a pure function of the client's own declaration**: at hello a
+  client is provisional (`c<N>`); when its `initialize` flows through the
+  broker, the identity re-keys to `name:<clientInfoName>` — deterministic, so
+  it survives server restarts AND broker replacements with no registry to
+  persist and nothing to GC. No scoping-relevant op can precede `initialize`
+  (MCP clients initialize first), so the re-key never moves a workspace
+  underneath anything.
+- **Known semantics** (politeness-isolation threat model): same-name
+  instances share one workspace, and a client lying about its name adopts
+  that name's workspace. The hello ack reports the provisional id; requests
+  after `initialize` carry the stable one (cosmetic mismatch, documented).
+- Workspaces keyed by the stable id therefore survive restarts, and — via
+  the existing title-fallback in group adoption — can be re-adopted even
+  across a browser restart when the group's tabs survived. This unblocks
+  per-agent policy (a stable key to hang settings on) as a future change.
