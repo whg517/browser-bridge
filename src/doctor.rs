@@ -143,10 +143,10 @@ fn render(r: &Report) -> String {
             out.push_str(&format!("  secret:  <redacted, {len} chars>\n"));
         }
     } else {
-        out.push_str("  present: no (MCP server not running?)\n");
+        out.push_str("  present: no (bridge not running?)\n");
     }
 
-    out.push_str("mcp server:      ");
+    out.push_str("bridge (broker): ");
     match r.reachable {
         Some(true) => out.push_str("reachable (127.0.0.1 connect OK)\n"),
         Some(false) => out.push_str("not reachable\n"),
@@ -181,12 +181,12 @@ fn summary(r: &Report) -> &'static str {
         return "lock file present but unreadable — try restarting your MCP client";
     }
     if !r.lock_present {
-        return "server not running — is your MCP client started?";
+        return "bridge not running — is an MCP client started?";
     }
     match r.reachable {
         Some(true) if r.manifest_present => "OK",
-        Some(true) => "server reachable, but native host manifest not installed — run install.sh",
-        _ => "server not reachable — is your MCP client running?",
+        Some(true) => "bridge reachable, but native host manifest not installed — run install.sh",
+        _ => "bridge not reachable — is your MCP client running?",
     }
 }
 
@@ -267,7 +267,7 @@ mod tests {
         let text = render(&r);
         assert!(text.contains("present: no"));
         assert!(text.contains("not probed (no lock file)"));
-        assert!(text.contains("server not running"));
+        assert!(text.contains("bridge not running"));
         assert_eq!(exit_code(&r), 1);
     }
 
