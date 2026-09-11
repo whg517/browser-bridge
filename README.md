@@ -259,35 +259,49 @@ browser-bridge call tab_open '{"url":"https://example.com"}'
 bridge connection, so it refuses (exit 4) while your MCP client is active.
 Details + exit codes: [docs/cli.md](./docs/cli.md#call-one-shot-tool-call-for-non-mcp-callers).
 
+**Multiple MCP clients can share one browser.** Add browser-bridge to each
+client's config; they all join one bridge and each agent gets its own tab
+workspace (its own group, its own scoping). See
+[ADR-0028](./docs/adr/0028-multi-agent-broker.md) and
+[docs/operations.md](./docs/operations.md#multi-client-operation-the-broker).
+
 ---
 
 ## How it works
 
-One Rust binary, two modes, joined by a localhost socket:
+One Rust binary, several modes, joined by a localhost socket. Multiple MCP
+clients can share one browser — a broker multiplexes them, and each agent gets
+its own tab workspace:
 
 ```
-MCP client ──stdio MCP──▶ browser-bridge (MCP server, Rust)
-(Claude Code,             │
- Codex, …)                │ localhost TCP (NDJSON, per-run secret auth)
-                          ▼
-                   browser-bridge --native-host  ◀── spawned by Chrome
-                          │
-                          │ chrome.runtime.connectNative
-                          ▼
-                   Browser Bridge extension (MV3) ──▶ your page
+MCP client A ──stdio MCP──▶ browser-bridge (thin server) ─┐
+MCP client B ──stdio MCP──▶ browser-bridge (thin server) ─┤ localhost TCP
+                                                          ▼ (NDJSON, per-run secret)
+                             browser-bridge --broker  ◀── spawned automatically
+                                                          │
+                                                          ▼ localhost TCP
+                             browser-bridge --native-host ◀── spawned by Chrome
+                                                          │
+                                                          │ chrome.runtime.connectNative
+                                                          ▼
+                             Browser Bridge extension (MV3) ──▶ your page
 ```
 
-- **MCP server (default mode)** — launched by your MCP client over stdio.
-  Speaks JSON-RPC 2.0 (MCP protocol `2025-06-18`). Owns session state and the
-  TCP socket, published via a lock file.
+- **Thin server (default mode)** — launched by your MCP client over stdio.
+  Relays its client's JSON-RPC (MCP protocol `2025-06-18`) to the broker.
+- **`--broker`** — owns the lock file and the single extension connection;
+  grants per-agent identities, multiplexes clients, schedules mutations per
+  tab, and exits on its own after the last client leaves. Spawned
+  automatically; you rarely run it by hand.
 - **`--native-host`** — launched *by Chrome* via the host manifest. A thin
   bridge translating Chrome's native-messaging frames (4-byte LE length + JSON)
   to NDJSON on the socket.
 
-Why two processes? Chrome spawns the native host; the MCP client spawns the
-server — they aren't parent/child, so they need an IPC. The native host stays
-dumb so that MV3 service-worker recycling (~every 5 min) and host restarts don't
-lose session state.
+Why these processes? Chrome spawns the native host; the MCP client spawns the
+server — they aren't parent/child, so they need an IPC. The broker sits in the
+middle so that service-worker recycling, host restarts, and MCP client
+restarts never lose the shared session, and so several agents can work in one
+browser without trampling each other.
 
 Deep dive: [docs/architecture.md](./docs/architecture.md) ·
 [ADR-0002](./docs/adr/0002-three-process-architecture-localhost-tcp.md).

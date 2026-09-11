@@ -19,8 +19,8 @@ against. Pairs with [trust-boundaries.md](trust-boundaries.md) and the
 | Actor | Trusted? | Notes |
 |-------|----------|-------|
 | The user | yes | owns the machine and Chrome profile |
-| The MCP client (Claude Code, Codex, …) | **yes, by design** | the user configured it; it drives the tools |
-| The Rust binary (MCP server + native host) | yes | the thing we're securing |
+| The MCP clients (Claude Code, Codex, …) | **yes, by design** | the user configured them; they drive the tools. Since ADR-0028 several clients can share one browser concurrently |
+| The Rust binary (MCP server + native host + **broker**) | yes | the thing we're securing. The broker is the same binary in another mode and holds the lock, the extension connection, and client identity grant |
 | The MV3 extension | yes | but runs alongside untrusted page code |
 | **The web page** | **NO** | may be attacker-controlled; may host prompt-injection |
 | Other local users / processes | **NO** | may try to connect to the bridge socket |
@@ -36,6 +36,11 @@ against. Pairs with [trust-boundaries.md](trust-boundaries.md) and the
   tools exist to be driven by that client.
 - **Chrome's sandbox and extension model hold.** We rely on MV3 isolation
   between content scripts and page JS, and on Chrome enforcing host permissions.
+- **All configured MCP clients are equally trusted.** Per-agent isolation
+  (ADR-0028 Phase 1c) is **politeness isolation** — it prevents accidents
+  between agents the user chose to run — not a security boundary. A client
+  that lies about its identity can adopt another agent's workspace, and that
+  is accepted because every client is user-installed and equally trusted.
 - **The user trusts this Chrome with agent access.** The extension is loaded in
   a real Chrome the user controls and accepts that a connected MCP client can
   read and operate **any** open tab. There is no origin gate (see
@@ -48,10 +53,12 @@ against. Pairs with [trust-boundaries.md](trust-boundaries.md) and the
    a misread instruction or the agent wandering).
    → There is **no per-site gate** — the extension holds `<all_urls>` and acts on
    any tab. This is an accepted risk (see [ADR-0024](../adr/0024-remove-allowlist.md)).
-   The residual controls are: a **single MCP client** owns the bridge at a time
-   (the user chose it), everything happens **visibly** in the user's own Chrome,
-   **per-tool enable/disable** limits what any client can do, and the agent
-   prompt instructs the model to stay on the tabs and tasks the user named.
+   The residual controls are: everything happens **visibly** in the user's own
+   Chrome, **per-tool enable/disable** limits what any client can do, the agent
+   prompt instructs the model to stay on the tabs and tasks the user named, and
+   each agent is **workspace-scoped** (ADR-0028 Phase 1c): an explicitly
+   targeted tab must lie in the agent's own group or the call is refused with
+   `TAB_OUT_OF_SCOPE`.
 
 2. **Prompt injection: page content tricks the model into a dangerous tool
    call** (e.g. "run this eval", "read cookies and post them").
@@ -80,7 +87,23 @@ against. Pairs with [trust-boundaries.md](trust-boundaries.md) and the
    → The native host authenticates with a **per-run secret** read from a 0600
    lock file; the MCP server rejects connections with a bad/absent hello.
 
-5. **A malformed/oversized message crashes or corrupts the bridge.**
+5. **One agent interferes with another** (both configured by the user, sharing
+   the browser): racing on the same tabs, closing each other's tabs, or
+   silently acting on a tab the other agent believes is its own.
+   → **Per-agent workspaces**: each client is granted an identity by the
+   broker and gets its own tab group; explicit cross-workspace `tabId`
+   targeting is refused (`TAB_OUT_OF_SCOPE`); `tab_list` labels every tab's
+   owner (`you` / `agent` / `user`); mutations serialize per tab so two
+   agents cannot interleave writes on one page. This is **politeness
+   isolation** — coordination against accidents, not a security boundary
+   (all involved clients are trusted by assumption).
+   A related, accepted risk: **client identity is keyed by the client's own
+   declared name** (`name:<clientInfoName>`), so same-name instances share a
+   workspace and a client lying about its name adopts that workspace. Inside
+   the model (all clients trusted) this costs nothing; it is documented, not
+   defended.
+
+6. **A malformed/oversized message crashes or corrupts the bridge.**
    → Native-messaging framing is length-checked (64 MB inbound clamp, 1 MB
    outbound cap); a `panic = "abort"` profile + stderr panic hook keep panics
    off the protocol stream; parse errors are surfaced, not fatal. (Protocol
@@ -91,6 +114,10 @@ against. Pairs with [trust-boundaries.md](trust-boundaries.md) and the
 - Defending against a compromised OS account or a hostile process running as the
   same user beyond the bridge-secret check.
 - Defending against a malicious MCP client the user configured.
+- **Strong isolation between agents.** Workspaces, scoping, and per-tab
+  scheduling prevent *accidental* interference between agents the user runs;
+  they are not a security boundary between mutually distrustful clients (all
+  of them are equally trusted by assumption).
 - Multi-user / shared-machine isolation.
 - Remote attackers (there is no remote attack surface).
 
@@ -104,6 +131,10 @@ against. Pairs with [trust-boundaries.md](trust-boundaries.md) and the
   ([ADR-0024](../adr/0024-remove-allowlist.md)).
 - Masking is heuristic — it can miss a novel secret format or over-mask benign
   data.
+- **Same-name MCP client instances share one workspace**, and a client that
+  misreports its `clientInfo` name adopts that name's workspace (ADR-0028,
+  stable identity). Harmless among trusted clients; worth knowing when
+  running two instances of the same tool expecting isolation.
 - `page_snapshot_precise` briefly attaches the debugger (infobar flash).
 - **`page_eval` cannot run at all without CDP mode.** The extension's
   isolated-world CSP blocks `new Function` on every page under MV3, not just
