@@ -4,17 +4,41 @@
 > the lock file, and native host reconnection. For full subcommand usage and troubleshooting "server not reachable", see
 > [cli.md](./cli.md) (not repeated here); for component boundaries, see [architecture.md](./architecture.md).
 
-## Two Binary Modes
+## Binary Modes
 
 `browser-bridge` is a single binary + subcommand dispatch (see [ADR-0001](./adr/0001-use-rust-single-binary.md)):
 
-- **MCP server** (no arguments): the default mode, spawned by the MCP client. Listens on localhost TCP, holds session
-  state, and dispatches tools. stdout carries MCP JSON-RPC.
+- **thin MCP server** (no arguments): the default mode, spawned by the MCP client. Joins the running broker (spawning one
+  if none exists) and relays its client's MCP JSON-RPC. stdout carries MCP JSON-RPC.
+- **broker** (`--broker`): owns the lock file and the single extension connection; grants per-client identities,
+  multiplexes clients, schedules mutations per tab, and exits ~30s after the last client leaves. Spawned automatically —
+  you rarely run it by hand (see [ADR-0028](./adr/0028-multi-agent-broker.md)). stderr carries broker diagnostics.
 - **native host** (`--native-host`): a thin bridge, spawned by Chrome via the wrapper. Forwards between the
   Native Messaging frames on stdin/stdout and TCP NDJSON. stdout carries NM frames.
+- **one-shot call** (`call <tool>`): runs a single tool against the bridge and exits. Refuses (exit 4) while another
+  browser-bridge process owns the bridge.
 
-In both modes, **stdout carries only protocol bytes**; any diagnostics go to stderr — a single stray write corrupts the frame stream
-(see [trust-boundaries.md](./security/trust-boundaries.md)).
+In every mode, **stdout carries only protocol bytes** in server/host modes; any diagnostics go to stderr — a single stray write
+corrupts the frame stream (see [trust-boundaries.md](./security/trust-boundaries.md)).
+
+## Multi-Client Operation: the Broker
+
+Several MCP clients can share one browser (see [ADR-0028](./adr/0028-multi-agent-broker.md)). The mechanics an operator
+needs:
+
+- **Joining**: a starting server connects to the broker named by the lock file; if none is running it spawns one from the
+  same binary. There is nothing to configure — the second, third, … MCP client just works, and each gets its own
+  workspace (its own tab group, its own "current tab" pointer).
+- **Identity**: each connection is granted an id (`c1`, `c2`, …) that is re-keyed at the client's `initialize` to
+  `name:<clientInfoName>`. It is stable across server restarts and broker replacements. Same-name instances share a
+  workspace by design.
+- **Displacement is opt-in**: a server that finds a live bridge JOINS it. `browser-bridge --takeover` deliberately kills
+  the current broker (taking every client's bridge down) and replaces it — use it to recover from a stuck bridge or a
+  stale version.
+- **Linger**: after the last client disconnects the broker stays alive ~30s (so a client restart finds the bridge warm),
+  then exits on its own.
+- **Audit**: tool-call audit lines carry `client=` (which agent acted) and `tab=` (which tab it resolved to) alongside
+  the existing fields.
 
 ## Read-Only Diagnostics: doctor / status
 
@@ -50,9 +74,10 @@ connects to TCP, and sends `hello` using the secret. For the design, see
 [ADR-0002](./adr/0002-three-process-architecture-localhost-tcp.md) and
 [trust-boundaries.md](./security/trust-boundaries.md).
 
-**Stale lock file**: a previous server that exited abnormally may leave a lock file behind (with a stale port/pid); when a new server starts it
-detects and replaces it (on Windows it uses `TerminateProcess` to take over the old server, see
-[architecture.md §9](./architecture.md#9-known-limitations)). `doctor` only reads the lock file and does not clean it up.
+**Stale vs live lock file**: the lock is claimed with an exclusive create (ADR-0028 Phase 0), so a starting process must
+decide about an existing file: if its pid is **alive** the claim is refused (pass `--takeover` to displace the running
+bridge deliberately); if the pid is **dead** the lock is stale and is cleared, then claimed. `doctor` only reads the lock
+file and does not clean it up.
 
 ## native host Reconnection
 

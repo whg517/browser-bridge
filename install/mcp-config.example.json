@@ -1,9 +1,10 @@
 {
-  "_comment": "Generic MCP server config for browser-bridge. Most clients (Claude Code's .mcp.json, Claude Desktop, and others) use this `mcpServers` shape — copy the `browser-bridge` entry into your client's config. Point `command` at the installed binary: ~/.browser-bridge/browser-bridge on macOS, ~/.local/share/browser-bridge/browser-bridge on Linux, or /mnt/c/Users/YOU/AppData/Local/browser-bridge/browser-bridge.exe from WSL when using Windows Chrome. Use an ABSOLUTE path (most clients do not expand ~), and it does not depend on your shell PATH. The server speaks MCP over stdio with no arguments. Codex uses TOML instead of JSON — see the README for that snippet.",
+  "_comment": "Generic MCP server config for browser-bridge. Most clients (Claude Code's .mcp.json, Claude Desktop, and others) use this `mcpServers` shape \u2014 copy the `browser-bridge` entry into your client's config. Point `command` at the installed binary: ~/.browser-bridge/browser-bridge on macOS, ~/.local/share/browser-bridge/browser-bridge on Linux, or /mnt/c/Users/YOU/AppData/Local/browser-bridge/browser-bridge.exe from WSL when using Windows Chrome. Use an ABSOLUTE path (most clients do not expand ~), and it does not depend on your shell PATH. The server speaks MCP over stdio with no arguments. Codex uses TOML instead of JSON \u2014 see the README for that snippet.",
   "mcpServers": {
     "browser-bridge": {
       "command": "/ABSOLUTE/PATH/TO/browser-bridge",
       "args": []
     }
-  }
+  },
+  "_note_multiple_clients": "Several MCP clients can share one browser: add a browser-bridge entry to each client's config the same way and they all join ONE bridge, each with its own tab workspace (docs/adr/0028-multi-agent-broker.md). No extra arguments are needed. One-shot shell usage (browser-bridge call <tool>) is refused while an MCP client is connected."
 }
