@@ -536,23 +536,13 @@ fn is_mutating_tool_call(msg: &JsonRpc) -> bool {
     if msg.method.as_deref() != Some("tools/call") {
         return false;
     }
-    const MUTATING_OPS: &[&str] = &[
-        "page_click",
-        "page_fill",
-        "page_eval",
-        "page_scroll",
-        "page_screenshot",
-        "tab_close",
-        "tab_open",
-        "page_snapshot_precise",
-    ];
     let name = msg
         .params
         .as_ref()
         .and_then(|p| p.get("name"))
         .and_then(Value::as_str)
         .unwrap_or("");
-    MUTATING_OPS.contains(&name)
+    tools::is_mutating_op(name)
 }
 
 /// Bind the bridge socket, publish the lock file, and spawn the accept loop that

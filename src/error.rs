@@ -79,6 +79,18 @@ pub enum CallError {
     )]
     ProtocolMismatch { peer: u64, ours: u64 },
 
+    /// A MUTATING op timed out with unknown outcome (ADR-0028 review): the
+    /// extension may still be executing it, or may have finished after the
+    /// deadline. Unlike `RESPONSE_TIMEOUT` this is deliberately
+    /// NON-retryable — a retried mutation double-fires (a filled field is
+    /// refilled, a toggling click toggles twice). The message tells the
+    /// agent to verify before re-issuing. Reads and waits keep the
+    /// retryable `RESPONSE_TIMEOUT`.
+    #[error(
+        "the {op} call timed out and its outcome is UNKNOWN — it may still execute.          Do not blindly retry a mutation: verify the result (page_snapshot / tab_list)          or ask the user before issuing it again."
+    )]
+    MutationTimeout { op: String },
+
     /// The extension executed the op and reported a failure of its own.
     ///
     /// `code` is the extension's own classification when it had one. Before it
@@ -123,6 +135,7 @@ impl CallError {
             CallError::UnknownTool(_) => "INVALID_ARGUMENT",
             CallError::InvalidArgument(_) => "INVALID_ARGUMENT",
             CallError::PayloadTooLarge { .. } => "PAYLOAD_TOO_LARGE",
+            CallError::MutationTimeout { .. } => "MUTATION_TIMEOUT",
             CallError::ProtocolMismatch { .. } => "PROTOCOL_MISMATCH",
             CallError::Extension { code, .. } => code
                 .as_deref()
@@ -250,6 +263,12 @@ mod tests {
                 CallError::Write(io::Error::new(io::ErrorKind::BrokenPipe, "x")),
             ),
             ("Timeout", CallError::Timeout(Duration::from_secs(1))),
+            (
+                "MutationTimeout",
+                CallError::MutationTimeout {
+                    op: "page_fill".into(),
+                },
+            ),
             ("Disconnected", CallError::Disconnected),
             ("UnknownTool", CallError::UnknownTool("t".into())),
             (

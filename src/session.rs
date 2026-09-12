@@ -505,6 +505,13 @@ impl Session {
             }
             Err(mpsc::RecvTimeoutError::Timeout) => {
                 self.pending.lock().unwrap().remove(&id);
+                // An ambiguous MUTATION must not invite a blind retry: the op
+                // may still execute (or have finished right after the
+                // deadline), and a retried mutation double-fires. Fail closed
+                // instead; reads and waits keep the retryable timeout.
+                if crate::tools::is_mutating_op(op) {
+                    return Err(CallError::MutationTimeout { op: op.to_string() });
+                }
                 Err(CallError::Timeout(timeout))
             }
             Err(mpsc::RecvTimeoutError::Disconnected) => {

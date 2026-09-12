@@ -220,6 +220,26 @@ pub struct Outcome {
     pub resolved_tab: Option<i64>,
 }
 
+/// Ops whose effect another op could observe mid-flight. Two consumers with
+/// one source of truth: the broker serializes these per tab (scheduling,
+/// ADR-0028 Phase 2), and a timed-out one of these is reported as the
+/// NON-retryable `MUTATION_TIMEOUT` (an ambiguous mutation must not be
+/// blindly retried — it may still execute).
+pub const MUTATING_OPS: &[&str] = &[
+    "page_click",
+    "page_fill",
+    "page_eval",
+    "page_scroll",
+    "page_screenshot",
+    "tab_close",
+    "tab_open",
+    "page_snapshot_precise",
+];
+
+pub fn is_mutating_op(name: &str) -> bool {
+    MUTATING_OPS.contains(&name)
+}
+
 /// The explicit tab target an op-level `tabId` argument asks for, if the
 /// tool's schema declares one.
 ///

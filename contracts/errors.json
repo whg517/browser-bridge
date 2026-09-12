@@ -105,6 +105,16 @@
       "retryable": false,
       "message": "The targeted tab is outside your workspace (ADR-0028 Phase 1c): it belongs to another agent or to the user. Target tabs from your own group (see tab_list's owner field), or ask the user to move it.",
       "producer": "extension"
+    },
+    {
+      "code": "MUTATION_TIMEOUT",
+      "category": "timeout",
+      "retryable": false,
+      "message": "A mutating tool call timed out with UNKNOWN outcome \u2014 it may still execute. Do not blindly retry a mutation: verify the result (page_snapshot / tab_list) or ask the user, then re-issue if needed.",
+      "producer": "rust",
+      "rust": [
+        "MutationTimeout"
+      ]
     }
   ]
 }
