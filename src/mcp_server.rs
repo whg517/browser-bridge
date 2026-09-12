@@ -439,8 +439,18 @@ fn serve_mcp_client(
     let n = clients.arrive();
     let label = clients.label(id);
     log_info!("mcp", "mcp client {label} connected ({n} client(s))");
+    // One writer for the whole connection: the ack and every reply share it.
+    // (Each reply used to clone the stream and build a fresh BufWriter —
+    // wasteful, and the clone sat behind a production-path `expect`.)
+    let mut writer = match stream.try_clone() {
+        Ok(w) => BufWriter::new(w),
+        Err(e) => {
+            log_warn!("mcp", "client {label}: stream clone failed: {e}");
+            clients.depart();
+            return;
+        }
+    };
     {
-        let mut writer = BufWriter::new(stream.try_clone().expect("clone for ack"));
         let ack = serde_json::json!({
             "broker": true,
             "protocol": peer::PROTOCOL_VERSION,
@@ -508,7 +518,6 @@ fn serve_mcp_client(
             clients.set_tab(id, tab);
         }
         if let Some(r) = resp {
-            let mut writer = BufWriter::new(stream.try_clone().expect("clone for reply"));
             if let Err(e) = mcp_write(&mut writer, &r) {
                 log_warn!("mcp", "client {label} write failed: {e}");
                 break;
