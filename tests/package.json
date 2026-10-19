@@ -11,7 +11,7 @@
     "test:smoke": "bun ext_test.ts"
   },
   "dependencies": {
-    "puppeteer-core": "^25.13.0"
+    "puppeteer-core": "^25.14.0"
   },
   "devDependencies": {
     "@types/bun": "^1.4.2",
