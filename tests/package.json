@@ -14,7 +14,7 @@
     "puppeteer-core": "^25.13.0"
   },
   "devDependencies": {
-    "@types/bun": "^1.4.2",
+    "@types/bun": "^1.4.4",
     "@types/chrome": "^0.3.5",
     "typescript": "^7.0.2"
   }
